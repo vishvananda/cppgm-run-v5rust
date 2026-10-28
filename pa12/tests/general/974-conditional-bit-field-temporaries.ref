@@ -1,0 +1,816 @@
+global @made : i32 [binding=strong] = zero
+global @destroyed : i32 [binding=strong] = zero
+global @object : obj<4x4> [binding=strong] = {
+  zero 4
+}
+
+function @pick(%__param0 : ptr [pass=by_address, object_bytes=1]) -> ptr [binding=strong, object=_Z4pickRK1T] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    %t1 = addr @object
+    return ptr %t1
+}
+function @compound(%condition : u8) -> void [binding=strong, object=_Z8compoundb] {
+  slot $condition : u8
+  slot $arg__1 : obj<1x1>
+  slot $lifetime__2 : u8
+  slot $call__3 : ptr
+  slot $cond__4 : u32
+  slot $arg__5 : obj<1x1>
+  slot $lifetime__6 : u8
+  slot $call__7 : ptr
+
+  block ^entry:
+    store u8 %condition, $condition
+    store u8 0, $lifetime__6
+    store u8 0, $lifetime__2
+    eh_try ^conditional_cleanup_dispatch_7
+    %t1 = load u8 $condition
+    eh_end
+    branch %t1, ^cond_then_2, ^cond_else_3
+
+  block ^conditional_cleanup_resume_5:
+    resume
+
+  block ^conditional_cleanup_dispatch_6:
+    %t31 = load u8 $lifetime__2
+    branch %t31, ^conditional_temporary_destroy_8, ^conditional_temporary_done_9
+
+  block ^conditional_temporary_destroy_8:
+    store u8 0, $lifetime__2
+    %t32 = addr $arg__1
+    call void @T___T(%t32)
+    jump ^conditional_temporary_done_9
+
+  block ^conditional_temporary_done_9:
+    jump ^conditional_cleanup_resume_5
+
+  block ^conditional_cleanup_dispatch_7:
+    %t33 = load u8 $lifetime__6
+    branch %t33, ^conditional_temporary_destroy_10, ^conditional_temporary_done_11
+
+  block ^conditional_temporary_destroy_10:
+    store u8 0, $lifetime__6
+    %t34 = addr $arg__5
+    call void @T___T(%t34)
+    jump ^conditional_temporary_done_11
+
+  block ^conditional_temporary_done_11:
+    jump ^conditional_cleanup_dispatch_6
+
+  block ^cond_then_2:
+    eh_try ^conditional_cleanup_dispatch_7
+    %t2 = addr $arg__1
+    call void @T__T(%t2)
+    store u8 1, $lifetime__2
+    eh_end
+    eh_try ^conditional_cleanup_dispatch_7
+    %t3 = call ptr @pick(%t2)
+    store typed ptr %t3, $call__3
+    %t4 = load typed ptr $call__3
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load i32 %t5
+    %t7 = binary and i32 %t6, 31
+    %t8 = copy u32 %t7
+    %t9 = binary add u32 %t8, 1
+    %t10 = copy i32 %t9
+    %t11 = binary and i32 %t10, 31
+    %t12 = copy u32 %t11
+    %t13 = load i32 %t5
+    %t14 = binary and i32 %t13, -32
+    %t15 = binary or i32 %t14, %t11
+    store i32 %t15, %t5
+    store typed u32 %t12, $cond__4
+    eh_end
+    jump ^cond_end_4
+
+  block ^cond_else_3:
+    eh_try ^conditional_cleanup_dispatch_7
+    %t16 = addr $arg__5
+    call void @T__T(%t16)
+    store u8 1, $lifetime__6
+    eh_end
+    eh_try ^conditional_cleanup_dispatch_7
+    %t17 = call ptr @pick(%t16)
+    store typed ptr %t17, $call__7
+    %t18 = load typed ptr $call__7
+    %t19 = index i8 [projection=field] %t18, 0
+    %t20 = load i32 %t19
+    %t21 = binary and i32 %t20, 31
+    %t22 = copy u32 %t21
+    %t23 = binary add u32 %t22, 1
+    %t24 = copy i32 %t23
+    %t25 = binary and i32 %t24, 31
+    %t26 = copy u32 %t25
+    %t27 = load i32 %t19
+    %t28 = binary and i32 %t27, -32
+    %t29 = binary or i32 %t28, %t25
+    store i32 %t29, %t19
+    store typed u32 %t26, $cond__4
+    eh_end
+    jump ^cond_end_4
+
+  block ^cond_end_4:
+    %t30 = load typed u32 $cond__4
+    %t35 = load u8 $lifetime__6
+    branch %t35, ^conditional_temporary_destroy_12, ^conditional_temporary_done_13
+
+  block ^conditional_temporary_destroy_12:
+    store u8 0, $lifetime__6
+    %t36 = addr $arg__5
+    call void @T___T(%t36)
+    jump ^conditional_temporary_done_13
+
+  block ^conditional_temporary_done_13:
+    %t37 = load u8 $lifetime__2
+    branch %t37, ^conditional_temporary_destroy_14, ^conditional_temporary_done_15
+
+  block ^conditional_temporary_destroy_14:
+    store u8 0, $lifetime__2
+    %t38 = addr $arg__1
+    call void @T___T(%t38)
+    jump ^conditional_temporary_done_15
+
+  block ^conditional_temporary_done_15:
+    return void
+}
+function @assign(%condition : u8) -> void [binding=strong, object=_Z6assignb] {
+  slot $condition : u8
+  slot $arg__1 : obj<1x1>
+  slot $lifetime__2 : u8
+  slot $call__3 : ptr
+  slot $cond__4 : u32
+  slot $arg__5 : obj<1x1>
+  slot $lifetime__6 : u8
+  slot $call__7 : ptr
+
+  block ^entry:
+    store u8 %condition, $condition
+    store u8 0, $lifetime__6
+    store u8 0, $lifetime__2
+    eh_try ^conditional_cleanup_dispatch_7
+    %t1 = load u8 $condition
+    eh_end
+    branch %t1, ^cond_then_2, ^cond_else_3
+
+  block ^conditional_cleanup_resume_5:
+    resume
+
+  block ^conditional_cleanup_dispatch_6:
+    %t21 = load u8 $lifetime__2
+    branch %t21, ^conditional_temporary_destroy_8, ^conditional_temporary_done_9
+
+  block ^conditional_temporary_destroy_8:
+    store u8 0, $lifetime__2
+    %t22 = addr $arg__1
+    call void @T___T(%t22)
+    jump ^conditional_temporary_done_9
+
+  block ^conditional_temporary_done_9:
+    jump ^conditional_cleanup_resume_5
+
+  block ^conditional_cleanup_dispatch_7:
+    %t23 = load u8 $lifetime__6
+    branch %t23, ^conditional_temporary_destroy_10, ^conditional_temporary_done_11
+
+  block ^conditional_temporary_destroy_10:
+    store u8 0, $lifetime__6
+    %t24 = addr $arg__5
+    call void @T___T(%t24)
+    jump ^conditional_temporary_done_11
+
+  block ^conditional_temporary_done_11:
+    jump ^conditional_cleanup_dispatch_6
+
+  block ^cond_then_2:
+    eh_try ^conditional_cleanup_dispatch_7
+    %t2 = addr $arg__1
+    call void @T__T(%t2)
+    store u8 1, $lifetime__2
+    eh_end
+    eh_try ^conditional_cleanup_dispatch_7
+    %t3 = call ptr @pick(%t2)
+    store typed ptr %t3, $call__3
+    %t4 = load typed ptr $call__3
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = binary and i32 3, 31
+    %t7 = copy u32 %t6
+    %t8 = load i32 %t5
+    %t9 = binary and i32 %t8, -32
+    %t10 = binary or i32 %t9, %t6
+    store i32 %t10, %t5
+    store typed u32 %t7, $cond__4
+    eh_end
+    jump ^cond_end_4
+
+  block ^cond_else_3:
+    eh_try ^conditional_cleanup_dispatch_7
+    %t11 = addr $arg__5
+    call void @T__T(%t11)
+    store u8 1, $lifetime__6
+    eh_end
+    eh_try ^conditional_cleanup_dispatch_7
+    %t12 = call ptr @pick(%t11)
+    store typed ptr %t12, $call__7
+    %t13 = load typed ptr $call__7
+    %t14 = index i8 [projection=field] %t13, 0
+    %t15 = binary and i32 3, 31
+    %t16 = copy u32 %t15
+    %t17 = load i32 %t14
+    %t18 = binary and i32 %t17, -32
+    %t19 = binary or i32 %t18, %t15
+    store i32 %t19, %t14
+    store typed u32 %t16, $cond__4
+    eh_end
+    jump ^cond_end_4
+
+  block ^cond_end_4:
+    %t20 = load typed u32 $cond__4
+    %t25 = load u8 $lifetime__6
+    branch %t25, ^conditional_temporary_destroy_12, ^conditional_temporary_done_13
+
+  block ^conditional_temporary_destroy_12:
+    store u8 0, $lifetime__6
+    %t26 = addr $arg__5
+    call void @T___T(%t26)
+    jump ^conditional_temporary_done_13
+
+  block ^conditional_temporary_done_13:
+    %t27 = load u8 $lifetime__2
+    branch %t27, ^conditional_temporary_destroy_14, ^conditional_temporary_done_15
+
+  block ^conditional_temporary_destroy_14:
+    store u8 0, $lifetime__2
+    %t28 = addr $arg__1
+    call void @T___T(%t28)
+    jump ^conditional_temporary_done_15
+
+  block ^conditional_temporary_done_15:
+    return void
+}
+function @increment(%condition : u8) -> void [binding=strong, object=_Z9incrementb] {
+  slot $condition : u8
+  slot $arg__1 : obj<1x1>
+  slot $lifetime__2 : u8
+  slot $call__3 : ptr
+  slot $cond__4 : u32
+  slot $arg__5 : obj<1x1>
+  slot $lifetime__6 : u8
+  slot $call__7 : ptr
+
+  block ^entry:
+    store u8 %condition, $condition
+    store u8 0, $lifetime__6
+    store u8 0, $lifetime__2
+    eh_try ^conditional_cleanup_dispatch_7
+    %t1 = load u8 $condition
+    eh_end
+    branch %t1, ^cond_then_2, ^cond_else_3
+
+  block ^conditional_cleanup_resume_5:
+    resume
+
+  block ^conditional_cleanup_dispatch_6:
+    %t31 = load u8 $lifetime__2
+    branch %t31, ^conditional_temporary_destroy_8, ^conditional_temporary_done_9
+
+  block ^conditional_temporary_destroy_8:
+    store u8 0, $lifetime__2
+    %t32 = addr $arg__1
+    call void @T___T(%t32)
+    jump ^conditional_temporary_done_9
+
+  block ^conditional_temporary_done_9:
+    jump ^conditional_cleanup_resume_5
+
+  block ^conditional_cleanup_dispatch_7:
+    %t33 = load u8 $lifetime__6
+    branch %t33, ^conditional_temporary_destroy_10, ^conditional_temporary_done_11
+
+  block ^conditional_temporary_destroy_10:
+    store u8 0, $lifetime__6
+    %t34 = addr $arg__5
+    call void @T___T(%t34)
+    jump ^conditional_temporary_done_11
+
+  block ^conditional_temporary_done_11:
+    jump ^conditional_cleanup_dispatch_6
+
+  block ^cond_then_2:
+    eh_try ^conditional_cleanup_dispatch_7
+    %t2 = addr $arg__1
+    call void @T__T(%t2)
+    store u8 1, $lifetime__2
+    eh_end
+    eh_try ^conditional_cleanup_dispatch_7
+    %t3 = call ptr @pick(%t2)
+    store typed ptr %t3, $call__3
+    %t4 = load typed ptr $call__3
+    %t5 = index i8 [projection=field] %t4, 0
+    %t6 = load i32 %t5
+    %t7 = binary and i32 %t6, 31
+    %t8 = copy u32 %t7
+    %t9 = copy i32 %t8
+    %t10 = binary add nowrap i32 %t9, 1
+    %t11 = binary and i32 %t10, 31
+    %t12 = copy u32 %t11
+    %t13 = load i32 %t5
+    %t14 = binary and i32 %t13, -32
+    %t15 = binary or i32 %t14, %t11
+    store i32 %t15, %t5
+    store typed u32 %t12, $cond__4
+    eh_end
+    jump ^cond_end_4
+
+  block ^cond_else_3:
+    eh_try ^conditional_cleanup_dispatch_7
+    %t16 = addr $arg__5
+    call void @T__T(%t16)
+    store u8 1, $lifetime__6
+    eh_end
+    eh_try ^conditional_cleanup_dispatch_7
+    %t17 = call ptr @pick(%t16)
+    store typed ptr %t17, $call__7
+    %t18 = load typed ptr $call__7
+    %t19 = index i8 [projection=field] %t18, 0
+    %t20 = load i32 %t19
+    %t21 = binary and i32 %t20, 31
+    %t22 = copy u32 %t21
+    %t23 = copy i32 %t22
+    %t24 = binary add nowrap i32 %t23, 1
+    %t25 = binary and i32 %t24, 31
+    %t26 = copy u32 %t25
+    %t27 = load i32 %t19
+    %t28 = binary and i32 %t27, -32
+    %t29 = binary or i32 %t28, %t25
+    store i32 %t29, %t19
+    store typed u32 %t26, $cond__4
+    eh_end
+    jump ^cond_end_4
+
+  block ^cond_end_4:
+    %t30 = load typed u32 $cond__4
+    %t35 = load u8 $lifetime__6
+    branch %t35, ^conditional_temporary_destroy_12, ^conditional_temporary_done_13
+
+  block ^conditional_temporary_destroy_12:
+    store u8 0, $lifetime__6
+    %t36 = addr $arg__5
+    call void @T___T(%t36)
+    jump ^conditional_temporary_done_13
+
+  block ^conditional_temporary_done_13:
+    %t37 = load u8 $lifetime__2
+    branch %t37, ^conditional_temporary_destroy_14, ^conditional_temporary_done_15
+
+  block ^conditional_temporary_destroy_14:
+    store u8 0, $lifetime__2
+    %t38 = addr $arg__1
+    call void @T___T(%t38)
+    jump ^conditional_temporary_done_15
+
+  block ^conditional_temporary_done_15:
+    return void
+}
+function @nested(%first : u8, %second : u8) -> void [binding=strong, object=_Z6nestedbb] {
+  slot $first : u8
+  slot $second : u8
+  slot $arg__1 : obj<1x1>
+  slot $lifetime__2 : u8
+  slot $call__3 : ptr
+  slot $cond__4 : u32
+  slot $arg__5 : obj<1x1>
+  slot $lifetime__6 : u8
+  slot $call__7 : ptr
+  slot $cond__8 : u32
+  slot $arg__9 : obj<1x1>
+  slot $lifetime__10 : u8
+  slot $call__11 : ptr
+
+  block ^entry:
+    store u8 %first, $first
+    store u8 %second, $second
+    store u8 0, $lifetime__10
+    store u8 0, $lifetime__6
+    store u8 0, $lifetime__2
+    eh_try ^conditional_cleanup_dispatch_11
+    %t1 = load u8 $first
+    eh_end
+    branch %t1, ^cond_then_2, ^cond_else_3
+
+  block ^conditional_cleanup_resume_8:
+    resume
+
+  block ^conditional_cleanup_dispatch_9:
+    %t47 = load u8 $lifetime__2
+    branch %t47, ^conditional_temporary_destroy_12, ^conditional_temporary_done_13
+
+  block ^conditional_temporary_destroy_12:
+    store u8 0, $lifetime__2
+    %t48 = addr $arg__1
+    call void @T___T(%t48)
+    jump ^conditional_temporary_done_13
+
+  block ^conditional_temporary_done_13:
+    jump ^conditional_cleanup_resume_8
+
+  block ^conditional_cleanup_dispatch_10:
+    %t49 = load u8 $lifetime__6
+    branch %t49, ^conditional_temporary_destroy_14, ^conditional_temporary_done_15
+
+  block ^conditional_temporary_destroy_14:
+    store u8 0, $lifetime__6
+    %t50 = addr $arg__5
+    call void @T___T(%t50)
+    jump ^conditional_temporary_done_15
+
+  block ^conditional_temporary_done_15:
+    jump ^conditional_cleanup_dispatch_9
+
+  block ^conditional_cleanup_dispatch_11:
+    %t51 = load u8 $lifetime__10
+    branch %t51, ^conditional_temporary_destroy_16, ^conditional_temporary_done_17
+
+  block ^conditional_temporary_destroy_16:
+    store u8 0, $lifetime__10
+    %t52 = addr $arg__9
+    call void @T___T(%t52)
+    jump ^conditional_temporary_done_17
+
+  block ^conditional_temporary_done_17:
+    jump ^conditional_cleanup_dispatch_10
+
+  block ^cond_then_2:
+    %t2 = load u8 $second
+    branch %t2, ^cond_then_5, ^cond_else_6
+
+  block ^cond_then_5:
+    eh_try ^conditional_cleanup_dispatch_11
+    %t3 = addr $arg__1
+    call void @T__T(%t3)
+    store u8 1, $lifetime__2
+    eh_end
+    eh_try ^conditional_cleanup_dispatch_11
+    %t4 = call ptr @pick(%t3)
+    store typed ptr %t4, $call__3
+    %t5 = load typed ptr $call__3
+    %t6 = index i8 [projection=field] %t5, 0
+    %t7 = load i32 %t6
+    %t8 = binary and i32 %t7, 31
+    %t9 = copy u32 %t8
+    %t10 = binary add u32 %t9, 1
+    %t11 = copy i32 %t10
+    %t12 = binary and i32 %t11, 31
+    %t13 = copy u32 %t12
+    %t14 = load i32 %t6
+    %t15 = binary and i32 %t14, -32
+    %t16 = binary or i32 %t15, %t12
+    store i32 %t16, %t6
+    store typed u32 %t13, $cond__4
+    eh_end
+    jump ^cond_end_7
+
+  block ^cond_else_6:
+    eh_try ^conditional_cleanup_dispatch_11
+    %t17 = addr $arg__5
+    call void @T__T(%t17)
+    store u8 1, $lifetime__6
+    eh_end
+    eh_try ^conditional_cleanup_dispatch_11
+    %t18 = call ptr @pick(%t17)
+    store typed ptr %t18, $call__7
+    %t19 = load typed ptr $call__7
+    %t20 = index i8 [projection=field] %t19, 0
+    %t21 = load i32 %t20
+    %t22 = binary and i32 %t21, 31
+    %t23 = copy u32 %t22
+    %t24 = binary add u32 %t23, 1
+    %t25 = copy i32 %t24
+    %t26 = binary and i32 %t25, 31
+    %t27 = copy u32 %t26
+    %t28 = load i32 %t20
+    %t29 = binary and i32 %t28, -32
+    %t30 = binary or i32 %t29, %t26
+    store i32 %t30, %t20
+    store typed u32 %t27, $cond__4
+    eh_end
+    jump ^cond_end_7
+
+  block ^cond_end_7:
+    %t31 = load typed u32 $cond__4
+    store typed u32 %t31, $cond__8
+    jump ^cond_end_4
+
+  block ^cond_else_3:
+    eh_try ^conditional_cleanup_dispatch_11
+    %t32 = addr $arg__9
+    call void @T__T(%t32)
+    store u8 1, $lifetime__10
+    eh_end
+    eh_try ^conditional_cleanup_dispatch_11
+    %t33 = call ptr @pick(%t32)
+    store typed ptr %t33, $call__11
+    %t34 = load typed ptr $call__11
+    %t35 = index i8 [projection=field] %t34, 0
+    %t36 = load i32 %t35
+    %t37 = binary and i32 %t36, 31
+    %t38 = copy u32 %t37
+    %t39 = binary add u32 %t38, 1
+    %t40 = copy i32 %t39
+    %t41 = binary and i32 %t40, 31
+    %t42 = copy u32 %t41
+    %t43 = load i32 %t35
+    %t44 = binary and i32 %t43, -32
+    %t45 = binary or i32 %t44, %t41
+    store i32 %t45, %t35
+    store typed u32 %t42, $cond__8
+    eh_end
+    jump ^cond_end_4
+
+  block ^cond_end_4:
+    %t46 = load typed u32 $cond__8
+    %t53 = load u8 $lifetime__10
+    branch %t53, ^conditional_temporary_destroy_18, ^conditional_temporary_done_19
+
+  block ^conditional_temporary_destroy_18:
+    store u8 0, $lifetime__10
+    %t54 = addr $arg__9
+    call void @T___T(%t54)
+    jump ^conditional_temporary_done_19
+
+  block ^conditional_temporary_done_19:
+    %t55 = load u8 $lifetime__6
+    branch %t55, ^conditional_temporary_destroy_20, ^conditional_temporary_done_21
+
+  block ^conditional_temporary_destroy_20:
+    store u8 0, $lifetime__6
+    %t56 = addr $arg__5
+    call void @T___T(%t56)
+    jump ^conditional_temporary_done_21
+
+  block ^conditional_temporary_done_21:
+    %t57 = load u8 $lifetime__2
+    branch %t57, ^conditional_temporary_destroy_22, ^conditional_temporary_done_23
+
+  block ^conditional_temporary_destroy_22:
+    store u8 0, $lifetime__2
+    %t58 = addr $arg__1
+    call void @T___T(%t58)
+    jump ^conditional_temporary_done_23
+
+  block ^conditional_temporary_done_23:
+    return void
+}
+function @check(%__param0 : ptr [pass=by_address, object_bytes=1]) -> u8 [binding=strong, object=_Z5checkRK1T] {
+  slot $__param0 : ptr
+
+  block ^entry:
+    store typed ptr %__param0, $__param0
+    return u8 0
+}
+function @logical(%first : u8) -> void [binding=strong, object=_Z7logicalb] {
+  slot $first : u8
+  slot $arg__1 : obj<1x1>
+  slot $lifetime__2 : u8
+  slot $call__3 : u8
+  slot $arg__4 : obj<1x1>
+  slot $lifetime__5 : u8
+  slot $call__6 : ptr
+  slot $cond__7 : u32
+  slot $arg__8 : obj<1x1>
+  slot $lifetime__9 : u8
+  slot $call__10 : ptr
+
+  block ^entry:
+    store u8 %first, $first
+    store u8 0, $lifetime__9
+    store u8 0, $lifetime__5
+    store u8 0, $lifetime__2
+    eh_try ^conditional_cleanup_dispatch_9
+    %t1 = load u8 $first
+    eh_end
+    branch %t1, ^land_rhs_5, ^cond_else_3
+
+  block ^conditional_cleanup_resume_6:
+    resume
+
+  block ^conditional_cleanup_dispatch_7:
+    %t24 = load u8 $lifetime__2
+    branch %t24, ^conditional_temporary_destroy_10, ^conditional_temporary_done_11
+
+  block ^conditional_temporary_destroy_10:
+    store u8 0, $lifetime__2
+    %t25 = addr $arg__1
+    call void @T___T(%t25)
+    jump ^conditional_temporary_done_11
+
+  block ^conditional_temporary_done_11:
+    jump ^conditional_cleanup_resume_6
+
+  block ^conditional_cleanup_dispatch_8:
+    %t26 = load u8 $lifetime__5
+    branch %t26, ^conditional_temporary_destroy_12, ^conditional_temporary_done_13
+
+  block ^conditional_temporary_destroy_12:
+    store u8 0, $lifetime__5
+    %t27 = addr $arg__4
+    call void @T___T(%t27)
+    jump ^conditional_temporary_done_13
+
+  block ^conditional_temporary_done_13:
+    jump ^conditional_cleanup_dispatch_7
+
+  block ^conditional_cleanup_dispatch_9:
+    %t28 = load u8 $lifetime__9
+    branch %t28, ^conditional_temporary_destroy_14, ^conditional_temporary_done_15
+
+  block ^conditional_temporary_destroy_14:
+    store u8 0, $lifetime__9
+    %t29 = addr $arg__8
+    call void @T___T(%t29)
+    jump ^conditional_temporary_done_15
+
+  block ^conditional_temporary_done_15:
+    jump ^conditional_cleanup_dispatch_8
+
+  block ^land_rhs_5:
+    eh_try ^conditional_cleanup_dispatch_9
+    %t2 = addr $arg__1
+    call void @T__T(%t2)
+    store u8 1, $lifetime__2
+    eh_end
+    eh_try ^conditional_cleanup_dispatch_9
+    %t3 = call u8 @check(%t2)
+    store u8 %t3, $call__3
+    %t4 = load u8 $call__3
+    eh_end
+    branch %t4, ^cond_then_2, ^cond_else_3
+
+  block ^cond_then_2:
+    eh_try ^conditional_cleanup_dispatch_9
+    %t5 = addr $arg__4
+    call void @T__T(%t5)
+    store u8 1, $lifetime__5
+    eh_end
+    eh_try ^conditional_cleanup_dispatch_9
+    %t6 = call ptr @pick(%t5)
+    store typed ptr %t6, $call__6
+    %t7 = load typed ptr $call__6
+    %t8 = index i8 [projection=field] %t7, 0
+    %t9 = binary and i32 7, 31
+    %t10 = copy u32 %t9
+    %t11 = load i32 %t8
+    %t12 = binary and i32 %t11, -32
+    %t13 = binary or i32 %t12, %t9
+    store i32 %t13, %t8
+    store typed u32 %t10, $cond__7
+    eh_end
+    jump ^cond_end_4
+
+  block ^cond_else_3:
+    eh_try ^conditional_cleanup_dispatch_9
+    %t14 = addr $arg__8
+    call void @T__T(%t14)
+    store u8 1, $lifetime__9
+    eh_end
+    eh_try ^conditional_cleanup_dispatch_9
+    %t15 = call ptr @pick(%t14)
+    store typed ptr %t15, $call__10
+    %t16 = load typed ptr $call__10
+    %t17 = index i8 [projection=field] %t16, 0
+    %t18 = binary and i32 7, 31
+    %t19 = copy u32 %t18
+    %t20 = load i32 %t17
+    %t21 = binary and i32 %t20, -32
+    %t22 = binary or i32 %t21, %t18
+    store i32 %t22, %t17
+    store typed u32 %t19, $cond__7
+    eh_end
+    jump ^cond_end_4
+
+  block ^cond_end_4:
+    %t23 = load typed u32 $cond__7
+    %t30 = load u8 $lifetime__9
+    branch %t30, ^conditional_temporary_destroy_16, ^conditional_temporary_done_17
+
+  block ^conditional_temporary_destroy_16:
+    store u8 0, $lifetime__9
+    %t31 = addr $arg__8
+    call void @T___T(%t31)
+    jump ^conditional_temporary_done_17
+
+  block ^conditional_temporary_done_17:
+    %t32 = load u8 $lifetime__5
+    branch %t32, ^conditional_temporary_destroy_18, ^conditional_temporary_done_19
+
+  block ^conditional_temporary_destroy_18:
+    store u8 0, $lifetime__5
+    %t33 = addr $arg__4
+    call void @T___T(%t33)
+    jump ^conditional_temporary_done_19
+
+  block ^conditional_temporary_done_19:
+    %t34 = load u8 $lifetime__2
+    branch %t34, ^conditional_temporary_destroy_20, ^conditional_temporary_done_21
+
+  block ^conditional_temporary_destroy_20:
+    store u8 0, $lifetime__2
+    %t35 = addr $arg__1
+    call void @T___T(%t35)
+    jump ^conditional_temporary_done_21
+
+  block ^conditional_temporary_done_21:
+    return void
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+  slot $land__2 : i64
+  slot $land__3 : i64
+
+  block ^entry:
+    call void @compound(1)
+    call void @compound(0)
+    call void @assign(0)
+    call void @increment(1)
+    call void @nested(1, 0)
+    call void @nested(0, 0)
+    call void @logical(1)
+    %t1 = addr @object
+    %t2 = index i8 [projection=field] %t1, 0
+    %t3 = load i32 %t2
+    %t4 = binary and i32 %t3, 31
+    %t5 = copy u32 %t4
+    %t6 = copy i32 %t5
+    %t7 = cmp eq i32 %t6, 7
+    branch %t7, ^land_rhs_4, ^land_short_5
+
+  block ^land_rhs_4:
+    %t8 = load typed i32 @made
+    %t9 = cmp eq i32 %t8, 8
+    %t10 = cmp ne i64 %t9, 0
+    store typed i64 %t10, $land__2
+    jump ^land_end_6
+
+  block ^land_short_5:
+    store typed i64 0, $land__2
+    jump ^land_end_6
+
+  block ^land_end_6:
+    %t11 = load typed i64 $land__2
+    branch %t11, ^land_rhs_7, ^land_short_8
+
+  block ^land_rhs_7:
+    %t12 = load typed i32 @destroyed
+    %t13 = cmp eq i32 %t12, 8
+    %t14 = cmp ne i64 %t13, 0
+    store typed i64 %t14, $land__3
+    jump ^land_end_9
+
+  block ^land_short_8:
+    store typed i64 0, $land__3
+    jump ^land_end_9
+
+  block ^land_end_9:
+    %t15 = load typed i64 $land__3
+    branch %t15, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t16 = load typed i32 $cond__1
+    return i32 %t16
+}
+function @T__T(%this : ptr [object_bytes=1]) -> void [binding=weak, object=_ZN1TC1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @made
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @made
+    return void
+}
+function @T___T(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN1TD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    %t1 = load typed i32 @destroyed
+    %t2 = binary add nowrap i32 %t1, 1
+    store typed i32 %t2, @destroyed
+    return void
+}
+function @__cppgm_init() -> void [role=init, binding=internal] {
+  block ^entry:
+    return void
+}
+alias object _ZN1TC2Ev = @T__T
+alias object _ZN1TD2Ev = @T___T

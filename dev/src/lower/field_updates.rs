@@ -238,6 +238,16 @@ impl Function<'_, '_, '_, '_> {
         update.right = Some(value);
         Ok(Some(value))
     }
+    fn guarded_field_target(
+        &mut self,
+        id: ast::ExprId,
+        update: &mut Update,
+    ) -> Result<RValue, Error> {
+        self.lifetime.guarded_operands += 1;
+        let result = self.update_field_target(id, update);
+        self.lifetime.guarded_operands -= 1;
+        result
+    }
     fn update_field_target(
         &mut self,
         id: ast::ExprId,
@@ -256,39 +266,48 @@ impl Function<'_, '_, '_, '_> {
             let yes = self.new_block("cond_then")?;
             let no = self.new_block("cond_else")?;
             let end = self.new_block("cond_end")?;
-            let condition = self.truth(condition)?;
-            self.effect(I::Branch(condition.value, yes, no))?;
-            self.place(yes)?;
-            let first = self.update_field_target(then_expr, update)?;
-            let slot = self.generated_slot("cond", first.ty)?;
-            self.effect(I::Store(
-                Facts::memory(false, !matches!(first.ty, Type::I8 | Type::U8)),
-                first.ty,
-                first.value,
-                slot,
-            ))?;
-            self.jump(end)?;
-            self.place(no)?;
-            let mut second = self.update_field_target(else_expr, update)?;
-            if second.ty != first.ty {
-                second = self.emit(I::Copy(first.ty, second.value), source)?;
+            let guard_start = self.lifetime.guard_start;
+            if guard_start.is_none() {
+                self.lifetime.guard_start = Some(self.builder.position()?);
             }
-            self.effect(I::Store(
-                Facts::memory(false, !matches!(first.ty, Type::I8 | Type::U8)),
-                first.ty,
-                second.value,
-                slot,
-            ))?;
-            self.jump(end)?;
-            self.place(end)?;
-            return self.emit(
-                I::Load(
+            let result = (|| {
+                self.branch_condition(condition, yes, no, false)?;
+                self.place(yes)?;
+                let first = self.guarded_field_target(then_expr, update)?;
+                let slot = self.generated_slot("cond", first.ty)?;
+                self.effect(I::Store(
                     Facts::memory(false, !matches!(first.ty, Type::I8 | Type::U8)),
                     first.ty,
+                    first.value,
                     slot,
-                ),
-                source,
-            );
+                ))?;
+                self.jump(end)?;
+                self.place(no)?;
+                let mut second = self.guarded_field_target(else_expr, update)?;
+                if second.ty != first.ty {
+                    second = self.emit(I::Copy(first.ty, second.value), source)?;
+                }
+                self.effect(I::Store(
+                    Facts::memory(false, !matches!(first.ty, Type::I8 | Type::U8)),
+                    first.ty,
+                    second.value,
+                    slot,
+                ))?;
+                self.jump(end)?;
+                self.place(end)?;
+                self.emit(
+                    I::Load(
+                        Facts::memory(false, !matches!(first.ty, Type::I8 | Type::U8)),
+                        first.ty,
+                        slot,
+                    ),
+                    source,
+                )
+            })();
+            if guard_start.is_none() {
+                self.lifetime.guard_start = None;
+            }
+            return result;
         }
         if let ExprKind::Binary {
             op,

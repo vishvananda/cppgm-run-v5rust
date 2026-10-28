@@ -1,0 +1,59 @@
+function @sum(%x : i32) -> i32 [binding=strong, object=_Z3sumi] {
+  slot $x : i32
+  slot $a : obj<16x4>
+
+  block ^entry:
+    store typed i32 %x, $x
+    %t1 = addr $a
+    %t2 = load typed i32 $x
+    call void @A__A__aggregate(%t1, %t2)
+    %t3 = index i8 %t1, 8
+    %t4 = load typed i32 $x
+    %t5 = binary add nowrap i32 %t4, 1
+    call void @A__A__aggregate(%t3, %t5)
+    %t6 = addr $a
+    %t7 = binary mul i64 0, 8
+    %t8 = index i8 [projection=array_element] %t6, %t7
+    %t9 = index i8 [projection=field] %t8, 4
+    %t10 = load typed i32 %t9
+    %t11 = addr $a
+    %t12 = binary mul i64 1, 8
+    %t13 = index i8 [projection=array_element] %t11, %t12
+    %t14 = index i8 [projection=field] %t13, 4
+    %t15 = load typed i32 %t14
+    %t16 = binary add nowrap i32 %t10, %t15
+    return i32 %t16
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  slot $cond__1 : i32
+
+  block ^entry:
+    %t1 = call i32 @sum(7)
+    %t2 = cmp eq i32 %t1, 15
+    branch %t2, ^cond_then_1, ^cond_else_2
+
+  block ^cond_then_1:
+    store typed i32 0, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_else_2:
+    store typed i32 1, $cond__1
+    jump ^cond_end_3
+
+  block ^cond_end_3:
+    %t3 = load typed i32 $cond__1
+    return i32 %t3
+}
+function @A__A__aggregate(%this : ptr [object_bytes=8], %x : i32) -> void [unwind=no, binding=internal] {
+  slot $this : ptr
+  slot $x : i32
+
+  block ^entry:
+    store typed ptr %this, $this
+    store typed i32 %x, $x
+    %t1 = load typed i32 $x
+    %t2 = load typed ptr $this
+    %t3 = index i8 [projection=field] %t2, 4
+    store typed i32 %t1, %t3
+    return void
+}

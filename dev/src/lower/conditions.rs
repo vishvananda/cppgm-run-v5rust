@@ -339,7 +339,7 @@ impl Function<'_, '_, '_, '_> {
         }
         self.end_lifetime_expression(began)
     }
-    fn branch_condition(
+    pub(super) fn branch_condition(
         &mut self,
         id: ast::ExprId,
         yes: BlockId,
@@ -374,21 +374,36 @@ impl Function<'_, '_, '_, '_> {
             }
             id = self.without_parentheses(left);
         }
-        if let Some(value) = if fold { self.literal_truth(id)? } else { None } {
-            let target = if value { on_true } else { on_false };
-            self.folded_targets.push(target);
-            self.jump(target)?;
-        } else {
-            let value = self.truth(id)?;
-            self.effect(I::Branch(value.value, on_true, on_false))?;
-            self.terminated = true;
+        let chain = !spine.is_empty();
+        let guard_start = self.lifetime.guard_start;
+        if chain && guard_start.is_none() {
+            self.lifetime.guard_start = Some(self.builder.position()?);
         }
-        for (right, block, yes, no) in spine.into_iter().rev() {
-            self.place(block)?;
-            self.branch_condition(right, yes, no, fold)?;
+        let result = (|| {
+            if let Some(value) = if fold { self.literal_truth(id)? } else { None } {
+                let target = if value { on_true } else { on_false };
+                self.folded_targets.push(target);
+                self.jump(target)?;
+            } else {
+                let value = self.truth(id)?;
+                self.effect(I::Branch(value.value, on_true, on_false))?;
+                self.terminated = true;
+            }
+            for (right, block, yes, no) in spine.into_iter().rev() {
+                self.place(block)?;
+                self.lifetime.guarded_operands += 1;
+                let result = self.branch_condition(right, yes, no, fold);
+                self.lifetime.guarded_operands -= 1;
+                result?;
+            }
+            Ok(())
+        })();
+        if chain && guard_start.is_none() {
+            self.lifetime.guard_start = None;
         }
-        Ok(())
+        result
     }
+
     fn normalized_truth(&mut self, id: ast::ExprId) -> Result<RValue, Error> {
         let value = self.truth(id)?;
         let zero = self.builder.integer(0)?;

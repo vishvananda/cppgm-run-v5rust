@@ -1,0 +1,39 @@
+namespace std {
+template<class T> struct initializer_list {
+  const T* p;
+  unsigned long n;
+  initializer_list() {}
+};
+}
+typedef int V __attribute__((vector_size(16)));
+typedef bool Flags __attribute__((ext_vector_type(17)));
+struct Vector { V v; };
+struct Complex { __complex__ double z; };
+struct Bits { Flags v; };
+int sequence;
+int lane(int n) { sequence = sequence * 10 + n; return n; }
+Vector full() { return Vector{{lane(1), lane(2), lane(3), lane(4)}}; }
+Vector partial() { return Vector{{5, 6}}; }
+Vector empty() { return Vector{{}}; }
+Complex parts(double a, double b) { return Complex{{a, b}}; }
+struct Pair {
+  int first;
+  int second;
+  Pair(std::initializer_list<int> a) : first(a.p[0]), second(a.p[1]) {}
+};
+int main() {
+  Vector a = full();
+  Vector b = partial();
+  Vector c = empty();
+  Complex z = parts(1.5, 2.5);
+  Bits flags{{true, false, true}};
+  std::initializer_list<V> vectors = {{1, 2, 3, 4}, {5, 6}};
+  std::initializer_list<Pair> pairs = {std::initializer_list<int>{7, 8}};
+  return sequence == 1234 && a.v[0] == 1 && a.v[3] == 4
+    && b.v[0] == 5 && b.v[1] == 6 && b.v[2] == 0 && b.v[3] == 0
+    && c.v[0] == 0 && c.v[3] == 0
+    && __real__ z.z == 1.5 && __imag__ z.z == 2.5
+    && flags.v[0] && !flags.v[1] && flags.v[2] && !flags.v[16]
+    && vectors.n == 2 && vectors.p[0][3] == 4 && vectors.p[1][2] == 0
+    && pairs.n == 1 && pairs.p[0].first == 7 && pairs.p[0].second == 8 ? 0 : 1;
+}

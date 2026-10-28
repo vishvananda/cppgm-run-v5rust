@@ -59,7 +59,13 @@ impl Function<'_, '_, '_, '_> {
         if union || list.is_empty() {
             return Ok(false);
         }
+        let mut named = 0;
         for &member in members {
+            if self.graph.lower_local_name(member).is_none()
+                && self.graph.lower_bit_field(member)?.is_some()
+            {
+                continue;
+            }
             let ty = self.graph.lower_entity_type(member)?;
             if self.graph.lower_local_name(member).is_none()
                 || self.graph.lower_bit_field(member)?.is_some()
@@ -70,8 +76,9 @@ impl Function<'_, '_, '_, '_> {
             {
                 return Ok(false);
             }
+            named += 1;
         }
-        let count = list.len().min(members.len());
+        let count = list.len().min(named);
         if count == 0 {
             return Ok(false);
         }
@@ -102,11 +109,18 @@ impl Function<'_, '_, '_, '_> {
         let (members, union) = self.graph.lower_class_members(class)?;
         let members = members.to_vec();
         let members = members.as_slice();
-        if union || members.is_empty() {
+        if union
+            || !members
+                .iter()
+                .any(|&member| self.graph.lower_local_name(member).is_some())
+        {
             return Ok(false);
         }
         for &member in members {
             if self.graph.lower_local_name(member).is_none() {
+                if self.graph.lower_bit_field(member)?.is_some() {
+                    continue;
+                }
                 return Ok(false);
             }
             let mut ty = self.graph.lower_entity_type(member)?;
@@ -161,7 +175,12 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<Option<bool>, Error> {
         let mut full = true;
         for &member in members {
-            // C++ helper_members/helper_shape leave bit-fields in place;
+            if self.graph.lower_local_name(member).is_none()
+                && self.graph.lower_bit_field(member)?.is_some()
+            {
+                continue;
+            }
+            // C++ helper_members/helper_shape leave named bit-fields in place;
             // a helper's ordinary scalar stores cannot address a bit unit.
             if self.graph.lower_bit_field(member)?.is_some() {
                 return Ok(None);
@@ -295,15 +314,19 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<(), Error> {
         let mut next = 0;
         let element = self.graph.lower_entity_type(class)?;
+        let count = self
+            .graph
+            .lower_class_member_entities(class)
+            .iter()
+            .filter(|&&member| self.graph.lower_local_name(member).is_some())
+            .count();
         for index in 0..bound {
             let first = self.lifetime.cleanups.len();
             let object = if index == 0 {
                 address
             } else {
                 let offset = self.builder.integer(u128::from(
-                    index
-                        .checked_mul(types::layout(&*self.graph, element)?.0)
-                        .ok_or(crate::lowir::Error::Limit)?,
+                    index.wrapping_mul(types::layout(&*self.graph, element)?.0),
                 ))?;
                 self.emit(I::Index(Type::I8, None, address, offset), element)?
                     .value
@@ -315,7 +338,7 @@ impl Function<'_, '_, '_, '_> {
                 self.aggregate_helper_call(
                     Key {
                         class,
-                        count: self.graph.lower_class_member_entities(class).len(),
+                        count,
                         cv: 0,
                     },
                     object,
@@ -326,7 +349,7 @@ impl Function<'_, '_, '_, '_> {
                 self.aggregate_helper_call(
                     Key {
                         class,
-                        count: self.graph.lower_class_member_entities(class).len(),
+                        count,
                         cv: 0,
                     },
                     object,
@@ -348,7 +371,8 @@ impl Function<'_, '_, '_, '_> {
         next: &mut usize,
     ) -> Result<(), Error> {
         let (members, _) = self.graph.lower_class_members(key.class)?;
-        let members = members.to_vec();
+        let mut members = members.to_vec();
+        members.retain(|&member| self.graph.lower_local_name(member).is_some());
         let members = members.as_slice();
         let mut values = Vec::with_capacity(members.len() + 1);
         values.push(object);
@@ -361,10 +385,8 @@ impl Function<'_, '_, '_, '_> {
             let mut expr = list.get(*next).copied();
             if let Some(id) = expr {
                 *next += 1;
-                if !matches!(self.graph.lower_type(ty)?, TypeView::Reference { .. })
-                    && let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind
-                {
-                    expr = self.tree.expr_lists.get(elements).first().copied();
+                if !matches!(self.graph.lower_type(ty)?, TypeView::Reference { .. }) {
+                    expr = self.scalar_list_operand(ty, id)?;
                 }
             }
             let value = if matches!(self.graph.lower_type(ty)?, TypeView::Reference { .. }) {
@@ -448,6 +470,7 @@ pub(super) fn declare(
     for &member in graph
         .lower_class_member_entities(key.class)
         .iter()
+        .filter(|&&member| graph.lower_local_name(member).is_some())
         .take(key.count)
     {
         let name = graph
@@ -517,7 +540,11 @@ fn emit(program: &mut Program, graph: &Graph, key: Key, symbol: SymbolId) -> Res
         ))?;
         slots.push(slot);
     }
-    for (index, &member) in members.iter().enumerate() {
+    for (index, &member) in members
+        .iter()
+        .filter(|&&member| graph.lower_local_name(member).is_some())
+        .enumerate()
+    {
         let ty = graph.lower_entity_type(member)?;
         let storage = types::storage(graph, ty)?;
         let array = matches!(graph.lower_type(ty)?, TypeView::Array { .. });

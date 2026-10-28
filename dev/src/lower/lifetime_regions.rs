@@ -130,6 +130,63 @@ impl Function<'_, '_, '_, '_> {
         }
         Ok(())
     }
+    pub(super) fn array_construction_region(&mut self, destroyed: bool) -> Result<bool, Error> {
+        if !self.lifetime.full_expression
+            || self.lifetime.region
+            || self.handlers.explicit != 0
+            || self.static_initializer
+        {
+            return Ok(false);
+        }
+        if !destroyed
+            && (!self.lifetime.region_start.is_pending()
+                || self.lifetime.guarded_operands != 0
+                || self.lifetime.choice_region == super::lifetime::ChoiceRegion::Reopened)
+        {
+            return Ok(false);
+        }
+        let pending = self
+            .lifetime
+            .call_marks
+            .iter()
+            .any(|mark| !mark.declared && self.builder.same_block(mark.position));
+        if self.has_tracked_region() {
+            if !pending && self.reference_lifetimes.has_scope() {
+                return Ok(true);
+            }
+            self.open_temporary_region()?;
+        } else if self.lifetime.region_start.is_pending()
+            && !self.lifetime.temporary_segment.is_nothrow()
+            && !self.lifetime.cleanups.is_empty()
+        {
+            if !pending {
+                return Ok(true);
+            }
+            self.open_temporary_region()?;
+        } else if self.lifetime.region_start.is_pending()
+            || (self.lifetime.cleanups.is_empty() || self.aggregate_has_members())
+                && !self
+                    .lifetime
+                    .temporary_split
+                    .is_some_and(|p| self.builder.same_block(p))
+        {
+            let start = if self.lifetime.region_start.is_pending() {
+                self.lifetime.expression_start
+            } else {
+                Some(self.builder.position()?)
+            };
+            self.open_temporary_region_at(start)?;
+        }
+        Ok(false)
+    }
+    pub(super) fn temporary_region_event(&mut self) -> Result<(), Error> {
+        // Array construction has the nonthrowing region event without a call
+        // result. Preserve the pending call's result-region ownership.
+        let saved = self.lifetime.call_region;
+        let result = self.before_lifetime_call(false);
+        self.lifetime.call_region = saved;
+        result
+    }
     // A storage split is a fallback. A pending conversion call still owns
     // its receiver's construction from the segment's original call mark.
     pub(super) fn pending_storage_call_region(&mut self) -> Result<bool, Error> {

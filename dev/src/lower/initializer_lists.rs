@@ -20,7 +20,10 @@ impl Function<'_, '_, '_, '_> {
             } => list,
             _ => return Ok(None),
         };
-        if self.graph.lower_list_constructor(list)?.is_some() {
+        if self.class_conversion(id).is_some()
+            || self.graph.lower_list_constructor(id)?.is_some()
+            || id != list && self.graph.lower_list_constructor(list)?.is_some()
+        {
             return Ok(None);
         }
         Ok(self.graph.lower_initializer_array(list).map(|_| list))
@@ -254,7 +257,14 @@ impl Function<'_, '_, '_, '_> {
                 .iter()
                 .any(|mark| !mark.declared && self.builder.same_block(mark.position));
         if opens && !deferred {
-            self.open_temporary_region()?;
+            // temporary_region opens an empty pending segment at its start;
+            // an enclosing constructor's operand call mark does not move it.
+            let start = (self.lifetime.region_start.is_pending()
+                && self.lifetime.cleanups.is_empty()
+                && !self.has_tracked_region())
+            .then_some(self.lifetime.expression_start)
+            .flatten();
+            self.open_temporary_region_at(start)?;
         }
         let slot = self.temporary_storage(array, persistent, "initlist")?;
         let base = self.emit(I::Addr(slot), array)?.value;
@@ -291,12 +301,7 @@ impl Function<'_, '_, '_, '_> {
             if class {
                 break;
             }
-            let source = match self.tree.expressions.get(item).kind {
-                ExprKind::Braced { elements, .. } => {
-                    self.tree.expr_lists.get(elements).first().copied()
-                }
-                _ => Some(item),
-            };
+            let source = self.scalar_list_operand(element, item)?;
             let value = if let Some(source) = source {
                 let value = self.operand(source, Context::ArrayElement)?;
                 self.fit(value, element)?.value

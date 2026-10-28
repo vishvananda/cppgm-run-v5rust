@@ -161,12 +161,13 @@ impl Function<'_, '_, '_, '_> {
             && let Some(list) = self.list_variable(initializer)?
         {
             let object = self.storage_address(slot, ty)?;
+            let persistent = storage == NamedStorage::Static || self.persistent_references;
             return self.initialize_list_object(
                 list,
                 ty,
                 object,
-                storage == NamedStorage::Static || self.persistent_references,
-                Some(entity),
+                persistent,
+                (!persistent).then_some(entity),
             );
         }
         let elided = if storage == NamedStorage::Automatic {
@@ -737,11 +738,13 @@ impl Function<'_, '_, '_, '_> {
                 TypeView::Class(class) if self.graph.lower_aggregate_class(class) => Some(first),
                 _ => None,
             };
+            self.aggregation.regions = super::aggregate_cleanup::MemberRegions::Absent;
             self.aggregation.counted_item = true;
             self.named_item(ty, input, path, item)?;
             self.aggregation.counted_item = false;
             self.aggregation.count = Some(self.aggregate_element_made(count, first)?);
             self.aggregation.floor = floor;
+            self.aggregation.regions = super::aggregate_cleanup::MemberRegions::Absent;
             return Ok(());
         }
         self.named_item_value(ty, input, path, item)
@@ -801,10 +804,8 @@ impl Function<'_, '_, '_, '_> {
         }
         if let Some(id) = expr {
             input.next += 1;
-            if !matches!(self.graph.lower_type(ty)?, TypeView::Reference { .. })
-                && let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind
-            {
-                expr = self.tree.expr_lists.get(elements).first().copied();
+            if !matches!(self.graph.lower_type(ty)?, TypeView::Reference { .. }) {
+                expr = self.scalar_list_operand(ty, id)?;
             }
         }
         let before = if value_first {

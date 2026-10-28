@@ -87,6 +87,14 @@ impl Function<'_, '_, '_, '_> {
             }
             _ => return Err(Error::Missing("non-list array temporary lowering")),
         };
+        let destructor = if persistent {
+            None
+        } else {
+            self.symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .storage_destructor(ty)?
+        };
+        let deferred = !persistent && self.array_construction_region(destructor.is_some())?;
         let slot = self.temporary_storage(ty, persistent, stem)?;
         if persistent {
             self.static_array_temporary(ty, slot, &self.owned_expression_ids(list))?;
@@ -94,14 +102,12 @@ impl Function<'_, '_, '_, '_> {
             return Ok(self.emit(I::Addr(slot), ty)?.value);
         }
         let owner = self.extended_temporary_owner(id);
-        let destructor = self
-            .symbols
-            .view(&*self.graph, &*self.tree, self.cursor)
-            .storage_destructor(ty)?;
-        if destructor.is_some() && self.lifetime.full_expression && !self.lifetime.region {
-            self.open_temporary_region()?;
-        }
         let address = self.emit(I::Addr(slot), ty)?.value;
+        if deferred && !self.lifetime.region {
+            let position = self.builder.position()?;
+            self.open_temporary_region_at(Some(position))?;
+        }
+        self.temporary_region_event()?;
         let mut element = ty;
         while let TypeView::Array { element: inner, .. } = self.graph.lower_type(element)? {
             element = inner;
@@ -110,6 +116,9 @@ impl Function<'_, '_, '_, '_> {
             self.initialize_temporary_array(ty, address, initializer)?;
         } else {
             self.structured_array(ty, address, &self.owned_expression_ids(list), &mut 0)?;
+        }
+        if destructor.is_none() {
+            self.finish_inert_temporary(false)?;
         }
         if destructor.is_some() {
             if let Some(owner) = owner {
@@ -433,9 +442,7 @@ impl Function<'_, '_, '_, '_> {
         }
         if let Some(id) = expr {
             *next += 1;
-            if let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind {
-                expr = self.tree.expr_lists.get(elements).first().copied();
-            }
+            expr = self.scalar_list_operand(ty, id)?;
         }
         let value = if let Some(expr) = expr {
             let value = self.operand(expr, Context::ArrayElement)?;

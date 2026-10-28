@@ -10,7 +10,8 @@ use crate::{
         model::InstructionKind as I,
         vocabulary::{Compare, Convert, Type},
     },
-    sema::lowering::TypeId,
+    sema::lowering::{TypeId, TypeView},
+    syntax::ast::{self, ExprKind},
 };
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Context {
@@ -30,6 +31,27 @@ pub(super) enum Context {
     MemberInitialization,
 }
 impl Function<'_, '_, '_, '_> {
+    // aggregate_lowering/initializer_list_lowering: scalar lists unwrap their
+    // one operand, while vector lanes and a complex pair retain the full list.
+    pub(super) fn scalar_list_operand(
+        &self,
+        ty: TypeId,
+        id: ast::ExprId,
+    ) -> Result<Option<ast::ExprId>, Error> {
+        let ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind else {
+            return Ok(Some(id));
+        };
+        let elements = self.tree.expr_lists.get(elements);
+        Ok(
+            if matches!(self.graph.lower_type(ty)?, TypeView::Vector { .. })
+                || matches!(self.graph.lower_type(ty)?, TypeView::Complex(_)) && elements.len() == 2
+            {
+                Some(id)
+            } else {
+                elements.first().copied()
+            },
+        )
+    }
     pub(super) fn fit(&mut self, value: RValue, target: TypeId) -> Result<RValue, Error> {
         if types::boolean(&*self.graph, target)? && value.ty == Type::I64 {
             return self.emit(
