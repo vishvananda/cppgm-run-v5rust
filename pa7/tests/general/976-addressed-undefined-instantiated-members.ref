@@ -1,0 +1,33 @@
+1 translation units
+start translation unit 1
+translation-unit
+  variable a pointer to function of () returning void
+    unary-expression prvalue pointer to function of () returning void OP_AMP:&
+      id-expression lvalue function of () returning void C<int>::addressed
+  variable a_again pointer to function of () returning void
+    unary-expression prvalue pointer to function of () returning void OP_AMP:&
+      id-expression lvalue function of () returning void C<int>::addressed
+  variable b pointer to function of () returning void
+    unary-expression prvalue pointer to function of () returning void OP_AMP:&
+      id-expression lvalue function of () returning void C<int>::called
+  variable c pointer to function of () returning void
+    unary-expression prvalue pointer to function of () returning void OP_AMP:&
+      id-expression lvalue function of () returning void C<int>::inside
+  variable d pointer to function of () returning void
+    unary-expression prvalue pointer to function of () returning void OP_AMP:&
+      id-expression lvalue function of () returning void C<int>::outside
+  variable e pointer to function of () returning void
+    unary-expression prvalue pointer to function of () returning void OP_AMP:&
+      id-expression lvalue function of () returning void C<int>::specialized<char>
+  function-definition use function of () returning void
+    compound-statement
+      expression-statement
+        call-expression prvalue void
+          callee C::called function of () returning void
+  function-declaration C::called function of () returning void
+  function-definition C::inside function of () returning void
+    compound-statement
+  function-definition C::outside function of () returning void
+    compound-statement
+  function-declaration C::specialized function of () returning void
+end translation unit
