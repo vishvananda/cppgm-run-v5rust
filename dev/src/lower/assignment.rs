@@ -47,9 +47,7 @@ pub(super) fn lower_definitions(
                 None,
                 budget,
             )?;
-            cx.symbols
-                .view(&*cx.graph, &*cx.tree, cx.cursor)
-                .stream_definition(program, definitions, entry)?;
+            cx.stream_definition(program, definitions, entry)?;
         }
     }
     Ok(())

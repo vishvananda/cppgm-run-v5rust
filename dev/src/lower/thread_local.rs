@@ -102,6 +102,7 @@ pub(super) fn initialize(
     output
         .definitions
         .generated(&mut cx.symbols.generated_definitions)?;
+    cx.prepare_forward_boundaries(output.program)?;
     output.definitions.stream(output.program, None)?;
     let mut entry = init;
     if cx
@@ -120,6 +121,7 @@ pub(super) fn initialize(
                 .view(&*cx.graph, &*cx.tree, cx.cursor)
                 .tls_init_entry(output.program, entity, true)?;
             forwarder(output.program, external, Some(entry))?;
+            cx.prepare_forward_boundaries(output.program)?;
             output.definitions.stream(output.program, None)?;
             let global = cx
                 .symbols
@@ -219,6 +221,7 @@ pub(super) fn finish_unit(
     function.place(done)?;
     function.effect(I::Return(Type::Void, None))?;
     function.builder.finish()?;
+    cx.prepare_forward_boundaries(program)?;
     definitions.stream(program, None)?;
     Ok(())
 }

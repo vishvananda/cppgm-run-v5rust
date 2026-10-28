@@ -1,0 +1,32 @@
+declare function @__external_runtime____cxa_begin_catch(%arg0 : ptr) -> ptr [role=eh_begin_catch, linkage=c, binding=strong, object=__cxa_begin_catch]
+declare function @std_terminate() -> void [unwind=no, return=noreturn, role=terminate, binding=strong, object=_ZSt9terminatev]
+declare function @g() -> void [binding=strong, object=_Z1gv]
+
+function @C_int___f(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN1CIiE1fEv, object_root=yes, inline_hint=yes] {
+  slot $this : ptr
+  slot $function_exception__1 : ptr
+
+  block ^entry:
+    eh_try ^function_exception_landing_1
+    store typed ptr %this, $this
+    call void @g()
+    eh_end
+    return void
+
+  block ^function_exception_landing_1:
+    eh_catch_all, 1
+    %t1 = exception ptr
+    store typed ptr %t1, $function_exception__1
+    jump ^function_exception_action_2
+
+  block ^function_exception_action_2:
+    %t2 = load typed ptr $function_exception__1
+    call void @cppgm_call_terminate(%t2)
+    return void
+}
+function @cppgm_call_terminate(%exception_object : ptr) -> void [unwind=no, return=noreturn, binding=internal, no_inline=yes] {
+  block ^entry:
+    %t1 = call ptr @__external_runtime____cxa_begin_catch(%exception_object)
+    call void @std_terminate()
+    return void
+}

@@ -136,6 +136,9 @@ impl Names {
 }
 /// A consumer owns only its phase's encoded state, never front-end facts.
 pub(crate) trait DefinitionSink: std::any::Any {
+    fn needs_boundaries(&self) -> bool {
+        false
+    }
     fn reads_jump_thunks(&self) -> bool {
         false
     }
@@ -244,6 +247,14 @@ impl Program {
     }
     pub(crate) fn has_definition_sink(&self) -> bool {
         self.definition_sink.is_some()
+    }
+    pub(crate) fn needs_forward_boundaries(&self) -> bool {
+        self.definition_sink
+            .as_ref()
+            .is_some_and(|sink| sink.needs_boundaries())
+    }
+    pub(crate) fn completed_definition(&self) -> Option<SymbolId> {
+        self.completed_definition
     }
     pub(crate) fn prepare_reader(&mut self) -> Result<(), Error> {
         if !self.reader_vocabulary {

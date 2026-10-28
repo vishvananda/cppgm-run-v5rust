@@ -13,7 +13,7 @@ impl Symbols<'_, '_> {
     ) -> Result<(), Error> {
         for index in 0..self.state.inline_static_owners.len() {
             let entity = self.state.inline_static_owners[index];
-            crate::lower::function::declare(program, self, self.graph, Entry::Function(entity))?;
+            self.function_symbol(program, entity)?;
         }
         self.state.inline_static_owners.clear();
         Ok(())
@@ -64,12 +64,8 @@ impl Symbols<'_, '_> {
         self.state.entries.insert(entry, symbol);
         self.state.entry_objects.insert(entry, local_object);
         self.state.pending_copies.push(entity);
-        // The boundary is available while the body is still queued. This is
-        // equally required by retained views and the consuming O0 object sink.
-        let signature =
-            crate::lower::function::declaration_signature(program, self, self.graph, entry)?;
         let metadata = self.inline_copy_metadata(program, entity, symbol)?;
-        program.set_forward_boundary(symbol, signature, metadata);
+        self.state.declarations.reserve(symbol, entry, metadata);
         Ok(Value::Symbol(symbol))
     }
 

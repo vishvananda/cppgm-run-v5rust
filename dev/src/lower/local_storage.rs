@@ -645,6 +645,13 @@ impl Function<'_, '_, '_, '_> {
             .view(&*self.graph, &*self.tree, self.cursor)
             .local_destructor_symbol(program, global)?;
         super::shutdown::local(program, destructor, finalizers)?;
+        super::unit_frontend::Context {
+            graph: self.graph,
+            tree: self.tree,
+            cursor: self.cursor,
+            symbols: self.symbols,
+        }
+        .prepare_forward_boundaries(program)?;
         program.stream_last_definition(&mut self.symbols.generated_definitions)?;
         let (registrar, arguments) = if thread {
             let dso = self

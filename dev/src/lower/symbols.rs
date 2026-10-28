@@ -13,6 +13,8 @@ mod call_signatures;
 mod callable_encoding;
 #[path = "complex.rs"]
 pub(super) mod complex;
+#[path = "declaration_signatures.rs"]
+mod declaration_signatures;
 #[path = "definition_families.rs"]
 mod definition_families;
 #[path = "exception_information.rs"]
@@ -2418,21 +2420,6 @@ impl<'a, 'source> Symbols<'a, 'source> {
             self.state.pending.function(entry);
         }
     }
-    pub(super) fn has_entry_symbol(&self, entry: super::construction::Entry) -> bool {
-        use super::construction::{Entry, Variant};
-        self.state.entries.contains_key(&entry)
-            || match entry {
-                Entry::Function(entity) => self
-                    .state
-                    .callees
-                    .contains_key(&self.graph.lower_function_entity(entity)),
-                Entry::Constructor(id, Variant::Complete) => self
-                    .graph
-                    .lower_constructor_entity(id)
-                    .is_some_and(|entity| self.state.callees.contains_key(&entity)),
-                _ => false,
-            }
-    }
     pub(super) fn entry_symbol(
         &mut self,
         program: &mut Program,
@@ -2492,24 +2479,8 @@ impl<'a, 'source> Symbols<'a, 'source> {
             .allocate(program, &name, metadata.object, facts.internal)?;
         self.state.entry_objects.insert(entry, object);
         self.state.entries.insert(entry, symbol);
-        if self.state.table.object_mode
-            && !program.symbol(symbol).declared()
-            && program.forward_boundary(symbol).is_none()
-        {
-            let signature =
-                super::function::declaration_signature(program, self, self.graph, entry)?;
-            program.set_forward_boundary(symbol, signature, metadata);
-        }
-        // An ancillary entry request may already have passed through the
-        // worklist before this first actual use. Publish unavailable entries
-        // here so a later synthesized body still gets its declaration.
-        if facts.definition.is_none()
-            && entity.is_some_and(|entity| {
-                self.graph.lower_function_body(entity).is_none()
-                    && !self.graph.lower_has_synthesized_body(entity)
-            })
-        {
-            super::function::declare(program, self, self.graph, entry)?;
+        if !program.symbol(symbol).declared() {
+            self.state.declarations.reserve(symbol, entry, metadata);
         }
         Ok(symbol)
     }

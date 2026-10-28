@@ -242,6 +242,7 @@ fn define_variable_contents(
             thread_initialization.map(|(_, init)| init),
         )?
     {
+        cx.prepare_forward_boundaries(output.program)?;
         output.definitions.stream(output.program, None)?;
     }
     if thread_initialization.is_none() {

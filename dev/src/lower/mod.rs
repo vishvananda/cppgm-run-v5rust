@@ -228,6 +228,7 @@ fn finish_unit(
     cx.symbols
         .view(&*cx.graph, &*cx.tree, cx.cursor)
         .finish_class_declarations(program, None)?;
+    cx.finish_function_declarations(program)?;
     cx.symbols
         .view(&*cx.graph, &*cx.tree, cx.cursor)
         .resolve_runtime_roles(program, definitions)?;
@@ -325,13 +326,11 @@ fn emit_source_definitions(
                         Some(body),
                         budget,
                     )?;
-                    cx.symbols
-                        .view(&*cx.graph, &*cx.tree, cx.cursor)
-                        .stream_definition(
-                            output.program,
-                            output.definitions,
-                            construction::Entry::Function(entity),
-                        )?;
+                    cx.stream_definition(
+                        output.program,
+                        output.definitions,
+                        construction::Entry::Function(entity),
+                    )?;
                 }
             }
             ast::DeclKind::SpecialMember {
@@ -359,9 +358,7 @@ fn emit_source_definitions(
                             cx.graph.lower_function_body(entity),
                             budget,
                         )?;
-                        cx.symbols
-                            .view(&*cx.graph, &*cx.tree, cx.cursor)
-                            .stream_definition(output.program, output.definitions, entry)?;
+                        cx.stream_definition(output.program, output.definitions, entry)?;
                     }
                     continue;
                 }
@@ -390,9 +387,7 @@ fn emit_source_definitions(
                                 cx.graph.lower_function_body(entity),
                                 budget,
                             )?;
-                            cx.symbols
-                                .view(&*cx.graph, &*cx.tree, cx.cursor)
-                                .stream_definition(output.program, output.definitions, entry)?;
+                            cx.stream_definition(output.program, output.definitions, entry)?;
                         }
                     }
                     continue;
@@ -421,9 +416,7 @@ fn emit_source_definitions(
                             cx.graph.lower_function_body(entity),
                             budget,
                         )?;
-                        cx.symbols
-                            .view(&*cx.graph, &*cx.tree, cx.cursor)
-                            .stream_definition(output.program, output.definitions, entry)?;
+                        cx.stream_definition(output.program, output.definitions, entry)?;
                     }
                 }
             }
@@ -545,9 +538,7 @@ fn emit_pending(
             let entry = construction::Entry::InlineCopy(entity);
             let body = function::definition_body(&*cx.graph, &*cx.tree, entity)?;
             function::lower(output.function_output(), cx, entry, body, budget)?;
-            cx.symbols
-                .view(&*cx.graph, &*cx.tree, cx.cursor)
-                .stream_definition(output.program, output.definitions, entry)?;
+            cx.stream_definition(output.program, output.definitions, entry)?;
             continue;
         }
         exception_helpers::emit_pending(
@@ -600,18 +591,6 @@ fn emit_pending(
             .entity(&*cx.graph)
             .is_some_and(|entity| cx.graph.lower_gnu_inline(entity))
         {
-            if cx
-                .symbols
-                .view(&*cx.graph, &*cx.tree, cx.cursor)
-                .has_entry_symbol(entry)
-            {
-                function::declare(
-                    output.program,
-                    &mut cx.symbols.view(&*cx.graph, &*cx.tree, cx.cursor),
-                    &*cx.graph,
-                    entry,
-                )?;
-            }
             continue;
         }
         let body = if let construction::Entry::Function(entity)
@@ -630,18 +609,6 @@ fn emit_pending(
                 // suppressed bodies without creating a symbol. A use still
                 // publishes its declaration; ancillary destructor entry demand
                 // alone does not (notably an extern-instantiated class's D2).
-                if cx
-                    .symbols
-                    .view(&*cx.graph, &*cx.tree, cx.cursor)
-                    .has_entry_symbol(entry)
-                {
-                    function::declare(
-                        output.program,
-                        &mut cx.symbols.view(&*cx.graph, &*cx.tree, cx.cursor),
-                        &*cx.graph,
-                        entry,
-                    )?;
-                }
                 continue;
             }
             if facts.emission == crate::sema::lowering::Emission::Demanded {
@@ -661,18 +628,6 @@ fn emit_pending(
             if let Some(entity) = cx.graph.lower_constructor_entity(id)
                 && !cx.graph.lower_function_defined(entity)
             {
-                if cx
-                    .symbols
-                    .view(&*cx.graph, &*cx.tree, cx.cursor)
-                    .has_entry_symbol(entry)
-                {
-                    function::declare(
-                        output.program,
-                        &mut cx.symbols.view(&*cx.graph, &*cx.tree, cx.cursor),
-                        &*cx.graph,
-                        entry,
-                    )?;
-                }
                 continue;
             }
             let facts = entry.facts(&*cx.graph)?;
@@ -690,9 +645,7 @@ fn emit_pending(
                 .and_then(|entity| cx.graph.lower_function_body(entity))
         };
         function::lower(output.function_output(), cx, entry, body, budget)?;
-        cx.symbols
-            .view(&*cx.graph, &*cx.tree, cx.cursor)
-            .stream_definition(output.program, output.definitions, entry)?;
+        cx.stream_definition(output.program, output.definitions, entry)?;
     }
     Ok(())
 }

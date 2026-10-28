@@ -42,6 +42,7 @@ pub(in crate::lower) struct State {
     pub(super) ordinals: HashMap<EntityId, usize>,
     pub(super) names: HashMap<EntityId, std::sync::Arc<str>>,
     pub(super) callees: HashMap<EntityId, Value>,
+    pub(super) declarations: super::declaration_signatures::Declarations,
     pub(super) table: SymbolTable,
     pub(in crate::lower) globals: Vec<EntityId>,
     // Syntax can require declaration-only storage even when semantic
@@ -114,6 +115,7 @@ impl State {
             ordinals: HashMap::new(),
             names: HashMap::new(),
             callees: HashMap::new(),
+            declarations: super::declaration_signatures::Declarations::default(),
             table,
             globals: Vec::new(),
             declaration_only_globals: std::collections::HashSet::new(),

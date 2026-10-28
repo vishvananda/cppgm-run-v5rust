@@ -197,7 +197,7 @@ pub(super) fn lower(
 ) -> Result<(), Error> {
     require_analyzed_body(&*cx.graph, &*cx.tree, entry.entity(&*cx.graph), body)?;
     let program = output.program;
-    let facts = entry.facts(&*cx.graph)?;
+    let mut facts = entry.facts(&*cx.graph)?;
     let entity = entry.entity(&*cx.graph);
     let TypeView::Function {
         result,
@@ -247,11 +247,6 @@ pub(super) fn lower(
         .symbols
         .view(&*cx.graph, &*cx.tree, cx.cursor)
         .definition_replacement(program, entry, symbol)?;
-    let metadata = cx
-        .symbols
-        .view(&*cx.graph, &*cx.tree, cx.cursor)
-        .definition_metadata(program, entry, symbol)?;
-    let is_main = metadata.role == Some(crate::lowir::vocabulary::Role::Entry);
     let parameters = constructed_parameters(
         program,
         &*cx.graph,
@@ -268,7 +263,6 @@ pub(super) fn lower(
     cx.symbols
         .view(&*cx.graph, &*cx.tree, cx.cursor)
         .locate_definition(&mut builder, entity.and(facts.definition))?;
-    builder.metadata(metadata);
     let distinct = entity.is_some_and(|entity| cx.graph.lower_copy_constructor(entity));
     if result_boundary.indirect {
         builder.parameter_boundary(
@@ -301,6 +295,15 @@ pub(super) fn lower(
             distinct && index == 0 || parameter_no_alias(facts.builtin, index),
         )?;
     }
+    if let Some(entity) = entity {
+        facts.nothrow = cx.function_nothrow(entity)?;
+    }
+    let metadata = cx
+        .symbols
+        .view(&*cx.graph, &*cx.tree, cx.cursor)
+        .definition_metadata(builder.program(), entry, symbol)?;
+    let is_main = metadata.role == Some(crate::lowir::vocabulary::Role::Entry);
+    builder.metadata(metadata);
     let mut boundary = Boundary {
         result_classes: result_boundary.classes,
         arity: if variadic {
@@ -1162,14 +1165,9 @@ pub(super) fn signature(
     ty: TypeId,
     nothrow: bool,
 ) -> Result<crate::lowir::model::SignatureId, Error> {
-    signature_with_names(
-        program,
-        symbols,
-        graph,
-        ty,
-        nothrow,
-        SignatureNames::Arguments,
-    )
+    let mut signature = signature_shape(program, symbols, graph, ty, SignatureNames::Arguments)?;
+    signature.boundary.unwind = if nothrow { Unwind::No } else { Unwind::Default };
+    Ok(program.add_signature(signature)?)
 }
 
 #[derive(Clone, Copy)]
@@ -1190,14 +1188,13 @@ impl SignatureNames {
         })
     }
 }
-fn signature_with_names(
+fn signature_shape(
     program: &mut Program,
     symbols: &mut Symbols<'_, '_>,
     graph: &Graph,
     ty: TypeId,
-    nothrow: bool,
     names: SignatureNames,
-) -> Result<crate::lowir::model::SignatureId, Error> {
+) -> Result<crate::lowir::model::Signature, Error> {
     use crate::lowir::model::{Arity, Parameter, Signature};
     let TypeView::Function {
         result,
@@ -1232,12 +1229,11 @@ fn signature_with_names(
             classes: symbols.parameter_classes(ty)?,
         });
     }
-    Ok(program.add_signature(Signature {
+    Ok(Signature {
         parameters: values,
         result: result_boundary.ty,
         boundary: Boundary {
             result_classes: result_boundary.classes,
-            unwind: if nothrow { Unwind::No } else { Unwind::Default },
             arity: if variadic {
                 Arity::Variadic
             } else {
@@ -1245,7 +1241,7 @@ fn signature_with_names(
             },
             ..Boundary::default()
         },
-    })?)
+    })
 }
 
 fn parameters_types(graph: &Graph, ty: TypeId) -> Result<&[TypeId], Error> {
@@ -1315,7 +1311,7 @@ pub(super) fn declared_effects(boundary: &mut Boundary, graph: &Graph, entity: O
     }
 }
 
-fn builtin_boundary(
+pub(super) fn builtin_boundary(
     boundary: &mut Boundary,
     builtin: Option<crate::sema::lowering::BuiltinFunction>,
 ) {
@@ -1331,77 +1327,34 @@ fn builtin_boundary(
     }
 }
 
-pub(super) fn declare(
+pub(super) fn declaration_shape(
     program: &mut Program,
     symbols: &mut Symbols<'_, '_>,
     graph: &Graph,
     entry: super::construction::Entry,
-) -> Result<(), Error> {
-    let symbol = symbols.entry_symbol(program, entry)?;
-    if program.symbol(symbol).declared() {
-        return Ok(());
-    }
-    let name = program.names.get(program.symbol(symbol).name).to_owned();
-    let signature = if let Some(signature) = program.forward_boundary(symbol) {
-        signature
-    } else {
-        declaration_signature(program, symbols, graph, entry)?
-    };
-    let mut metadata = symbols.entry_metadata(program, entry, &name)?;
-    // A declared ABI entry carries its function metadata, not the object-root
-    // flag used to retain an emitted base or internal complete definition
-    // (symbol_lowering.cpp::entry_symbol, program_lowering.cpp::emit_definition).
-    if matches!(
-        entry,
-        super::construction::Entry::Constructor(_, _)
-            | super::construction::Entry::DestructorBase(_)
-    ) {
-        metadata.flags &= !4;
-    }
-    let name = program.symbol(symbol).name;
-    program.add(
-        symbol,
-        crate::lowir::model::Function {
-            name,
-            signature,
-            metadata,
-            body: None,
-            location: None,
-        },
-    )?;
-    Ok(())
-}
-
-pub(super) fn declaration_signature(
-    program: &mut Program,
-    symbols: &mut Symbols<'_, '_>,
-    graph: &Graph,
-    entry: super::construction::Entry,
-) -> Result<crate::lowir::model::SignatureId, Error> {
+) -> Result<crate::lowir::model::Signature, Error> {
     let facts = entry.facts(graph)?;
-    let signature = signature_with_names(
+    let mut signature = signature_shape(
         program,
         symbols,
         graph,
         facts.ty,
-        facts.nothrow,
         SignatureNames::Declaration,
     )?;
     if let Some(class) = facts.object {
         let first = usize::from(
-            program
-                .signature(signature)
+            signature
                 .parameters
                 .first()
                 .is_some_and(|p| p.pass == Some(crate::lowir::vocabulary::Pass::IndirectResult)),
         );
         let name = SignatureNames::Declaration.argument(program, first)?;
-        for index in first..program.signature_mut(signature).parameters.len() {
+        for index in first..signature.parameters.len() {
             let name = SignatureNames::Declaration.argument(program, index + 1)?;
-            program.signature_mut(signature).parameters[index].name = name;
+            signature.parameters[index].name = name;
         }
         let object_bytes = types::layout(graph, graph.lower_entity_type(class)?)?.0;
-        program.signature_mut(signature).parameters.insert(
+        signature.parameters.insert(
             first,
             crate::lowir::model::Parameter {
                 name,
@@ -1416,7 +1369,7 @@ pub(super) fn declaration_signature(
     if entry.hidden_vtt(graph)? {
         let first = 1;
         let name = SignatureNames::Declaration.argument(program, 1)?;
-        program.signature_mut(signature).parameters.insert(
+        signature.parameters.insert(
             first,
             crate::lowir::model::Parameter {
                 name,
@@ -1427,21 +1380,18 @@ pub(super) fn declaration_signature(
                 classes: None,
             },
         );
-        for index in first + 1..program.signature(signature).parameters.len() {
+        for index in first + 1..signature.parameters.len() {
             let name = SignatureNames::Declaration.argument(program, index)?;
-            program.signature_mut(signature).parameters[index].name = name;
+            signature.parameters[index].name = name;
         }
     }
-    let boundary = program.signature_mut(signature);
     let distinct = entry
         .entity(graph)
         .is_some_and(|entity| graph.lower_copy_constructor(entity));
-    for (index, parameter) in boundary.parameters.iter_mut().enumerate() {
+    for (index, parameter) in signature.parameters.iter_mut().enumerate() {
         parameter.no_alias = distinct
             && (index == 0 || index == 1 + usize::from(entry.hidden_vtt(graph)?))
             || parameter_no_alias(facts.builtin, index);
     }
-    builtin_boundary(&mut boundary.boundary, facts.builtin);
-    declared_effects(&mut boundary.boundary, graph, entry.entity(graph));
     Ok(signature)
 }

@@ -142,6 +142,49 @@ impl Specifications {
     }
 }
 
+impl super::graph::Graph {
+    pub(crate) fn lower_demand_function_nothrow(
+        &mut self,
+        tree: &mut ast::Tree,
+        cursor: &mut crate::syntax::cursor::Cursor<'_>,
+        budget: crate::support::stack::StackBudget,
+        stack_base: usize,
+        function: EntityId,
+    ) -> Result<bool, Error> {
+        let function = self.lower_function_entity(function);
+        let entity = self.entity(function);
+        if entity.constructor_exceptions
+            == super::construction::ConstructorExceptionSource::SubobjectPlan
+        {
+            if let Some(constructor) = entity.constructor {
+                return Ok(self.constructors.get(constructor).nothrow);
+            }
+        } else {
+            let pending = match entity.exceptions {
+                ExceptionState::Pending(id) => !matches!(
+                    self.specifications.get(id).qualifier,
+                    Some(Qualifier { kind: QualifierKind::Throw(types), .. }) if !types.is_empty()
+                ),
+                ExceptionState::Template(_) => self.function_templates.primary(function).is_some(),
+                _ => false,
+            };
+            if !pending {
+                return Ok(matches!(
+                    entity.exceptions,
+                    ExceptionState::Value(ExceptionSet::None)
+                ));
+            }
+        }
+        let graph = std::mem::replace(self, Self::new());
+        let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(graph))?;
+        analyzer.set_lowering();
+        analyzer.stack_base = stack_base;
+        let result = analyzer.function_may_throw(function).map(|throws| !throws);
+        *self = analyzer.graph;
+        result
+    }
+}
+
 impl Analyzer<'_> {
     pub(super) fn prepare_throw_specification_layouts(
         &mut self,
@@ -1372,6 +1415,61 @@ mod tests {
             resumed.graph.entity(function).exceptions,
             ExceptionState::Value(ExceptionSet::None)
         ));
+    }
+
+    #[test]
+    fn lowering_specification_failure_restores_the_graph_and_closed_unit_pass() {
+        use super::super::lookup::Filter;
+        let source = SourceBuffer::new(
+            b"struct K{};template<class T>struct Lazy{void bad()noexcept(T::missing);\
+              void good()noexcept(sizeof(T)>0);};Lazy<K>value;"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"lower-exception-demand").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let value = cursor.intern_name(b"value").unwrap();
+        let bad_name = cursor.intern_name(b"bad").unwrap();
+        let good_name = cursor.intern_name(b"good").unwrap();
+        let budget = StackBudget::default();
+        let mut analyzer = Analyzer::new(tree, cursor, budget).unwrap();
+        analyzer.set_lowering();
+        let mut graph = analyzer.analyze(declarations).unwrap();
+        let binding = graph.own(graph.global, value, Filter::Ordinary).unwrap();
+        let class = graph.class_of(graph.binding(binding).ty.unwrap()).unwrap();
+        let scope = graph.entity(class).scope.unwrap();
+        let bad = graph
+            .binding(graph.own(scope, bad_name, Filter::Ordinary).unwrap())
+            .entity;
+        let good = graph
+            .binding(graph.own(scope, good_name, Filter::Ordinary).unwrap())
+            .entity;
+        let marker = 0u8;
+        let stack_base = std::ptr::from_ref(&marker).addr();
+        let error = graph
+            .lower_demand_function_nothrow(tree, cursor, budget, stack_base, bad)
+            .unwrap_err();
+        assert!(matches!(error, Error::InstantiationDiagnostic { .. }));
+        assert!(graph.specifications.unit_closed());
+        assert!(matches!(
+            graph.entity(bad).exceptions,
+            ExceptionState::Pending(_)
+        ));
+        assert!(
+            graph
+                .lower_demand_function_nothrow(tree, cursor, budget, stack_base, good)
+                .unwrap()
+        );
+        let evaluations = graph.work().constant_evaluations;
+        assert!(
+            graph
+                .lower_demand_function_nothrow(tree, cursor, budget, stack_base, good)
+                .unwrap()
+        );
+        assert_eq!(graph.work().constant_evaluations, evaluations);
+        assert!(graph.specifications.unit_closed());
     }
 
     #[test]

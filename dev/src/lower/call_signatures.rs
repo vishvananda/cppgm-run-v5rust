@@ -191,17 +191,12 @@ impl Symbols<'_, '_> {
                     },
                 });
         }
-        if self.state.table.object_mode
-            && !program.symbol(symbol).declared()
-            && program.forward_boundary(symbol).is_none()
-        {
-            let signature = crate::lower::function::declaration_signature(
-                program,
-                self,
-                self.graph,
+        if !program.symbol(symbol).declared() {
+            self.state.declarations.reserve(
+                symbol,
                 crate::lower::construction::Entry::Function(entity),
-            )?;
-            program.set_forward_boundary(symbol, signature, metadata);
+                metadata,
+            );
         }
         Ok(symbol)
     }

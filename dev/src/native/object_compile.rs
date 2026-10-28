@@ -1117,6 +1117,9 @@ impl ObjectBuilder {
 }
 
 impl crate::lowir::model::DefinitionSink for ObjectBuilder {
+    fn needs_boundaries(&self) -> bool {
+        true
+    }
     fn reads_jump_thunks(&self) -> bool {
         true
     }
