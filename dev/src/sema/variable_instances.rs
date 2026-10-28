@@ -574,6 +574,7 @@ impl Analyzer<'_> {
         ty: TypeId,
         declared: TypeId,
         scope: ScopeId,
+        copy: &mut super::pack_frames::CopySession,
     ) -> Result<TypeId, Error> {
         let TypeKind::Array {
             element,
@@ -596,7 +597,7 @@ impl Analyzer<'_> {
                 .template_operands
                 .pattern(entity)
                 .ok_or(Error::Invariant("array bound without syntax"))?;
-            let expression = self.copy_expression_in_frame(pattern.expression, scope)?;
+            let expression = self.copy_expression_with_session(pattern.expression, copy)?;
             self.array_bound(expression, scope)?
         } else {
             bound
@@ -714,77 +715,81 @@ impl Analyzer<'_> {
         let Some(pattern) = self.graph.variable_instances.outside_definition(entity) else {
             return Ok(());
         };
-        let owner = self
-            .graph
-            .entity(entity)
-            .home
-            .ok_or(Error::Invariant("instance variable without owner"))?;
-        let frame = if pattern.qualified {
-            self.outside_class_frame(owner, pattern.head, pattern.scope)?
-        } else {
-            owner
-        };
-        self.graph
-            .variable_instances
-            .states
-            .insert(entity, State::InProgress);
-        let result = self.required_instantiation(
-            self.graph.instantiation_levels.get(entity)?,
-            pattern.location,
-            pattern.limit,
-            |analyzer| {
-                let initializer = pattern
-                    .initializer
-                    .map(|init| analyzer.copy_initializer_in_frame(init, frame))
-                    .transpose()?;
-                let binding = analyzer
-                    .graph
-                    .own(
-                        owner,
-                        analyzer
-                            .graph
-                            .entity(entity)
-                            .name
-                            .ok_or(Error::Invariant("unnamed static member"))?,
-                        super::lookup::Filter::Ordinary,
-                    )
-                    .ok_or(Error::Invariant("static member without binding"))?;
-                analyzer.graph.entity_mut(entity).defined = true;
-                analyzer.graph.entity_mut(entity).variable_definition = Some(pattern.declarator);
-                let mut ty = analyzer
-                    .graph
-                    .entity(entity)
-                    .ty
-                    .ok_or(Error::Invariant("static member without type"))?;
-                ty = analyzer.instance_array_type(ty, pattern.ty, frame)?;
-                ty = analyzer.complete_initializer_array(ty, initializer)?;
-                analyzer.graph.complete_variable_type(binding, ty)?;
-                let effective = initializer.or(analyzer.graph.entity(entity).member_initializer);
-                if let Some(initializer) = initializer {
-                    analyzer.initialize_variable(binding, initializer, frame, pattern.location)?;
-                    analyzer.record_constant_initializer(entity, initializer, frame)?;
-                } else if effective.is_none()
-                    && !matches!(
-                        analyzer.graph.entity(entity).constant,
-                        ConstantState::Value(_)
-                    )
-                    && !analyzer.graph.entity(entity).constexpr
-                {
-                    analyzer.default_initialize_declaration(binding, pattern.location)?;
-                }
-                analyzer.variable_destruction(
-                    binding,
-                    frame,
-                    pattern.location,
-                    effective.is_some(),
-                )?;
-                if analyzer.lowering() {
-                    analyzer.request_static_initializer(entity, effective, frame, owner)?;
-                    analyzer.request_storage_layout(entity, pattern.location)?;
-                }
-                Ok(effective)
-            },
-        );
+        self.graph.variable_instances.begin(entity);
+        let result = (|| {
+            let owner = self
+                .graph
+                .entity(entity)
+                .home
+                .ok_or(Error::Invariant("instance variable without owner"))?;
+            let frame = if pattern.qualified {
+                self.outside_class_frame(owner, pattern.head, pattern.scope)?
+            } else {
+                owner
+            };
+            let (initializer, mut copy) =
+                self.prepare_initializer_copy(pattern.initializer, frame)?;
+            self.required_instantiation(
+                self.graph.instantiation_levels.get(entity)?,
+                pattern.location,
+                pattern.limit,
+                |analyzer| {
+                    let binding = analyzer
+                        .graph
+                        .own(
+                            owner,
+                            analyzer
+                                .graph
+                                .entity(entity)
+                                .name
+                                .ok_or(Error::Invariant("unnamed static member"))?,
+                            super::lookup::Filter::Ordinary,
+                        )
+                        .ok_or(Error::Invariant("static member without binding"))?;
+                    analyzer.graph.entity_mut(entity).defined = true;
+                    analyzer.graph.entity_mut(entity).variable_definition =
+                        Some(pattern.declarator);
+                    let mut ty = analyzer
+                        .graph
+                        .entity(entity)
+                        .ty
+                        .ok_or(Error::Invariant("static member without type"))?;
+                    ty = analyzer.instance_array_type(ty, pattern.ty, frame, &mut copy)?;
+                    ty = analyzer.complete_initializer_array(ty, initializer)?;
+                    analyzer.graph.complete_variable_type(binding, ty)?;
+                    let effective =
+                        initializer.or(analyzer.graph.entity(entity).member_initializer);
+                    if let Some(initializer) = initializer {
+                        analyzer.initialize_variable(
+                            binding,
+                            initializer,
+                            frame,
+                            pattern.location,
+                        )?;
+                        analyzer.record_constant_initializer(entity, initializer, frame)?;
+                    } else if effective.is_none()
+                        && !matches!(
+                            analyzer.graph.entity(entity).constant,
+                            ConstantState::Value(_)
+                        )
+                        && !analyzer.graph.entity(entity).constexpr
+                    {
+                        analyzer.default_initialize_declaration(binding, pattern.location)?;
+                    }
+                    analyzer.variable_destruction(
+                        binding,
+                        frame,
+                        pattern.location,
+                        effective.is_some(),
+                    )?;
+                    if analyzer.lowering() {
+                        analyzer.request_static_initializer(entity, effective, frame, owner)?;
+                        analyzer.request_storage_layout(entity, pattern.location)?;
+                    }
+                    Ok(effective)
+                },
+            )
+        })();
         match result {
             Ok(initializer) => {
                 self.graph.work.totals.instantiated_variables += 1;

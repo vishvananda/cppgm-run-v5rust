@@ -453,6 +453,10 @@ impl Analyzer<'_> {
 // nested-expansion boundaries remain authoritative.
 struct DefinitionNames;
 impl PackExpander for DefinitionNames {
+    fn mismatch(&mut self, _: crate::support::source::SourceOffset) -> Result<(), ParseError> {
+        Ok(())
+    }
+
     fn pack_length(&self, _: crate::lex::identifiers::NameId) -> Option<usize> {
         Some(0)
     }

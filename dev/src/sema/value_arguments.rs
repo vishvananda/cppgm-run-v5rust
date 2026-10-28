@@ -631,14 +631,12 @@ impl Analyzer<'_> {
         scope: ScopeId,
     ) -> Result<ast::TemplateArgument, Error> {
         let mut packs = super::pack_frames::FramePacks::new(&self.graph, scope, self.identifiers);
-        let mut cloner =
-            Cloner::new(self.tree, self.stack_budget, self.stack_base).with_expander(&mut packs);
-        cloner
-            .argument(ast::TemplateArgument {
-                kind: syntax,
-                pack: false,
-            })
-            .map_err(|error| super::template_bodies::copy_error(&error))
+        let mut cloner = packs.cloner(self.tree, self.stack_budget, self.stack_base);
+        let result = cloner.argument(ast::TemplateArgument {
+            kind: syntax,
+            pack: false,
+        });
+        packs.finish(result)
     }
 
     /// Dependent default formation retains expansions until substitution knows

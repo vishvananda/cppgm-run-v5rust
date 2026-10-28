@@ -221,6 +221,9 @@ impl Analyzer<'_> {
         &mut self,
         entity: EntityId,
     ) -> Result<(), Error> {
+        if self.graph.variable_instances.started(entity) {
+            return Ok(());
+        }
         let instance = &self.graph.variable_instances.templates.instances[&entity];
         if instance.dependent || instance.explicit {
             return Ok(());
@@ -253,62 +256,65 @@ impl Analyzer<'_> {
         if !self.graph.entity(source).defined && pattern.initializer.is_none() {
             return Ok(());
         }
-        let head = pattern
-            .head
-            .ok_or(Error::Invariant("variable definition without head"))?;
-        let owner = self
-            .graph
-            .entity(primary)
-            .home
-            .ok_or(Error::Invariant("variable template without owner"))?;
-        let frame = if source != primary || pattern.qualified {
-            self.outside_template_frame(owner, head, &deduced, pattern.scope)?
-        } else {
-            let parameters = self.graph.templates.parameter_scope(head);
-            let parent = self
-                .graph
-                .scope(parameters)
-                .parent
-                .ok_or(Error::Invariant("variable head without parent"))?;
-            let frame = self
-                .graph
-                .add_scope(ScopeKind::TemplateParameters, parent, None, None)?;
-            let depth = self.graph.templates.depth(head);
-            for index in 0..self.graph.scope(parameters).bindings.len() {
-                let old = self
-                    .graph
-                    .binding(self.graph.scope(parameters).bindings[index]);
-                if let Some(index) = self
-                    .graph
-                    .entity(old.entity)
-                    .template_parameter
-                    .and_then(|p| p.index(depth))
-                {
-                    self.bind_template_argument(frame, old, deduced[index])?;
-                }
-            }
-            frame
-        };
         self.graph.variable_instances.begin(entity);
-        let result = self.required_unlimited_instantiation(
-            self.graph.instantiation_levels.get(entity)?,
-            pattern.location,
-            |analyzer| {
-                let initializer = pattern
-                    .initializer
-                    .map(|init| analyzer.copy_initializer_in_frame(init, frame))
-                    .transpose()?;
-                analyzer.initialize_variable_specialization(
-                    binding,
-                    initializer,
-                    frame,
-                    pattern.location,
-                    pattern.auto_cv,
-                )?;
-                analyzer.graph.entity_mut(entity).variable_definition = Some(pattern.declarator);
-                Ok(Definition { initializer })
-            },
-        );
+        let result = (|| {
+            let head = pattern
+                .head
+                .ok_or(Error::Invariant("variable definition without head"))?;
+            let owner = self
+                .graph
+                .entity(primary)
+                .home
+                .ok_or(Error::Invariant("variable template without owner"))?;
+            let frame = if source != primary || pattern.qualified {
+                self.outside_template_frame(owner, head, &deduced, pattern.scope)?
+            } else {
+                let parameters = self.graph.templates.parameter_scope(head);
+                let parent = self
+                    .graph
+                    .scope(parameters)
+                    .parent
+                    .ok_or(Error::Invariant("variable head without parent"))?;
+                let frame =
+                    self.graph
+                        .add_scope(ScopeKind::TemplateParameters, parent, None, None)?;
+                let depth = self.graph.templates.depth(head);
+                for index in 0..self.graph.scope(parameters).bindings.len() {
+                    let old = self
+                        .graph
+                        .binding(self.graph.scope(parameters).bindings[index]);
+                    if let Some(index) = self
+                        .graph
+                        .entity(old.entity)
+                        .template_parameter
+                        .and_then(|p| p.index(depth))
+                    {
+                        self.bind_template_argument(frame, old, deduced[index])?;
+                    }
+                }
+                frame
+            };
+            let initializer = pattern
+                .initializer
+                .map(|init| self.copy_initializer_in_frame(init, frame))
+                .transpose()?;
+            self.required_unlimited_instantiation(
+                self.graph.instantiation_levels.get(entity)?,
+                pattern.location,
+                |analyzer| {
+                    analyzer.initialize_variable_specialization(
+                        binding,
+                        initializer,
+                        frame,
+                        pattern.location,
+                        pattern.auto_cv,
+                    )?;
+                    analyzer.graph.entity_mut(entity).variable_definition =
+                        Some(pattern.declarator);
+                    Ok(Definition { initializer })
+                },
+            )
+        })();
         if result.is_ok() {
             self.graph.work.totals.instantiated_variables += 1;
         }

@@ -238,58 +238,8 @@ impl Analyzer<'_> {
         packs: &[(Option<crate::lex::identifiers::NameId>, usize)],
         ty: TypeId,
     ) -> Result<super::graph::ScopeId, Error> {
-        use super::graph::{Binding, BindingKind, ScopeKind};
-        if packs.is_empty() {
-            return Ok(parent);
-        }
-        let scope = self
-            .graph
-            .add_scope(ScopeKind::TemplateParameters, parent, None, None)?;
-        let mut position = 0;
-        let mut next = 0;
-        for index in 0..self.tree.parameters.get(clause.parameters).len() {
-            let parameter = self.tree.parameters.get(clause.parameters)[index];
-            if !parameter
-                .declarator
-                .is_some_and(|id| self.tree.declarators.get(id).pack)
-                || next >= packs.len()
-            {
-                position += 1;
-                continue;
-            }
-            let (name, count) = packs[next];
-            next += 1;
-            if let Some(name) = name
-                && position + count <= self.graph.types.function_parameter_count(ty)?
-            {
-                let mut elements = Vec::with_capacity(count);
-                for index in position..position + count {
-                    elements.push(self.graph.types.function_parameter(ty, index)?);
-                }
-                let pack = self
-                    .graph
-                    .types
-                    .intern(TypeKind::Pack(elements), Cv::default())?;
-                let entity = self.graph.add_entity(
-                    Some(pack),
-                    Some(name),
-                    crate::lex::vocabulary::Keyword::Typedef,
-                )?;
-                self.graph.add_binding(
-                    scope,
-                    None,
-                    Binding {
-                        kind: BindingKind::Alias,
-                        name: Some(name),
-                        entity,
-                        ty: Some(pack),
-                        key: crate::lex::vocabulary::Keyword::Typedef,
-                    },
-                )?;
-            }
-            position += count;
-        }
-        Ok(scope)
+        self.graph
+            .function_pack_scope(self.tree, parent, clause, packs, ty)
     }
 
     fn deduce_pack_call_fact(
@@ -310,6 +260,65 @@ impl Analyzer<'_> {
         } else {
             self.deduce_call_argument(pattern, facts.ty, facts.category, depth, arguments)
         }
+    }
+}
+
+impl super::graph::Graph {
+    pub(super) fn function_pack_scope(
+        &mut self,
+        tree: &ast::Tree,
+        parent: super::graph::ScopeId,
+        clause: ast::ParameterClause,
+        packs: &[(Option<crate::lex::identifiers::NameId>, usize)],
+        ty: TypeId,
+    ) -> Result<super::graph::ScopeId, Error> {
+        use super::graph::{Binding, BindingKind, ScopeKind};
+        if packs.is_empty() {
+            return Ok(parent);
+        }
+        let scope = self.add_scope(ScopeKind::TemplateParameters, parent, None, None)?;
+        let mut position = 0;
+        let mut next = 0;
+        for index in 0..tree.parameters.get(clause.parameters).len() {
+            let parameter = tree.parameters.get(clause.parameters)[index];
+            if !parameter
+                .declarator
+                .is_some_and(|id| tree.declarators.get(id).pack)
+                || next >= packs.len()
+            {
+                position += 1;
+                continue;
+            }
+            let (name, count) = packs[next];
+            next += 1;
+            if let Some(name) = name
+                && position + count <= self.types.function_parameter_count(ty)?
+            {
+                let mut elements = Vec::with_capacity(count);
+                for index in position..position + count {
+                    elements.push(self.types.function_parameter(ty, index)?);
+                }
+                let pack = self.types.intern(TypeKind::Pack(elements), Cv::default())?;
+                let entity = self.add_entity(
+                    Some(pack),
+                    Some(name),
+                    crate::lex::vocabulary::Keyword::Typedef,
+                )?;
+                self.add_binding(
+                    scope,
+                    None,
+                    Binding {
+                        kind: BindingKind::Alias,
+                        name: Some(name),
+                        entity,
+                        ty: Some(pack),
+                        key: crate::lex::vocabulary::Keyword::Typedef,
+                    },
+                )?;
+            }
+            position += count;
+        }
+        Ok(scope)
     }
 }
 

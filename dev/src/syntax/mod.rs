@@ -69,6 +69,8 @@ pub(crate) fn write_member_label(
 
 #[derive(Debug)]
 pub(crate) enum ParseError {
+    /// The pack expander owns the typed error that stopped this copy.
+    CloneAbort,
     Syntax {
         location: SourceOffset,
         message: &'static str,

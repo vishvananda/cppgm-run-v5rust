@@ -11,6 +11,7 @@ use std::collections::{HashMap, HashSet};
 pub(crate) trait PackExpander {
     fn pack_length(&self, name: NameId) -> Option<usize>;
     fn element_name(&mut self, name: NameId, index: usize) -> Result<NameId, ParseError>;
+    fn mismatch(&mut self, location: SourceOffset) -> Result<(), ParseError>;
 }
 
 #[derive(Clone, Copy)]
@@ -40,23 +41,53 @@ pub(crate) struct NameUses {
     pub this: bool,
 }
 
-pub(super) struct Expansion<'a> {
-    expander: &'a mut dyn PackExpander,
+#[derive(Default)]
+pub(super) struct ExpansionState {
     collecting: Option<CollectedNames>,
     renames: HashMap<NameId, NameId>,
     shadows: HashMap<NameId, Shadow>,
     shadow_log: Vec<(NameId, Option<Shadow>)>,
     parameter_packs: Vec<(Option<NameId>, usize)>,
 }
+#[derive(Default)]
+pub(crate) struct CopyState(ExpansionState);
+
+enum ExpansionStore<'a> {
+    Owned(Box<ExpansionState>),
+    Borrowed(&'a mut ExpansionState),
+}
+pub(super) struct Expansion<'a> {
+    expander: &'a mut dyn PackExpander,
+    store: ExpansionStore<'a>,
+}
+impl std::ops::Deref for Expansion<'_> {
+    type Target = ExpansionState;
+    fn deref(&self) -> &Self::Target {
+        match &self.store {
+            ExpansionStore::Owned(state) => state,
+            ExpansionStore::Borrowed(state) => state,
+        }
+    }
+}
+impl std::ops::DerefMut for Expansion<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match &mut self.store {
+            ExpansionStore::Owned(state) => state,
+            ExpansionStore::Borrowed(state) => state,
+        }
+    }
+}
 impl<'a> Expansion<'a> {
     pub(super) fn new(expander: &'a mut dyn PackExpander) -> Self {
         Self {
             expander,
-            collecting: None,
-            renames: HashMap::new(),
-            shadows: HashMap::new(),
-            shadow_log: Vec::new(),
-            parameter_packs: Vec::new(),
+            store: ExpansionStore::Owned(Box::default()),
+        }
+    }
+    pub(super) fn borrowing(expander: &'a mut dyn PackExpander, state: &'a mut CopyState) -> Self {
+        Self {
+            expander,
+            store: ExpansionStore::Borrowed(&mut state.0),
         }
     }
     fn length(&self, name: NameId) -> Option<Length> {
@@ -93,8 +124,8 @@ impl<'a> Expansion<'a> {
     fn rename_to(&mut self, names: &[NameId], index: usize) -> Result<(), ParseError> {
         self.renames.clear();
         for &name in names {
-            self.renames
-                .insert(name, self.expander.element_name(name, index)?);
+            let element = self.expander.element_name(name, index)?;
+            self.renames.insert(name, element);
         }
         Ok(())
     }
@@ -183,9 +214,8 @@ impl Cloner<'_> {
     }
     pub(crate) fn select_pack(&mut self, name: NameId, index: usize) -> Result<(), ParseError> {
         if let Some(state) = self.expansion.as_mut() {
-            state
-                .renames
-                .insert(name, state.expander.element_name(name, index)?);
+            let element = state.expander.element_name(name, index)?;
+            state.renames.insert(name, element);
         }
         Ok(())
     }
@@ -357,7 +387,7 @@ impl Cloner<'_> {
         let names = self.collect_pattern_names(pattern, true)?.names;
         let state = self
             .expansion
-            .as_ref()
+            .as_mut()
             .ok_or(ParseError::Invariant("pack copy lost context"))?;
         let mut count = None;
         // Any pack declared in this copy defers the entire expansion, before
@@ -372,12 +402,11 @@ impl Cloner<'_> {
         for &name in &names {
             if let Some(Length::Bound(length)) = state.length(name) {
                 if count.is_some_and(|count| count != length) {
-                    return Err(ParseError::Syntax {
-                        location,
-                        message: "a pack expansion of parameter packs of different lengths",
-                    });
+                    state.expander.mismatch(location)?;
                 }
-                count = Some(length);
+                if count.is_none() {
+                    count = Some(length);
+                }
             }
         }
         Ok(count.map(|count| (names, count)))
@@ -732,9 +761,8 @@ impl Cloner<'_> {
                 .ok_or(ParseError::Invariant("parameter pack lost context"))?;
             state.rename_to(names, index)?;
             if let Some(name) = name {
-                state
-                    .renames
-                    .insert(name, state.expander.element_name(name, index)?);
+                let element = state.expander.element_name(name, index)?;
+                state.renames.insert(name, element);
             }
             let copy = self.parameter(item)?;
             if let Some(id) = copy.declarator {
@@ -796,6 +824,10 @@ mod tests {
 
     struct Packs;
     impl PackExpander for Packs {
+        fn mismatch(&mut self, _: SourceOffset) -> Result<(), ParseError> {
+            Ok(())
+        }
+
         fn pack_length(&self, _: NameId) -> Option<usize> {
             Some(3)
         }
@@ -806,12 +838,148 @@ mod tests {
 
     struct EmptyOrRepeatedPacks(usize);
     impl PackExpander for EmptyOrRepeatedPacks {
+        fn mismatch(&mut self, _: SourceOffset) -> Result<(), ParseError> {
+            Ok(())
+        }
+
         fn pack_length(&self, _: NameId) -> Option<usize> {
             Some(self.0)
         }
         fn element_name(&mut self, name: NameId, _: usize) -> Result<NameId, ParseError> {
             Ok(name)
         }
+    }
+
+    #[test]
+    fn a_copy_session_retains_parameter_packs_across_borrowing_facades() {
+        use crate::{
+            preprocess::unit::Preprocessor,
+            support::{source::SourceBuffer, stack::StackBudget},
+            syntax::{
+                SyntaxUnit,
+                render::{Render, Renderer},
+            },
+        };
+        struct TypePack(NameId);
+        impl PackExpander for TypePack {
+            fn pack_length(&self, name: NameId) -> Option<usize> {
+                (name == self.0).then_some(3)
+            }
+            fn element_name(&mut self, name: NameId, _: usize) -> Result<NameId, ParseError> {
+                Ok(name)
+            }
+            fn mismatch(&mut self, _: SourceOffset) -> Result<(), ParseError> {
+                Ok(())
+            }
+        }
+        let source = SourceBuffer::new(b"void f(T... args){sink(args...);}".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"retained-copy-session").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let name = cursor.intern_name(b"T").unwrap();
+        let ast::DeclKind::Function {
+            declarator, body, ..
+        } = tree
+            .declarations
+            .get(tree.decl_lists.get(declarations)[0])
+            .kind
+        else {
+            panic!("function")
+        };
+        let ast::Suffix::Function { parameters, .. } =
+            tree.suffixes.get(tree.declarators.get(declarator).suffixes)[0]
+        else {
+            panic!("parameters")
+        };
+        let mut packs = TypePack(name);
+        let mut state = CopyState::default();
+        let marker = 0_u8;
+        let base = std::ptr::from_ref(&marker).addr();
+        let parameters = Cloner::new(tree, StackBudget::default(), base)
+            .with_expander_state(&mut packs, &mut state)
+            .parameters(parameters)
+            .unwrap();
+        assert_eq!(tree.parameters.get(parameters.parameters).len(), 3);
+        let body = Cloner::new(tree, StackBudget::default(), base)
+            .with_expander_state(&mut packs, &mut state)
+            .body(body)
+            .unwrap();
+        let ast::Body::Parsed(body) = tree.bodies.get(body) else {
+            panic!("parsed body")
+        };
+        let mut renderer = Renderer::new(tree, cursor);
+        renderer.render(Render::Statement(body.compound)).unwrap();
+        assert_eq!(renderer.bytes, b"{sink(args,args,args);}");
+    }
+
+    #[test]
+    fn a_soft_pack_mismatch_finishes_the_copy_using_the_first_length() {
+        use crate::{
+            preprocess::unit::Preprocessor,
+            support::{source::SourceBuffer, stack::StackBudget},
+            syntax::{
+                SyntaxUnit,
+                render::{Render, Renderer},
+            },
+        };
+        struct UnequalPacks {
+            names: [NameId; 3],
+            mismatches: Vec<SourceOffset>,
+        }
+        impl PackExpander for UnequalPacks {
+            fn pack_length(&self, name: NameId) -> Option<usize> {
+                self.names
+                    .iter()
+                    .position(|&known| known == name)
+                    .map(|index| if index == 0 { 2 } else { 3 })
+            }
+            fn element_name(&mut self, name: NameId, _: usize) -> Result<NameId, ParseError> {
+                Ok(name)
+            }
+            fn mismatch(&mut self, location: SourceOffset) -> Result<(), ParseError> {
+                self.mismatches.push(location);
+                Ok(())
+            }
+        }
+        let source =
+            SourceBuffer::new(b"void f(){sink(triple<A,B,C>()...);tail();}".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"soft-copy-mismatch").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names = [b"A".as_slice(), b"B", b"C"].map(|name| cursor.intern_name(name).unwrap());
+        let ast::DeclKind::Function { body, .. } = tree
+            .declarations
+            .get(tree.decl_lists.get(declarations)[0])
+            .kind
+        else {
+            panic!("function")
+        };
+        let mut packs = UnequalPacks {
+            names,
+            mismatches: Vec::new(),
+        };
+        let marker = 0_u8;
+        let copy = Cloner::new(
+            tree,
+            StackBudget::default(),
+            std::ptr::from_ref(&marker).addr(),
+        )
+        .with_expander(&mut packs)
+        .body(body)
+        .unwrap();
+        assert_eq!(packs.mismatches.len(), 2);
+        assert_eq!(packs.mismatches[0], packs.mismatches[1]);
+        let ast::Body::Parsed(copy) = tree.bodies.get(copy) else {
+            panic!("parsed body")
+        };
+        let mut renderer = Renderer::new(tree, cursor);
+        renderer.render(Render::Statement(copy.compound)).unwrap();
+        assert_eq!(
+            renderer.bytes,
+            b"{sink(triple<A,B,C>(),triple<A,B,C>());tail();}"
+        );
     }
 
     #[test]

@@ -9,7 +9,7 @@ use super::{
 };
 use crate::{
     support::stack::StackBudget,
-    syntax::{ParseError, ast, cloning::Cloner, cursor::Cursor, storage::List},
+    syntax::{ParseError, ast, cursor::Cursor, storage::List},
 };
 use std::collections::{HashMap, HashSet};
 
@@ -19,6 +19,13 @@ struct Pattern {
     head: super::templates::HeadId,
     limit: usize,
 }
+#[derive(Clone, Copy)]
+struct PreparedBody {
+    body: DeferredBody,
+    definition: Option<ast::DeclId>,
+    location: crate::support::source::SourceOffset,
+}
+
 #[derive(Clone, Copy)]
 enum State {
     InProgress,
@@ -444,16 +451,18 @@ pub(crate) fn analyze_unit_with_mode(
             analyzer.set_lowering();
         }
         analyzer.stack_base = base;
-        let location = match analyzer.tree.bodies.get(pattern.body.body) {
-            ast::Body::Parsed(body) => analyzer.tree.statements.get(body.compound).location,
-            ast::Body::Deferred => return Err(Error::Invariant("unparsed instance body")),
+        let body = match analyzer.instantiate_body(entity, primary, pattern) {
+            Ok(body) => body,
+            Err(error) => {
+                analyzer
+                    .graph
+                    .function_templates
+                    .bodies
+                    .states
+                    .remove(&entity);
+                return Err(error);
+            }
         };
-        let body = analyzer.instantiation_context(
-            analyzer.graph.instantiation_levels.get(entity)?,
-            location,
-            pattern.limit,
-            |analyzer| analyzer.instantiate_body(entity, primary, pattern),
-        )?;
         graph = analyzer.finish_analysis(false)?;
         graph
             .function_templates
@@ -466,6 +475,7 @@ pub(crate) fn analyze_unit_with_mode(
 
 pub(super) fn copy_error(error: &ParseError) -> Error {
     match error {
+        ParseError::CloneAbort => Error::Invariant("unconsumed syntax clone abort"),
         ParseError::Syntax { location, message } => Error::at(*location, message),
         ParseError::Limit(message) => Error::Limit(message),
         _ => Error::Invariant("invalid parsed template body copy"),
@@ -564,18 +574,7 @@ impl Analyzer<'_> {
                 .bodies
                 .states
                 .insert(entity, State::InProgress);
-            let location = match self.tree.bodies.get(pattern.body.body) {
-                ast::Body::Parsed(body) => self.tree.statements.get(body.compound).location,
-                ast::Body::Deferred => {
-                    return Err(Error::Invariant("unparsed constant template body"));
-                }
-            };
-            let result = self.instantiation_context(
-                self.graph.instantiation_levels.get(entity)?,
-                location,
-                pattern.limit,
-                |analyzer| analyzer.instantiate_body(entity, primary, pattern),
-            );
+            let result = self.instantiate_body(entity, primary, pattern);
             match result {
                 Ok(body) => {
                     self.graph
@@ -627,34 +626,35 @@ impl Analyzer<'_> {
             );
             let mut packs =
                 super::pack_frames::FramePacks::new(&self.graph, pattern.parent, self.identifiers);
-            let mut cloner = Cloner::new(self.tree, self.stack_budget, self.stack_base)
-                .with_expander(&mut packs);
-            let parameters = cloner
-                .parameters(source_parameters)
-                .map_err(|error| copy_error(&error))?;
-            let body = cloner
-                .body(pattern.body)
-                .map_err(|error| copy_error(&error))?;
-            let parameter_packs = cloner.parameter_packs().to_vec();
-            let parent = self.function_pack_scope(
-                pattern.parent,
-                source_parameters,
-                &parameter_packs,
-                pattern.ty,
-            )?;
-            let target = self.graph.entity_mut(entity);
-            target.function_parameters = Some(parameters);
-            target.special_definition = match target.special_definition {
-                Some(SpecialDefinition::Body(_)) => Some(SpecialDefinition::Body(body)),
-                Some(SpecialDefinition::Defaulted {
-                    first,
-                    body: Some(_),
-                }) => Some(SpecialDefinition::Defaulted {
-                    first,
-                    body: Some(body),
-                }),
-                other => other,
-            };
+            let expands = packs.enabled();
+            let copied = {
+                let mut cloner = packs.cloner(self.tree, self.stack_budget, self.stack_base);
+                (|| -> Result<_, Error> {
+                    let parameters = if expands {
+                        match cloner.parameters(source_parameters) {
+                            Ok(parameters) => parameters,
+                            Err(error) => return Ok(Err(error)),
+                        }
+                    } else {
+                        source_parameters
+                    };
+                    let parent = if expands {
+                        self.graph.function_pack_scope(
+                            cloner.syntax(),
+                            pattern.parent,
+                            source_parameters,
+                            cloner.parameter_packs(),
+                            pattern.ty,
+                        )?
+                    } else {
+                        pattern.parent
+                    };
+                    Ok(cloner
+                        .body(pattern.body)
+                        .map(|body| (parameters, body, parent)))
+                })()
+            }?;
+            let (parameters, body, parent) = packs.finish(copied)?;
             let location = match self.tree.bodies.get(body) {
                 ast::Body::Parsed(body) => self.tree.statements.get(body.compound).location,
                 ast::Body::Deferred => return Err(Error::Invariant("unparsed instance body")),
@@ -664,6 +664,19 @@ impl Analyzer<'_> {
                 location,
                 limit,
                 |analyzer| {
+                    let target = analyzer.graph.entity_mut(entity);
+                    target.function_parameters = Some(parameters);
+                    target.special_definition = match target.special_definition {
+                        Some(SpecialDefinition::Body(_)) => Some(SpecialDefinition::Body(body)),
+                        Some(SpecialDefinition::Defaulted {
+                            first,
+                            body: Some(_),
+                        }) => Some(SpecialDefinition::Defaulted {
+                            first,
+                            body: Some(body),
+                        }),
+                        other => other,
+                    };
                     analyzer.function_body(DeferredBody {
                         parameters,
                         body,
@@ -946,6 +959,23 @@ impl Analyzer<'_> {
         primary: EntityId,
         pattern: Pattern,
     ) -> Result<ast::BodyId, Error> {
+        let prepared = self.prepare_template_body(entity, primary, pattern)?;
+        let body = self.instantiation_context(
+            self.graph.instantiation_levels.get(entity)?,
+            prepared.location,
+            pattern.limit,
+            |analyzer| analyzer.analyze_prepared_template_body(prepared),
+        )?;
+        self.graph.work.totals.instantiated_functions += 1;
+        Ok(body)
+    }
+
+    fn prepare_template_body(
+        &mut self,
+        entity: EntityId,
+        primary: EntityId,
+        pattern: Pattern,
+    ) -> Result<PreparedBody, Error> {
         let definition = pattern.body;
         let frame = if definition.entity == primary {
             self.template_body_frame(entity, pattern.head, definition.parent)?
@@ -959,53 +989,80 @@ impl Analyzer<'_> {
             definition.body,
             definition.parameters,
         );
-        let mut packs = super::pack_frames::FramePacks::new(&self.graph, frame, self.identifiers);
-        let mut cloner =
-            Cloner::new(self.tree, self.stack_budget, self.stack_base).with_expander(&mut packs);
-        let parameters = cloner
-            .parameters(source_parameters)
-            .map_err(|error| copy_error(&error))?;
-        let body = cloner
-            .body(definition.body)
-            .map_err(|error| copy_error(&error))?;
-        let parameter_packs = cloner.parameter_packs().to_vec();
-        // The formed declaration owns object parameter types; calls use its
-        // canonical signature, while the body retains declared cv exactly once.
         let ty = *self
             .graph
             .function_templates
             .object_signatures
             .get(&entity)
             .ok_or(Error::Invariant("template body without object signature"))?;
-        let frame = self.function_pack_scope(frame, source_parameters, &parameter_packs, ty)?;
-        self.graph.entity_mut(entity).function_definition =
-            self.graph.entity(definition.entity).function_definition;
-        self.graph.entity_mut(entity).defined = true;
-        self.graph.entity_mut(entity).function_parameters = Some(parameters);
-        if matches!(
-            self.graph.entity(entity).special_definition,
-            Some(SpecialDefinition::Body(_))
-        ) {
-            self.graph.entity_mut(entity).special_definition = Some(SpecialDefinition::Body(body));
-        }
-        self.graph.lookup_limit = Some(pattern.limit);
-        self.resolve_specialization_exception(entity)?;
-        self.substitute_throw_specification(entity)?;
-        let result = self.function_body(DeferredBody {
-            entity,
-            ty,
-            body,
-            parameters,
-            parent: frame,
-            print: frame,
-            template_depth: 0,
-            ..definition
-        });
-        self.graph.lookup_limit = None;
-        result?;
-        self.graph.work.totals.instantiated_functions += 1;
-        Ok(body)
+        let mut packs = super::pack_frames::FramePacks::new(&self.graph, frame, self.identifiers);
+        let expands = packs.enabled();
+        let copied = {
+            let mut cloner = packs.cloner(self.tree, self.stack_budget, self.stack_base);
+            (|| -> Result<_, Error> {
+                let parameters = if expands {
+                    match cloner.parameters(source_parameters) {
+                        Ok(parameters) => parameters,
+                        Err(error) => return Ok(Err(error)),
+                    }
+                } else {
+                    source_parameters
+                };
+                let parent = if expands {
+                    self.graph.function_pack_scope(
+                        cloner.syntax(),
+                        frame,
+                        source_parameters,
+                        cloner.parameter_packs(),
+                        ty,
+                    )?
+                } else {
+                    frame
+                };
+                Ok(cloner
+                    .body(definition.body)
+                    .map(|body| (parameters, body, parent)))
+            })()
+        }?;
+        let (parameters, body, parent) = packs.finish(copied)?;
+        let location = match self.tree.bodies.get(body) {
+            ast::Body::Parsed(body) => self.tree.statements.get(body.compound).location,
+            ast::Body::Deferred => return Err(Error::Invariant("unparsed instance body")),
+        };
+        Ok(PreparedBody {
+            body: DeferredBody {
+                entity,
+                ty,
+                parameters,
+                body,
+                parent,
+                print: parent,
+                template_depth: 0,
+                ..definition
+            },
+            definition: self.graph.entity(definition.entity).function_definition,
+            location,
+        })
     }
+
+    fn analyze_prepared_template_body(
+        &mut self,
+        prepared: PreparedBody,
+    ) -> Result<ast::BodyId, Error> {
+        let body = prepared.body;
+        let target = self.graph.entity_mut(body.entity);
+        target.function_definition = prepared.definition;
+        target.defined = true;
+        target.function_parameters = Some(body.parameters);
+        if matches!(target.special_definition, Some(SpecialDefinition::Body(_))) {
+            target.special_definition = Some(SpecialDefinition::Body(body.body));
+        }
+        self.substitute_throw_specification(body.entity)?;
+        self.function_body(body)?;
+        self.virtual_definition(body.entity, prepared.location)?;
+        Ok(body.body)
+    }
+
     pub(super) fn template_body_frame(
         &mut self,
         entity: EntityId,

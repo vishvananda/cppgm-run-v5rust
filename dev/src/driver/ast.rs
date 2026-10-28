@@ -511,6 +511,7 @@ fn emit_preprocessed(
             ParseError::Preprocess(PreprocessError::NotImplemented(group)) => {
                 AstToolError::Missing(group)
             }
+            ParseError::CloneAbort => AstToolError::Internal("unconsumed syntax clone abort"),
             ParseError::Invariant(message)
             | ParseError::Preprocess(PreprocessError::Invariant(message)) => {
                 AstToolError::Internal(message)

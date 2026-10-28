@@ -16,14 +16,14 @@ use super::{
 use crate::support::stack::StackBudget;
 mod expansions;
 use expansions::Expansion;
-pub(crate) use expansions::PackExpander;
+pub(crate) use expansions::{CopyState, PackExpander};
 
 pub(crate) struct Cloner<'a> {
     tree: &'a mut Tree,
     budget: StackBudget,
     base: usize,
     retain_bodies: bool,
-    expansion: Option<Box<Expansion<'a>>>,
+    expansion: Option<Expansion<'a>>,
 }
 impl<'a> Cloner<'a> {
     pub(crate) fn new(tree: &'a mut Tree, budget: StackBudget, base: usize) -> Self {
@@ -35,8 +35,19 @@ impl<'a> Cloner<'a> {
             expansion: None,
         }
     }
+    pub(crate) fn syntax(&self) -> &Tree {
+        self.tree
+    }
     pub(crate) fn with_expander(mut self, expander: &'a mut dyn PackExpander) -> Self {
-        self.expansion = Some(Box::new(Expansion::new(expander)));
+        self.expansion = Some(Expansion::new(expander));
+        self
+    }
+    pub(crate) fn with_expander_state(
+        mut self,
+        expander: &'a mut dyn PackExpander,
+        state: &'a mut CopyState,
+    ) -> Self {
+        self.expansion = Some(Expansion::borrowing(expander, state));
         self
     }
     pub(crate) fn class_definition(&mut self, id: ClassId) -> Result<ClassId, ParseError> {

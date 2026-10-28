@@ -7,7 +7,7 @@ use super::{
     graph::{EntityId, ScopeId, ScopeKind},
     templates::HeadId,
 };
-use crate::syntax::{ast, cloning::Cloner};
+use crate::syntax::ast;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy)]
@@ -462,67 +462,66 @@ impl Analyzer<'_> {
                 .origins
                 .insert(entity, origin);
         }
-        let result = self.required_instantiation(
-            self.graph.instantiation_levels.get(entity)?,
-            self.tree.classes.get(pattern.syntax).location,
-            pattern.limit,
-            |analyzer| {
-                let frame = if analyzer
+        let result = (|| {
+            let frame = if self
+                .graph
+                .class_templates
+                .definitions
+                .sources
+                .contains_key(&entity)
+            {
+                let owner = self
                     .graph
-                    .class_templates
-                    .definitions
-                    .sources
-                    .contains_key(&entity)
-                {
-                    let owner = analyzer
-                        .graph
-                        .entity(entity)
-                        .home
-                        .ok_or(Error::Invariant("member class without owner"))?;
-                    analyzer.outside_class_frame(owner, pattern.head, pattern.parent)?
-                } else if outside {
-                    let owner = analyzer
-                        .graph
-                        .entity(entity)
-                        .home
-                        .ok_or(Error::Invariant("member template without owner"))?;
-                    let head = pattern
-                        .head
-                        .ok_or(Error::Invariant("outside template without head"))?;
-                    analyzer.outside_template_frame(owner, head, &arguments, pattern.parent)?
-                } else {
-                    analyzer.class_definition_frame(pattern, &arguments)?
-                };
-                let mut packs = super::pack_frames::FramePacks::new(
-                    &analyzer.graph,
-                    frame,
-                    analyzer.identifiers,
-                );
-                let copy = Cloner::new(analyzer.tree, analyzer.stack_budget, analyzer.stack_base)
-                    .with_expander(&mut packs)
-                    .class_definition(pattern.syntax)
-                    .map_err(|error| super::template_bodies::copy_error(&error))?;
-                let node = *analyzer.tree.classes.get(copy);
-                analyzer
+                    .entity(entity)
+                    .home
+                    .ok_or(Error::Invariant("member class without owner"))?;
+                self.outside_class_frame(owner, pattern.head, pattern.parent)?
+            } else if outside {
+                let owner = self
                     .graph
-                    .class_templates
-                    .definitions
-                    .active
-                    .push(ActiveClass {
-                        entity,
-                        pattern: pattern.syntax,
-                        copy,
-                        declared: 0,
-                        linked: 0,
-                    });
-                let result = analyzer.class_body(node, entity, frame, None);
-                analyzer.graph.class_templates.definitions.active.pop();
-                result?;
-                analyzer.link_member_patterns(pattern.syntax, copy);
-                analyzer.finish_member_enums(entity)?;
-                Ok(())
-            },
-        );
+                    .entity(entity)
+                    .home
+                    .ok_or(Error::Invariant("member template without owner"))?;
+                let head = pattern
+                    .head
+                    .ok_or(Error::Invariant("outside template without head"))?;
+                self.outside_template_frame(owner, head, &arguments, pattern.parent)?
+            } else {
+                self.class_definition_frame(pattern, &arguments)?
+            };
+            let mut packs =
+                super::pack_frames::FramePacks::new(&self.graph, frame, self.identifiers);
+            let copied = packs
+                .cloner(self.tree, self.stack_budget, self.stack_base)
+                .class_definition(pattern.syntax);
+            let copy = packs.finish(copied)?;
+            self.required_instantiation(
+                self.graph.instantiation_levels.get(entity)?,
+                self.tree.classes.get(pattern.syntax).location,
+                pattern.limit,
+                |analyzer| {
+                    let node = *analyzer.tree.classes.get(copy);
+                    analyzer
+                        .graph
+                        .class_templates
+                        .definitions
+                        .active
+                        .push(ActiveClass {
+                            entity,
+                            pattern: pattern.syntax,
+                            copy,
+                            declared: 0,
+                            linked: 0,
+                        });
+                    let result = analyzer.class_body(node, entity, frame, None);
+                    analyzer.graph.class_templates.definitions.active.pop();
+                    result?;
+                    analyzer.link_member_patterns(pattern.syntax, copy);
+                    analyzer.finish_member_enums(entity)?;
+                    Ok(())
+                },
+            )
+        })();
         if result.is_ok() {
             self.graph.work.totals.instantiated_classes += 1;
             self.graph

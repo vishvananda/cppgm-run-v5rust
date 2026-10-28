@@ -9,7 +9,7 @@ use super::{
     lookup::Filter,
     templates::HeadId,
 };
-use crate::syntax::{ast, cloning::Cloner};
+use crate::syntax::ast;
 use std::collections::HashMap;
 
 #[derive(Clone, Copy)]
@@ -220,10 +220,10 @@ impl Analyzer<'_> {
             return Err(Error::Invariant("member enum pattern syntax"));
         };
         let mut packs = super::pack_frames::FramePacks::new(&self.graph, values, self.identifiers);
-        let copy = Cloner::new(self.tree, self.stack_budget, self.stack_base)
-            .with_expander(&mut packs)
-            .enum_values(enumerators)
-            .map_err(|error| super::template_bodies::copy_error(&error))?;
+        let copied = packs
+            .cloner(self.tree, self.stack_budget, self.stack_base)
+            .enum_values(enumerators);
+        let copy = packs.finish(copied)?;
         let location = self.tree.declarations.get(pattern.syntax).location;
         self.graph
             .class_templates
