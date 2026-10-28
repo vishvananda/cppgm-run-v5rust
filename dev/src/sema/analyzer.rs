@@ -81,6 +81,7 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) constant_spine: Vec<ast::ExprId>,
     pub(super) constant_discard_work: Vec<ast::ExprId>,
     pub(super) constant_evaluation: Option<super::constant_addresses::Evaluation>,
+    pub(super) constant_query: Option<super::interpreter_queries::QueryKind>,
     pub(super) constexpr_frames: super::constexpr_frames::Frames,
     pub(super) constant_scratch: super::constant_addresses::Evaluation,
     pub(super) expression_work: Vec<(ast::ExprId, bool)>,
@@ -300,6 +301,7 @@ impl<'tree> Analyzer<'tree> {
             constant_spine: Vec::new(),
             constant_discard_work: Vec::new(),
             constant_evaluation: None,
+            constant_query: None,
             constexpr_frames: super::constexpr_frames::Frames::default(),
             constant_scratch: super::constant_addresses::Evaluation::default(),
             expression_work: Vec::new(),
@@ -683,10 +685,12 @@ impl<'tree> Analyzer<'tree> {
                 ));
             }
             self.convert_bool(condition)?;
-            self.in_constant_evaluation(|analyzer| analyzer.constant_truth(condition, scope, false))
-                .map_err(|error| {
-                    error.required_expression(self.tree.expressions.get(condition).location)
-                })?
+            self.with_fresh_constant_query(|analyzer| {
+                analyzer.constant_truth(condition, scope, false)
+            })
+            .map_err(|error| {
+                error.required_expression(self.tree.expressions.get(condition).location)
+            })?
         } else {
             let value = self
                 .constant_value(condition, scope, true)?

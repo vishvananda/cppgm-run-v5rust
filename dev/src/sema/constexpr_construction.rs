@@ -826,7 +826,7 @@ impl Analyzer<'_> {
             return Err(nonconstant(location, "constexpr calls nested too deeply"));
         }
         let region;
-        let frame = if let Some(function) = function {
+        let mut frame = if let Some(function) = function {
             let entity = self.graph.entity(function);
             if !entity.constexpr
                 && self.graph.inherited_constructors.source(function).is_none()
@@ -865,12 +865,14 @@ impl Analyzer<'_> {
                     .entity(class)
                     .scope
                     .ok_or(Error::Invariant("constant class without scope"))?,
+                super::constexpr_frames::FrameRole::Constructor,
             );
             frame.object = Some(target);
             frame.source_function =
                 Some(super::predefined_names::SourceFunction::ImplicitConstructor(class));
             frame
         };
+        frame.role = super::constexpr_frames::FrameRole::Constructor;
         let parameters = frame.parameters.clone();
         let result = self.with_constant_frame(frame, |analyzer| {
             analyzer.constant_constructor_subobjects(target, id, location)?;

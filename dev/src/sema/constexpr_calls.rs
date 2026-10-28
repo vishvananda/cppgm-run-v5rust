@@ -126,9 +126,9 @@ impl Analyzer<'_> {
         Ok(())
     }
     pub(super) fn constant_step(&mut self, location: SourceOffset) -> Result<(), Error> {
-        self.graph.work.totals.constant_steps += 1;
+        self.constexpr_frames.step(location)?;
         self.check_stack()?;
-        self.constexpr_frames.step(location)
+        Ok(())
     }
     pub(super) fn converted_constant_bool(
         &mut self,
@@ -136,7 +136,7 @@ impl Analyzer<'_> {
         scope: ScopeId,
     ) -> Result<bool, Error> {
         let location = self.tree.expressions.get(id).location;
-        self.in_constant_evaluation(|analyzer| {
+        self.with_fresh_constant_query(|analyzer| {
             let boolean = analyzer.graph.types.scalar(Scalar::Bool)?;
             let value = analyzer.constant_operand_value(id, boolean, scope)?;
             let Value::Integer(value) = value else {
@@ -929,7 +929,7 @@ impl Analyzer<'_> {
             .entity(function)
             .scope
             .ok_or(Error::Invariant("constant function without scope"))?;
-        let mut frame = Frame::new(returns, scope);
+        let mut frame = Frame::new(returns, scope, super::constexpr_frames::FrameRole::Ordinary);
         frame.source_function = Some(super::predefined_names::SourceFunction::Function(function));
         frame.object = object;
         for (index, value) in bound.into_iter().enumerate() {

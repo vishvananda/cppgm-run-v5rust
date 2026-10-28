@@ -400,7 +400,9 @@ impl Analyzer<'_> {
         if !self.graph.address_parameter_type(ty) {
             // Even literal integer zero retains its integer type; conversion
             // to a pointer parameter diagnoses it where that parameter is known.
-            let value = self.evaluate_constant(expression, scope, false)?;
+            let value = self.with_fresh_constant_query(|analyzer| {
+                analyzer.evaluate_constant(expression, scope, false)
+            })?;
             if value.indeterminate() {
                 return Err(super::constant_addresses::nonconstant(
                     self.tree.expressions.get(expression).location,
@@ -420,11 +422,15 @@ impl Analyzer<'_> {
             self.graph.types.get(ty).kind,
             TypeKind::MemberPointer { .. }
         ) {
-            self.evaluate_member_pointer(expression, scope)?
-                .member
-                .is_none()
+            self.with_fresh_constant_query(|analyzer| {
+                analyzer.evaluate_member_pointer(expression, scope)
+            })?
+            .member
+            .is_none()
         } else {
-            self.evaluate_address(expression, scope)?.root == Root::Null
+            self.with_fresh_constant_query(|analyzer| analyzer.evaluate_address(expression, scope))?
+                .root
+                == Root::Null
         };
         if !null {
             return Err(Error::at(

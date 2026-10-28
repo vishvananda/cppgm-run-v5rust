@@ -727,7 +727,9 @@ impl Analyzer<'_> {
                 TypeKind::Scalar(Scalar::Basic(f)) if f.floating_rank() != 0);
         if !constant && self.semantic() && self.template_depth == 0 && scalar_fallback {
             use super::constant_addresses::{Root, TemporaryValue};
-            constant = match self.scalar_value(operand, scope) {
+            constant = match self
+                .with_fresh_constant_query(|analyzer| analyzer.scalar_value(operand, scope))
+            {
                 Ok(value @ TemporaryValue::Floating(_)) => !value.indeterminate(),
                 Ok(TemporaryValue::Pointer(value)) => {
                     matches!(value.root, Root::Null | Root::Literal(_))

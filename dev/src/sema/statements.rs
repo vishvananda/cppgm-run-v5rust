@@ -178,7 +178,7 @@ impl Analyzer<'_> {
                         ));
                     };
                     let value = self
-                        .in_constant_evaluation(|analyzer| {
+                        .with_fresh_constant_query(|analyzer| {
                             analyzer.constant_truth(expr, block, false)
                         })
                         .map_err(|error| {

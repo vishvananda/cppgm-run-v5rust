@@ -144,7 +144,9 @@ impl Analyzer<'_> {
         }
         if matches!(form.result, AtomicResult::Constant) {
             let constant = self
-                .evaluate_constant(arguments[0], scope, false)
+                .with_fresh_constant_query(|analyzer| {
+                    analyzer.evaluate_constant(arguments[0], scope, false)
+                })
                 .map_err(|_| {
                     Error::at(
                         location,

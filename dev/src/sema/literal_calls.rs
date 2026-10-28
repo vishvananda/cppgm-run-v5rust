@@ -704,13 +704,21 @@ mod tests {
                 .literal_call,
             Some(LiteralCall::Raw { object: None, .. })
         ));
-        analyzer.constant_literal_call(id, scope, None).unwrap();
+        analyzer
+            .in_constant_evaluation(|analyzer| {
+                analyzer.constant_literal_call(id, scope, None).map(|_| ())
+            })
+            .unwrap();
         let storage = analyzer.graph.lower_literal_storage(id).unwrap();
         assert!(matches!(
             analyzer.graph.types.get(storage).kind,
             TypeKind::Array { bound: 4, .. }
         ));
-        analyzer.constant_literal_call(id, scope, None).unwrap();
+        analyzer
+            .in_constant_evaluation(|analyzer| {
+                analyzer.constant_literal_call(id, scope, None).map(|_| ())
+            })
+            .unwrap();
         assert_eq!(analyzer.graph.lower_literal_storage(id).unwrap(), storage);
         assert_eq!(analyzer.constexpr_frames.depth(), 0);
     }
@@ -859,7 +867,11 @@ mod tests {
         // constant values before inspecting the interpreter's array identity.
         for &literal in &literals {
             analyzer
-                .constant_literal_call(literal, global, None)
+                .in_constant_evaluation(|analyzer| {
+                    analyzer
+                        .constant_literal_call(literal, global, None)
+                        .map(|_| ())
+                })
                 .unwrap();
         }
         let objects: Vec<_> = literals

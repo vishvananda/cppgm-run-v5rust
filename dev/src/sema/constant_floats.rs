@@ -796,7 +796,7 @@ impl Analyzer<'_> {
         let ty = self.graph.lower_entity_type(entity)?;
         self.graph.entity_mut(entity).constant = ConstantState::Evaluating;
         let result = (|| {
-            let value = self.in_constant_evaluation(|analyzer| {
+            let value = self.with_fresh_constant_query(|analyzer| {
                 analyzer.initialized_scalar_value(ty, initializer, scope)
             })?;
             let Value::Floating(value) = value else {

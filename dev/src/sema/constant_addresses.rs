@@ -221,10 +221,11 @@ impl Analyzer<'_> {
         &mut self,
         evaluate: impl FnOnce(&mut Self) -> Result<T, Error>,
     ) -> Result<T, Error> {
-        if self.constant_evaluation.is_none() {
-            self.graph.work.totals.constant_evaluations += 1;
+        if self.constant_query.is_some() {
+            evaluate(self)
+        } else {
+            self.with_fresh_constant_query(evaluate)
         }
-        self.with_constant_storage(evaluate)
     }
 
     pub(super) fn with_constant_storage<T>(
@@ -1441,7 +1442,7 @@ impl Analyzer<'_> {
             }
         }
         self.graph.constant_addresses.begin(entity);
-        let result = self.in_constant_evaluation(|analyzer| {
+        let result = self.with_fresh_constant_query(|analyzer| {
             let expr = analyzer.single_initializer(initializer);
             if reference {
                 let expr = expr.ok_or_else(|| {

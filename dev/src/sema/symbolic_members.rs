@@ -497,7 +497,7 @@ impl Analyzer<'_> {
         scope: ScopeId,
     ) -> Result<(), Error> {
         self.graph.entity_mut(entity).constant = ConstantState::Evaluating;
-        let result = self.in_constant_evaluation(|a| {
+        let result = self.with_fresh_constant_query(|a| {
             let ty = a.graph.lower_entity_type(entity)?;
             let super::constant_addresses::TemporaryValue::MemberPointer(value) =
                 a.initialized_scalar_value(ty, initializer, scope)?

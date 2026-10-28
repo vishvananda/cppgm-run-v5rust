@@ -81,7 +81,9 @@ impl Analyzer<'_> {
                     (base, index)
                 };
                 let mut place = self.static_pointer(base, scope)?;
-                let count = self.evaluate_constant(index, scope, false)?;
+                let count = self.with_fresh_constant_query(|analyzer| {
+                    analyzer.evaluate_constant(index, scope, false)
+                })?;
                 if count.indeterminate() {
                     return Err(super::constant_addresses::nonconstant(
                         node.location,
@@ -290,7 +292,9 @@ impl Analyzer<'_> {
                     (right, left)
                 };
                 let mut place = self.static_pointer(pointer, scope)?;
-                let count = self.evaluate_constant(index, scope, false)?;
+                let count = self.with_fresh_constant_query(|analyzer| {
+                    analyzer.evaluate_constant(index, scope, false)
+                })?;
                 if count.indeterminate() {
                     return Err(super::constant_addresses::nonconstant(
                         node.location,
@@ -325,7 +329,9 @@ impl Analyzer<'_> {
                 then_expr,
                 else_expr,
             } => {
-                let selected = if self.constant_truth(condition, scope, false)? {
+                let selected = if self.with_fresh_constant_query(|analyzer| {
+                    analyzer.constant_truth(condition, scope, false)
+                })? {
                     then_expr
                 } else {
                     else_expr

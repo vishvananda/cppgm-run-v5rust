@@ -725,7 +725,7 @@ impl Analyzer<'_> {
     ) -> Result<Option<TemporaryValue>, Error> {
         // Evaluate the already selected conversion only up to its returned
         // scalar. Applying the second conversion first would hide truncation.
-        let result = self.in_constant_evaluation(|analyzer| {
+        let result = self.with_fresh_constant_query(|analyzer| {
             if analyzer
                 .graph
                 .expression_facts

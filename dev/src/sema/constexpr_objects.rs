@@ -143,6 +143,7 @@ impl Analyzer<'_> {
             self.constexpr_frames
                 .locate(&self.graph.constant_member_spans, place, location)?;
         self.populate_constant_skeleton(place, root, location, origin)?;
+        self.constexpr_frames.check_storage_budget(location)?;
         Ok(Address {
             designated: ty,
             ..place
@@ -204,7 +205,7 @@ impl Analyzer<'_> {
         origin: SkeletonOrigin,
     ) -> Result<(), Error> {
         if matches!(origin, SkeletonOrigin::Fresh) {
-            self.graph.work.totals.constant_steps += 1;
+            self.constexpr_frames.skeleton_step();
         }
         self.check_stack()?;
         match self.graph.types.get(place.designated).kind {
@@ -231,6 +232,16 @@ impl Analyzer<'_> {
             TypeKind::Array { element, bound, .. } | TypeKind::Vector { element, bound, .. } => {
                 if self.vector_shape(place.designated).is_some()
                     && self.constant_lane_vector(place.designated).is_none()
+                {
+                    self.constexpr_frames.finish_cell(cell);
+                    return Ok(());
+                }
+                if matches!(origin, SkeletonOrigin::Fresh)
+                    && matches!(
+                        self.graph.types.get(place.designated).kind,
+                        TypeKind::Array { .. }
+                    )
+                    && !self.constexpr_frames.array_skeleton_fits(bound)
                 {
                     self.constexpr_frames.finish_cell(cell);
                     return Ok(());

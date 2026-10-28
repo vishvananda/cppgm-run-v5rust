@@ -121,16 +121,18 @@ impl Analyzer<'_> {
     ) -> Result<Option<Constant>, Error> {
         let requirement = requirement.into();
         let required = !matches!(requirement, ConstantRequirement::Optional);
-        let result = if self.semantic() && self.is_address_expression(id) {
-            self.evaluate_address(id, scope).and_then(|_| {
-                Err(not_constant(
-                    self.tree.expressions.get(id).location,
-                    "not an integral constant expression",
-                ))
-            })
-        } else {
-            self.evaluate_constant(id, scope, false)
-        };
+        let result = self.with_fresh_constant_query(|analyzer| {
+            if analyzer.semantic() && analyzer.is_address_expression(id) {
+                analyzer.evaluate_address(id, scope).and_then(|_| {
+                    Err(not_constant(
+                        analyzer.tree.expressions.get(id).location,
+                        "not an integral constant expression",
+                    ))
+                })
+            } else {
+                analyzer.evaluate_constant(id, scope, false)
+            }
+        });
         match result {
             Ok(value) if value.indeterminate() && !required => Ok(None),
             Ok(value) if value.indeterminate() => Err(not_constant(
@@ -175,7 +177,7 @@ impl Analyzer<'_> {
         id: ast::ExprId,
         scope: ScopeId,
     ) -> Result<TypeId, Error> {
-        self.with_constant_storage(|analyzer| {
+        self.with_constant_type_query(|analyzer| {
             analyzer
                 .evaluate_constant_inner(id, scope, true)
                 .map(|value| value.ty)
@@ -1765,9 +1767,10 @@ impl Analyzer<'_> {
                         if self.tree.expr_lists.get(elements).is_empty()))
             {
                 self.graph.entity_mut(entity).constant = ConstantState::Evaluating;
-                let value = self.integral_initializer_value(entity, initializer, scope)?;
+                let value = self.integral_initializer_value(entity, initializer, scope);
+                self.graph.entity_mut(entity).constant = ConstantState::None;
                 self.graph.entity_mut(entity).constant =
-                    value.map_or(ConstantState::None, ConstantState::Value);
+                    value?.map_or(ConstantState::None, ConstantState::Value);
             }
             return Ok(());
         };
@@ -1776,69 +1779,76 @@ impl Analyzer<'_> {
         while let ExprKind::Paren(id) = self.tree.expressions.get(inner).kind {
             inner = id;
         }
-        let value = if self.semantic() && !reference {
-            self.integral_initializer_value(entity, initializer, scope)?
-        } else if self.semantic()
-            && (self.floating_expression(expr)
-                || self
-                    .graph
-                    .expression_facts
-                    .function_conversion(expr)
-                    .is_some()
-                || matches!(
-                    self.graph.types.get(object).kind,
-                    TypeKind::Scalar(Scalar::Bool)
-                ) && self.is_address_expression(expr))
-        {
-            let result = self.constant_operand_value(expr, object, scope);
-            self.graph.entity_mut(entity).constant = ConstantState::None;
-            match result {
-                Ok(Value::Integer(value)) => Some(value),
-                Ok(_) => return Err(Error::Invariant("nonintegral converted initializer")),
-                Err(error @ Error::NonConstant { .. }) if self.graph.entity(entity).constexpr => {
-                    return Err(error.constant_initializer(initializer.location));
-                }
-                Err(Error::NonConstant { .. }) => None,
-                Err(error) => return Err(error),
-            }
-        } else if reference && let ExprKind::Id(name) = self.tree.expressions.get(inner).kind {
-            let found = if self.semantic() {
-                self.graph
-                    .resolved_name(name)
-                    .ok_or(Error::Invariant("unresolved reference initializer"))?
-            } else {
-                self.lookup(name, scope, Filter::Ordinary)?
-            };
-            let binding = self.graph.binding(found);
-            if binding.kind == BindingKind::Variable
-                && let ConstantState::Value(value) = self.graph.entity(binding.entity).constant
+        let result = (|| {
+            let value = if self.semantic() && !reference {
+                self.integral_initializer_value(entity, initializer, scope)?
+            } else if self.semantic()
+                && (self.floating_expression(expr)
+                    || self
+                        .graph
+                        .expression_facts
+                        .function_conversion(expr)
+                        .is_some()
+                    || matches!(
+                        self.graph.types.get(object).kind,
+                        TypeKind::Scalar(Scalar::Bool)
+                    ) && self.is_address_expression(expr))
             {
-                Some(value)
-            } else {
-                None
-            }
-        } else if self.semantic() && kind.bits > 64 {
-            match self.evaluate_constant(expr, scope, false) {
-                Ok(value) => Some(value),
-                Err(error @ Error::NonConstant { .. }) if self.graph.entity(entity).constexpr => {
-                    return Err(error.constant_initializer(initializer.location));
+                let result = self.constant_operand_value(expr, object, scope);
+                self.graph.entity_mut(entity).constant = ConstantState::None;
+                match result {
+                    Ok(Value::Integer(value)) => Some(value),
+                    Ok(_) => return Err(Error::Invariant("nonintegral converted initializer")),
+                    Err(error @ Error::NonConstant { .. })
+                        if self.graph.entity(entity).constexpr =>
+                    {
+                        return Err(error.constant_initializer(initializer.location));
+                    }
+                    Err(Error::NonConstant { .. }) => None,
+                    Err(error) => return Err(error),
                 }
-                Err(Error::NonConstant { .. }) => None,
-                Err(error) => return Err(error),
-            }
-        } else {
-            self.constant_value(
-                expr,
-                scope,
-                if self.semantic() && self.graph.entity(entity).constexpr {
-                    ConstantRequirement::Initializer(initializer.location)
+            } else if reference && let ExprKind::Id(name) = self.tree.expressions.get(inner).kind {
+                let found = if self.semantic() {
+                    self.graph
+                        .resolved_name(name)
+                        .ok_or(Error::Invariant("unresolved reference initializer"))?
                 } else {
-                    ConstantRequirement::Optional
-                },
-            )?
-        };
+                    self.lookup(name, scope, Filter::Ordinary)?
+                };
+                let binding = self.graph.binding(found);
+                if binding.kind == BindingKind::Variable
+                    && let ConstantState::Value(value) = self.graph.entity(binding.entity).constant
+                {
+                    Some(value)
+                } else {
+                    None
+                }
+            } else if self.semantic() && kind.bits > 64 {
+                match self.evaluate_constant(expr, scope, false) {
+                    Ok(value) => Some(value),
+                    Err(error @ Error::NonConstant { .. })
+                        if self.graph.entity(entity).constexpr =>
+                    {
+                        return Err(error.constant_initializer(initializer.location));
+                    }
+                    Err(Error::NonConstant { .. }) => None,
+                    Err(error) => return Err(error),
+                }
+            } else {
+                self.constant_value(
+                    expr,
+                    scope,
+                    if self.semantic() && self.graph.entity(entity).constexpr {
+                        ConstantRequirement::Initializer(initializer.location)
+                    } else {
+                        ConstantRequirement::Optional
+                    },
+                )?
+            };
+            Ok(value)
+        })();
         self.graph.entity_mut(entity).constant = ConstantState::None;
-        if let Some(value) = value {
+        if let Some(value) = result? {
             if value.indeterminate() {
                 return if self.graph.entity(entity).constexpr {
                     Err(not_constant(
@@ -2081,7 +2091,11 @@ mod tests {
             .unwrap();
         analyzer
             .in_constant_evaluation(|analyzer| {
-                let frame = super::super::constexpr_frames::Frame::new(ty, scope);
+                let frame = super::super::constexpr_frames::Frame::new(
+                    ty,
+                    scope,
+                    super::super::constexpr_frames::FrameRole::Initializer,
+                );
                 analyzer.with_constant_frame(frame, |analyzer| {
                     let value = analyzer.constant_value(expression, scope, true)?.unwrap();
                     assert_eq!(value.bits, 4);

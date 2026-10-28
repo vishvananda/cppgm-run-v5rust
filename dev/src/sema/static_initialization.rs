@@ -355,7 +355,7 @@ impl Analyzer<'_> {
                     .is_some_and(|facts| self.integral_kind(facts.ty).is_none())
             })
         {
-            let probe = self.in_constant_evaluation(|analyzer| {
+            let probe = self.with_fresh_constant_query(|analyzer| {
                 analyzer.initialized_scalar_value(target, initializer, scope)
             });
             value = match probe {
@@ -380,7 +380,7 @@ impl Analyzer<'_> {
             TypeKind::MemberPointer { .. }
         ) {
             return match self
-                .in_constant_evaluation(|a| a.member_pointer_operand(id, target, scope))
+                .with_fresh_constant_query(|a| a.member_pointer_operand(id, target, scope))
             {
                 Ok(value) => Ok(Some(Value::MemberPointer(value))),
                 Err(Error::NonConstant { .. } | Error::Missing(_)) => Ok(None),
@@ -569,7 +569,9 @@ impl Analyzer<'_> {
             ));
         }
         if self.member_pointer_expression(id) {
-            return match self.evaluate_member_pointer(id, scope) {
+            return match self
+                .with_fresh_constant_query(|analyzer| analyzer.evaluate_member_pointer(id, scope))
+            {
                 Ok(value) => Ok(Some(Value::MemberPointer(value))),
                 Err(Error::NonConstant { .. } | Error::Missing(_)) => Ok(None),
                 Err(error) => Err(error),
@@ -580,7 +582,9 @@ impl Analyzer<'_> {
             // A static-value request is an interpreter query, even if an
             // earlier context recorded this expression's scalar. Its frame
             // and substitution context are inputs to the answer.
-            let value = match self.evaluate_constant(id, scope, false) {
+            let value = match self
+                .with_fresh_constant_query(|analyzer| analyzer.evaluate_constant(id, scope, false))
+            {
                 Ok(value) => Some(value),
                 Err(Error::Missing(_) | Error::NonConstant { .. }) => None,
                 Err(error) => return Err(error),

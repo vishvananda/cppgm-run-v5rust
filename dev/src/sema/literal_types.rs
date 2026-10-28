@@ -500,7 +500,7 @@ impl Analyzer<'_> {
                 .entity(member)
                 .home
                 .ok_or(Error::Invariant("member without home"))?;
-            let result = self.in_constant_evaluation(|analyzer| {
+            let result = self.with_fresh_constant_query(|analyzer| {
                 let region = analyzer.constexpr_frames.region();
                 let result = analyzer.probe_constant_member_initializer(member, initializer, scope);
                 analyzer.constexpr_frames.release(region);
@@ -521,7 +521,11 @@ impl Analyzer<'_> {
         scope: super::graph::ScopeId,
     ) -> Result<(), Error> {
         let ty = self.graph.lower_entity_type(member)?;
-        let frame = super::constexpr_frames::Frame::new(ty, scope);
+        let frame = super::constexpr_frames::Frame::new(
+            ty,
+            scope,
+            super::constexpr_frames::FrameRole::Initializer,
+        );
         self.with_constant_frame(frame, |analyzer| {
             let place = analyzer.allocate_constant_object(ty, None, initializer.location)?;
             let constructor = analyzer.graph.entity(member).constructor;

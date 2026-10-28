@@ -161,9 +161,8 @@ impl Analyzer<'_> {
     }
 
     pub(super) fn check_deferred_constant(&self, id: ast::ExprId) -> Result<(), Error> {
-        let untyped_body_expression = self.constexpr_frames.active()
-            && self.graph.expression_facts.known(id).is_none()
-            && matches!(self.constexpr_frames.current()?.source_function,
+        let untyped_body_expression = self.graph.expression_facts.known(id).is_none()
+            && matches!(self.constexpr_frames.current_call().and_then(|frame| frame.source_function),
                 Some(super::predefined_names::SourceFunction::Function(function))
                     if self.graph.reserved_deferrals.body(function));
         if self.graph.reserved_deferrals.expression(id) || untyped_body_expression {

@@ -28,8 +28,22 @@ pub(super) struct Values {
     static_roots: std::collections::HashSet<Root>,
     temporaries: Vec<Temporary>,
 }
+pub(super) struct ConstructionSave {
+    constructing: HashMap<EntityId, Address>,
+    static_roots: std::collections::HashSet<Root>,
+}
 
 impl Values {
+    pub(super) fn suspend_construction(&mut self) -> ConstructionSave {
+        ConstructionSave {
+            constructing: std::mem::take(&mut self.constructing),
+            static_roots: std::mem::take(&mut self.static_roots),
+        }
+    }
+    pub(super) fn restore_construction(&mut self, save: ConstructionSave) {
+        self.constructing = save.constructing;
+        self.static_roots = save.static_roots;
+    }
     pub(super) fn get(&self, entity: EntityId) -> Option<&Frozen> {
         self.complete.get(&entity)
     }
@@ -100,7 +114,7 @@ impl Analyzer<'_> {
         scope: ScopeId,
     ) -> Result<Option<super::constants::Constant>, Error> {
         let ty = self.graph.lower_entity_type(entity)?;
-        let result = self.in_constant_evaluation(|analyzer| {
+        let result = self.with_fresh_constant_query(|analyzer| {
             // Initialization copies indeterminate arithmetic values; the owning
             // declaration diagnoses completeness after construction.
             let Value::Integer(value) =
@@ -284,7 +298,7 @@ impl Analyzer<'_> {
                 "a constexpr variable of a type that is not a literal type",
             ));
         }
-        let result = self.in_constant_evaluation(|analyzer| {
+        let result = self.with_fresh_constant_query(|analyzer| {
             let region = analyzer.constexpr_frames.region();
             let result =
                 analyzer.evaluate_aggregate_initializer(entity, initializer, scope, location);

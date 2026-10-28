@@ -144,12 +144,21 @@ pub(super) struct Frame {
     pub object: Option<Address>,
     pub destination: Option<Address>,
     pub parameters: Vec<Address>,
+    pub role: FrameRole,
+    pub peak_depth: usize,
+    parent_call: Option<usize>,
     seeking: Option<crate::syntax::ast::StmtId>,
     places: HashMap<EntityId, Address>,
     locals: Vec<EntityId>,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum FrameRole {
+    Ordinary,
+    Constructor,
+    Initializer,
+}
 impl Frame {
-    pub(super) fn new(result: TypeId, scope: ScopeId) -> Self {
+    pub(super) fn new(result: TypeId, scope: ScopeId, role: FrameRole) -> Self {
         Self {
             result,
             scope,
@@ -158,6 +167,9 @@ impl Frame {
             object: None,
             destination: None,
             parameters: Vec::new(),
+            role,
+            peak_depth: 0,
+            parent_call: None,
             places: HashMap::new(),
             locals: Vec::new(),
         }
@@ -172,6 +184,19 @@ pub(super) struct Region {
     objects: usize,
     cells: usize,
     locals: usize,
+    frame: Option<usize>,
+}
+#[derive(Default)]
+struct Control {
+    floor: usize,
+    depth: usize,
+    call: Option<usize>,
+    steps: u64,
+}
+pub(super) struct EvaluationSave {
+    control: Control,
+    region: Region,
+    stack: usize,
 }
 #[derive(Default)]
 pub(super) struct Frames {
@@ -180,7 +205,7 @@ pub(super) struct Frames {
     index: HashMap<Key, CellId>,
     stack: Vec<Frame>,
     generation: u64,
-    steps: u64,
+    control: Control,
     unions: Box<Unions>,
 }
 // Sparse union metadata has one evaluation owner, keeping the ordinary
@@ -271,49 +296,80 @@ impl Frames {
         Ok(())
     }
     pub(super) fn seeking(&self) -> Option<crate::syntax::ast::StmtId> {
-        self.stack.last()?.seeking
+        self.current().ok()?.seeking
     }
     pub(super) fn seek(&mut self, id: Option<crate::syntax::ast::StmtId>) {
-        if let Some(frame) = self.stack.last_mut() {
+        if self.active()
+            && let Some(frame) = self.stack.last_mut()
+        {
             frame.seeking = id;
         }
     }
     pub(super) fn active(&self) -> bool {
-        !self.stack.is_empty()
+        self.stack.len() > self.control.floor
     }
     pub(super) fn depth(&self) -> usize {
-        self.stack.len()
+        self.control.depth
     }
     pub(super) fn current(&self) -> Result<&Frame, Error> {
         self.stack
-            .last()
+            .get(self.control.floor..)
+            .and_then(|frames| frames.last())
             .ok_or(Error::Invariant("constant body without frame"))
+    }
+    pub(super) fn current_call(&self) -> Option<&Frame> {
+        self.control.call.and_then(|index| self.stack.get(index))
     }
     pub(super) fn bind(&mut self, entity: EntityId, place: Address) -> Result<(), Error> {
         self.stack
-            .last_mut()
+            .get_mut(self.control.floor..)
+            .and_then(|frames| frames.last_mut())
             .ok_or(Error::Invariant("constant local without frame"))?
             .bind(entity, place);
         Ok(())
     }
     pub(super) fn local(&self, entity: EntityId) -> Option<Address> {
-        self.stack.last()?.places.get(&entity).copied()
+        self.current().ok()?.places.get(&entity).copied()
     }
-    pub(super) fn push(&mut self, frame: Frame) {
+    pub(super) fn push(&mut self, mut frame: Frame) {
+        if frame.role != FrameRole::Initializer {
+            frame.parent_call = self.control.call;
+            self.control.call = Some(self.stack.len());
+            self.control.depth += 1;
+            if frame.role == FrameRole::Ordinary {
+                frame.peak_depth = self.control.depth;
+            }
+        }
         self.stack.push(frame);
     }
     pub(super) fn pop(&mut self) {
-        self.stack.pop();
+        if !self.active() {
+            return;
+        }
+        if let Some(frame) = self.stack.pop()
+            && frame.role != FrameRole::Initializer
+        {
+            self.control.depth -= 1;
+            self.control.call = frame.parent_call;
+            if frame.role == FrameRole::Ordinary
+                && let Some(parent) = frame
+                    .parent_call
+                    .and_then(|index| self.stack.get_mut(index))
+            {
+                parent.peak_depth = parent.peak_depth.max(frame.peak_depth);
+            }
+        }
     }
     pub(super) fn region(&self) -> Region {
         Region {
             objects: self.objects.len(),
             cells: self.cells.len(),
-            locals: self.stack.last().map_or(0, |f| f.locals.len()),
+            locals: self.current().map_or(0, |f| f.locals.len()),
+            frame: self.active().then(|| self.stack.len() - 1),
         }
     }
     pub(super) fn release(&mut self, region: Region) {
-        if let Some(frame) = self.stack.last_mut() {
+        if let Some(frame) = region.frame.and_then(|index| self.stack.get_mut(index)) {
             for entity in frame.locals.drain(region.locals..) {
                 frame.places.remove(&entity);
             }
@@ -345,14 +401,54 @@ impl Frames {
         self.unions.designation_index.clear();
         self.unions.activation_path.clear();
         self.stack.clear();
-        self.steps = 0;
+        self.control = Control::default();
+    }
+    pub(super) fn enter_evaluation(&mut self) -> EvaluationSave {
+        let control = std::mem::replace(
+            &mut self.control,
+            Control {
+                floor: self.stack.len(),
+                ..Control::default()
+            },
+        );
+        EvaluationSave {
+            control,
+            region: self.region(),
+            stack: self.stack.len(),
+        }
+    }
+    pub(super) fn leave_evaluation(&mut self, save: EvaluationSave) -> u64 {
+        let steps = self.control.steps;
+        self.stack.truncate(save.stack);
+        self.release(save.region);
+        self.control = save.control;
+        steps
     }
     pub(super) fn step(&mut self, location: SourceOffset) -> Result<(), Error> {
-        self.steps += 1;
-        if self.steps > 1 << 24 {
+        self.control.steps += 1;
+        if self.control.steps > 1 << 24 {
             return Err(nonconstant(
                 location,
                 "constant evaluation exceeds its step budget",
+            ));
+        }
+        Ok(())
+    }
+    pub(super) fn skeleton_step(&mut self) {
+        self.control.steps += 1;
+    }
+    pub(super) fn array_skeleton_fits(&mut self, bound: u64) -> bool {
+        if bound > 1 << 22 || self.control.steps.saturating_add(bound) > 1 << 24 {
+            self.control.steps = 1 << 24;
+            return false;
+        }
+        true
+    }
+    pub(super) fn check_storage_budget(&self, location: SourceOffset) -> Result<(), Error> {
+        if self.control.steps >= 1 << 24 {
+            return Err(nonconstant(
+                location,
+                "constant evaluation exceeds its storage budget",
             ));
         }
         Ok(())
@@ -435,15 +531,8 @@ impl Frames {
         &mut self,
         place: Address,
         value: Option<TemporaryValue>,
-        location: SourceOffset,
+        _location: SourceOffset,
     ) -> Result<CellId, Error> {
-        self.steps += 1;
-        if self.steps >= 1 << 24 {
-            return Err(nonconstant(
-                location,
-                "constant evaluation exceeds its storage budget",
-            ));
-        }
         let Root::Object(object) = place.root else {
             return Err(Error::Invariant("subobject outside evaluation storage"));
         };
@@ -933,6 +1022,73 @@ mod tests {
     };
 
     #[test]
+    fn independent_queries_hide_names_preserve_objects_and_restore_control() {
+        let mut graph = Graph::new();
+        let ty = graph.types.scalar(Scalar::Bool).unwrap();
+        let entity = graph.add_entity(Some(ty), None, Keyword::Bool).unwrap();
+        let location = SourceOffset(3);
+        let mut frames = Frames::default();
+        let outer = frames.allocate((ty, ty), None, location).unwrap();
+        let mut frame = Frame::new(ty, graph.global, FrameRole::Ordinary);
+        frame.bind(entity, outer);
+        frames.push(frame);
+        frames.step(location).unwrap();
+        frames.step(location).unwrap();
+        for fail in [false, true] {
+            let save = frames.enter_evaluation();
+            assert!(!frames.active());
+            assert!(frames.current_call().is_none());
+            assert!(frames.local(entity).is_none());
+            assert_eq!(frames.depth(), 0);
+            assert_eq!(frames.control.steps, 0);
+            frames.valid_pointer(outer, location).unwrap();
+            // A frameless query's region must not drain a suspended local.
+            let region = frames.region();
+            let child = frames.allocate((ty, ty), None, location).unwrap();
+            frames.step(location).unwrap();
+            frames.release(region);
+            assert!(frames.valid_pointer(child, location).is_err());
+            if fail {
+                frames.control.steps = 1 << 24;
+                assert!(frames.step(location).is_err());
+            }
+            let steps = frames.leave_evaluation(save);
+            assert_eq!(steps, if fail { (1 << 24) + 1 } else { 1 });
+            assert_eq!(frames.control.steps, 2);
+            assert_eq!(frames.depth(), 1);
+            assert_eq!(frames.local(entity).unwrap().root, outer.root);
+            let reused = frames.allocate((ty, ty), None, location).unwrap();
+            assert_ne!(child.root, reused.root);
+            frames.valid_pointer(outer, location).unwrap();
+        }
+    }
+
+    #[test]
+    fn only_actual_calls_contribute_depth_and_constructor_peaks_do_not_propagate() {
+        let mut graph = Graph::new();
+        let ty = graph.types.scalar(Scalar::Bool).unwrap();
+        let mut frames = Frames::default();
+        frames.push(Frame::new(ty, graph.global, FrameRole::Ordinary));
+        frames.push(Frame::new(ty, graph.global, FrameRole::Initializer));
+        assert_eq!(frames.depth(), 1);
+        assert!(frames.current_call().unwrap().role == FrameRole::Ordinary);
+        frames.push(Frame::new(ty, graph.global, FrameRole::Constructor));
+        assert_eq!(frames.depth(), 2);
+        assert_eq!(frames.current().unwrap().peak_depth, 0);
+        frames.push(Frame::new(ty, graph.global, FrameRole::Ordinary));
+        frames.pop();
+        assert_eq!(frames.current().unwrap().peak_depth, 3);
+        frames.pop();
+        frames.pop();
+        assert_eq!(frames.current().unwrap().peak_depth, 1);
+        frames.push(Frame::new(ty, graph.global, FrameRole::Ordinary));
+        frames.push(Frame::new(ty, graph.global, FrameRole::Ordinary));
+        frames.pop();
+        frames.pop();
+        assert_eq!(frames.current().unwrap().peak_depth, 3);
+    }
+
+    #[test]
     fn scalar_initialization_releases_success_and_failure_regions_inside_an_evaluation() {
         use crate::{
             preprocess::unit::Preprocessor,
@@ -1219,12 +1375,12 @@ mod tests {
                 location,
             )
             .unwrap();
-        let mut outer = Frame::new(ty, graph.global);
+        let mut outer = Frame::new(ty, graph.global, FrameRole::Ordinary);
         outer.bind(entity, first);
         storage.push(outer);
         let region = storage.region();
         let second = storage.allocate((ty, ty), None, location).unwrap();
-        let mut inner = Frame::new(ty, graph.global);
+        let mut inner = Frame::new(ty, graph.global, FrameRole::Ordinary);
         inner.bind(entity, second);
         storage.push(inner);
         assert_eq!(storage.local(entity).unwrap().root, second.root);

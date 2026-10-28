@@ -100,8 +100,8 @@ impl Analyzer<'_> {
                     self.positions.source_file(location).to_vec()
                 } else {
                     use super::predefined_names::SourceFunction;
-                    let function = if self.constexpr_frames.active() {
-                        self.constexpr_frames.current()?.source_function
+                    let function = if let Some(frame) = self.constexpr_frames.current_call() {
+                        frame.source_function
                     } else {
                         self.body_context
                             .as_ref()
