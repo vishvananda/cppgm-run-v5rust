@@ -748,11 +748,8 @@ impl Analyzer<'_> {
                     if member.kind == super::graph::MemberKind::Destructor
                         && analyzer.graph.lower_virtual_slot(entity).is_some()
                     {
-                        analyzer.complete_virtual_deallocation(
-                            member.class,
-                            entity,
-                            crate::support::source::SourceOffset(0),
-                        )?;
+                        analyzer
+                            .virtual_definition(entity, crate::support::source::SourceOffset(0))?;
                     }
                     Ok(())
                 } else {

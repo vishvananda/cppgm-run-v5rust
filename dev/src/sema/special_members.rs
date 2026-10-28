@@ -321,7 +321,7 @@ impl Analyzer<'_> {
                 if kind == MemberKind::Destructor
                     && self.graph.lower_virtual_slot(function).is_some()
                 {
-                    self.complete_virtual_deallocation(class, function, location)?;
+                    self.virtual_definition(function, location)?;
                 }
                 if self.lowering()
                     && self.graph.entity(function).inline
@@ -383,7 +383,7 @@ impl Analyzer<'_> {
                 if kind == MemberKind::Destructor
                     && self.graph.lower_virtual_slot(function).is_some()
                 {
-                    self.complete_virtual_deallocation(class, function, location)?;
+                    self.virtual_definition(function, location)?;
                 }
                 self.function_body(deferred)?;
             } else {

@@ -20,6 +20,12 @@ pub(super) struct VirtualFunction {
     pub overridden: Option<EntityId>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DeallocationMode {
+    Nonfatal,
+    Fatal,
+}
+
 #[derive(Default)]
 pub(super) struct Virtuals {
     functions: HashMap<EntityId, VirtualFunction>,
@@ -991,101 +997,103 @@ impl Analyzer<'_> {
         if let Some(member) = self.graph.entity(function).member_function
             && member.kind == MemberKind::Destructor
             && self.graph.virtuals.function(function).is_virtual
+            && self.graph.entity(function).availability
+                != super::graph::FunctionAvailability::Deleted
+            && self.graph.virtuals.classes.contains_key(&member.class)
             && !self.graph.virtuals.deallocators.contains_key(&member.class)
+            && let Some(selected) =
+                self.virtual_deallocation(member.class, DeallocationMode::Fatal, location)?
         {
-            self.complete_virtual_deallocation(member.class, function, location)?;
+            self.graph
+                .virtuals
+                .deallocators
+                .insert(member.class, selected);
         }
         Ok(())
     }
 
-    pub(super) fn complete_virtual_deallocation(
+    fn virtual_deallocation(
         &mut self,
         class: EntityId,
-        destructor: EntityId,
+        mode: DeallocationMode,
         location: SourceOffset,
-    ) -> Result<(), Error> {
-        let entity = self.graph.entity(destructor);
-        let defaulted = matches!(
-            entity.special_definition,
-            Some(super::special_members::SpecialDefinition::Defaulted { first: true, .. })
-        );
-        if entity.availability == super::graph::FunctionAvailability::Deleted
-            || (!entity.defined && !defaulted)
-        {
-            return Ok(());
-        }
+    ) -> Result<Option<EntityId>, Error> {
         self.lookup_location = location;
-        let home = self
+        let scope = self
             .graph
             .entity(class)
             .scope
             .ok_or(Error::Invariant("virtual deallocation scope"))?;
         let key = super::allocation::key(Keyword::Delete, false);
-        let found = self.qualified_result(home, key, super::lookup::Filter::Ordinary)?;
+        // This owner consumes the raw representative even when lookup carries
+        // ambiguity. The ordinary name-expression diagnostic is not its policy.
+        let found =
+            self.qualified_declaration_result(scope, key, super::lookup::Filter::Ordinary)?;
         let (found, naming) = if found.binding.is_some() {
             (found, Some(class))
         } else {
             (
-                self.qualified_result(self.graph.global, key, super::lookup::Filter::Ordinary)?,
+                self.qualified_declaration_result(
+                    self.graph.global,
+                    key,
+                    super::lookup::Filter::Ordinary,
+                )?,
                 None,
             )
         };
-        let selected = self.usual_deallocation(found.functions.as_slice())?;
-        let scope = self
-            .graph
-            .entity(class)
-            .scope
-            .ok_or(Error::Invariant("destructor scope"))?;
-        let failure = if found
-            .binding
-            .is_none_or(|id| self.graph.binding(id).kind != super::graph::BindingKind::Function)
-        {
-            Some(Error::at(
-                location,
-                "no deallocation function for a virtual destructor",
-            ))
-        } else if let Some(binding) = selected {
-            if self
-                .graph
-                .entity(self.graph.binding(binding).entity)
-                .availability
+        let function_binding = found.binding.is_some_and(|binding| {
+            self.graph.binding(binding).kind == super::graph::BindingKind::Function
+        });
+        let selected = if function_binding {
+            self.usual_deallocation(found.functions.as_slice())?
+        } else {
+            None
+        };
+        if mode == DeallocationMode::Nonfatal {
+            let Some(binding) = selected else {
+                return Ok(None);
+            };
+            let function = self.graph.binding(binding).entity;
+            if self.graph.entity(function).availability
                 == super::graph::FunctionAvailability::Deleted
             {
-                Some(Error::at(location, "use of a deleted function"))
-            } else if let Some(naming) = naming
-                && let Some(declaration) =
-                    self.selected_function_declaration(binding, found.functions.as_slice())
-            {
-                self.check_named_member_access(declaration, naming, naming, scope, location)
-                    .err()
-            } else {
-                None
+                return Ok(None);
             }
-        } else {
-            Some(Error::at(
+            if let Some(naming) = naming {
+                for &declaration in found.functions.as_slice() {
+                    if self.graph.binding(declaration).entity == function
+                        && self.graph.scope(self.graph.binding_scope(declaration)).kind
+                            == ScopeKind::Class
+                        && !self.declaration_member_accessible(declaration, naming, scope)
+                    {
+                        return Ok(None);
+                    }
+                }
+            }
+            return Ok(Some(function));
+        }
+        if !function_binding {
+            return Err(self.graph.analysis.substitution.hard_error(
+                location,
+                "no deallocation function for a virtual destructor",
+            ));
+        }
+        let Some(binding) = selected else {
+            return Err(self.graph.analysis.substitution.hard_error(
                 location,
                 "no usual deallocation function for a virtual destructor",
-            ))
+            ));
         };
-        if let Some(error) = failure {
-            if !defaulted {
-                return Err(error);
-            }
-            self.graph.entity_mut(destructor).availability =
-                super::graph::FunctionAvailability::Deleted;
-            self.graph
-                .entity_mut(class)
-                .destruction
-                .as_mut()
-                .ok_or(Error::Invariant("destructor properties"))?
-                .deleted = true;
-        } else if let Some(binding) = selected {
-            self.graph
-                .virtuals
-                .deallocators
-                .insert(class, self.graph.binding(binding).entity);
+        let function = self.graph.binding(binding).entity;
+        self.check_function_not_deleted(function, location)?;
+        if self.graph.entity(function).member_function.is_some()
+            && let Some(naming) = naming
+            && let Some(declaration) =
+                self.selected_function_declaration(binding, found.functions.as_slice())
+        {
+            self.check_declaration_member_access(declaration, naming, None, scope, location)?;
         }
-        Ok(())
+        Ok(Some(function))
     }
 
     pub(super) fn complete_virtual_destructor(
@@ -1135,7 +1143,33 @@ impl Analyzer<'_> {
             }
         }
         if let Some(destructor) = self.graph.virtuals.destructor(class) {
-            self.complete_virtual_deallocation(class, destructor, location)?;
+            let entity = self.graph.entity(destructor);
+            let defaulted = implicit
+                || matches!(
+                    entity.special_definition,
+                    Some(super::special_members::SpecialDefinition::Defaulted { first: true, .. })
+                );
+            if entity.availability != super::graph::FunctionAvailability::Deleted
+                && (defaulted || entity.defined)
+            {
+                let mode = if defaulted {
+                    DeallocationMode::Nonfatal
+                } else {
+                    DeallocationMode::Fatal
+                };
+                if let Some(selected) = self.virtual_deallocation(class, mode, location)? {
+                    self.graph.virtuals.deallocators.insert(class, selected);
+                } else if defaulted {
+                    self.graph.entity_mut(destructor).availability =
+                        super::graph::FunctionAvailability::Deleted;
+                    self.graph
+                        .entity_mut(class)
+                        .destruction
+                        .as_mut()
+                        .ok_or(Error::Invariant("destructor properties"))?
+                        .deleted = true;
+                }
+            }
             self.graph
                 .entity_mut(class)
                 .destruction
@@ -1483,6 +1517,143 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn virtual_definition_keeps_fatal_policy_and_selected_identity_in_soft_mode() {
+        for (deallocator, expected) in [
+            (
+                "static void operator delete(void*)=delete;",
+                "use of a deleted function",
+            ),
+            (
+                "static void operator delete(void*,int);",
+                "no usual deallocation function for a virtual destructor",
+            ),
+        ] {
+            let source =
+                SourceBuffer::new(format!("struct A{{virtual ~A();{deallocator}}};").into_bytes())
+                    .unwrap();
+            let mut unit = SyntaxUnit::new(
+                Preprocessor::with_name(&source, b"virtual-definition-mode").unwrap(),
+            );
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let name = cursor.intern_name(b"A").unwrap();
+            let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+            analyzer.set_semantics(true);
+            let marker = 0u8;
+            analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+            let scope = analyzer.graph.global;
+            let declaration = analyzer.tree.decl_lists.get(declarations)[0];
+            analyzer.declaration(declaration, scope).unwrap();
+            let class = analyzer
+                .graph
+                .binding(
+                    analyzer
+                        .graph
+                        .own(scope, name, super::super::lookup::Filter::Prefix)
+                        .unwrap(),
+                )
+                .entity;
+            let destructor = analyzer.graph.virtuals.destructor(class).unwrap();
+            // Class completion deferred this user-provided declaration. The
+            // definition event itself owns admission, not the generic bit.
+            assert!(!analyzer.graph.entity(destructor).defined);
+            assert!(analyzer.graph.virtual_deallocator(class).is_none());
+            let result = analyzer.with_substitution_soft(None, |analyzer| {
+                analyzer.virtual_definition(destructor, SourceOffset(9))?;
+                let failure = analyzer
+                    .graph
+                    .analysis
+                    .substitution
+                    .current()
+                    .failure
+                    .unwrap();
+                assert_eq!(failure.message, expected);
+                let selected = analyzer.graph.virtual_deallocator(class).unwrap();
+                assert_eq!(
+                    analyzer.graph.entity(selected).availability,
+                    super::super::graph::FunctionAvailability::Deleted
+                );
+                Ok(())
+            });
+            if deallocator.contains("=delete") {
+                result.unwrap();
+            } else {
+                assert!(
+                    matches!(result, Err(Error::UnconditionalDiagnostic { location: SourceOffset(9), message }) if message == expected)
+                );
+                assert!(analyzer.graph.virtual_deallocator(class).is_none());
+            }
+            assert!(
+                analyzer
+                    .graph
+                    .analysis
+                    .substitution
+                    .current()
+                    .failure
+                    .is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn nonfatal_virtual_deallocation_checks_access_without_soft_failure() {
+        let source = SourceBuffer::new(
+            b"struct B{private:static void operator delete(void*);};struct D:B{virtual ~D()=default;};".to_vec(),
+        ).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"virtual-property-mode").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let name = cursor.intern_name(b"D").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_semantics(true);
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let scope = analyzer.graph.global;
+        let declarations = analyzer.tree.decl_lists.get(declarations).to_vec();
+        analyzer.declaration(declarations[0], scope).unwrap();
+        analyzer
+            .with_substitution_soft(None, |analyzer| {
+                analyzer.declaration(declarations[1], scope)?;
+                assert!(
+                    analyzer
+                        .graph
+                        .analysis
+                        .substitution
+                        .current()
+                        .failure
+                        .is_none()
+                );
+                let class = analyzer
+                    .graph
+                    .binding(
+                        analyzer
+                            .graph
+                            .own(scope, name, super::super::lookup::Filter::Prefix)
+                            .unwrap(),
+                    )
+                    .entity;
+                let destructor = analyzer.graph.virtuals.destructor(class).unwrap();
+                assert_eq!(
+                    analyzer.graph.entity(destructor).availability,
+                    super::super::graph::FunctionAvailability::Deleted
+                );
+                assert!(
+                    analyzer
+                        .graph
+                        .entity(class)
+                        .destruction
+                        .as_ref()
+                        .unwrap()
+                        .deleted
+                );
+                assert!(analyzer.graph.virtual_deallocator(class).is_none());
+                Ok(())
+            })
+            .unwrap();
+    }
 
     #[test]
     fn pure_declaration_survives_its_definition_and_concrete_override() {

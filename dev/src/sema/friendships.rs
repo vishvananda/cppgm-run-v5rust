@@ -45,6 +45,14 @@ impl Friendships {
         self.functions.get(&(class, key)).map_or(&[], Vec::as_slice)
     }
 }
+// Raw accessible queries use only their supplied lexical scope. Emitting
+// declaration checks also carry the declaration's selected access point.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum AccessContext {
+    Declaration,
+    Scope,
+}
+
 impl Analyzer<'_> {
     pub(super) fn function_template_id(
         &self,
@@ -321,11 +329,17 @@ impl Analyzer<'_> {
     }
     // Settlement checks an out-of-class signature in its selected member's
     // lexical class context, including enclosing classes and their grants.
-    fn access_scopes(&self, scope: ScopeId) -> impl Iterator<Item = ScopeId> + '_ {
+    fn access_scopes(
+        &self,
+        scope: ScopeId,
+        context: AccessContext,
+    ) -> impl Iterator<Item = ScopeId> + '_ {
         let scope = self
             .declaration_access
             .substitution
-            .filter(|&(root, _)| self.graph.encloses(root, scope))
+            .filter(|&(root, _)| {
+                context == AccessContext::Declaration && self.graph.encloses(root, scope)
+            })
             .map_or(scope, |(_, point)| point);
         self.declaration_access
             .class
@@ -334,7 +348,10 @@ impl Analyzer<'_> {
                     .function
                     .and_then(|function| self.graph.entity(function).home)
             })
-            .filter(|&home| self.graph.scope(home).kind == ScopeKind::Class)
+            .filter(|&home| {
+                context == AccessContext::Declaration
+                    && self.graph.scope(home).kind == ScopeKind::Class
+            })
             .into_iter()
             .flat_map(|home| std::iter::successors(Some(home), |&id| self.graph.scope(id).parent))
             .chain(std::iter::successors(Some(scope), |&id| {
@@ -342,14 +359,23 @@ impl Analyzer<'_> {
             }))
     }
     pub(super) fn member_or_friend(&self, scope: ScopeId, class: EntityId) -> bool {
-        if self
-            .declaration_access
-            .function
-            .is_some_and(|function| self.function_friend(class, function))
+        self.member_or_friend_at(scope, class, AccessContext::Declaration)
+    }
+    pub(super) fn member_or_friend_at(
+        &self,
+        scope: ScopeId,
+        class: EntityId,
+        context: AccessContext,
+    ) -> bool {
+        if context == AccessContext::Declaration
+            && self
+                .declaration_access
+                .function
+                .is_some_and(|function| self.function_friend(class, function))
         {
             return true;
         }
-        self.access_scopes(scope).any(|scope| {
+        self.access_scopes(scope, context).any(|scope| {
             let current = self.graph.scope(scope);
             matches!(current.kind, ScopeKind::Class | ScopeKind::Function)
                 && current.owner.is_some_and(|entity| {
@@ -366,13 +392,21 @@ impl Analyzer<'_> {
         })
     }
     pub(super) fn access_contexts(&self, scope: ScopeId) -> impl Iterator<Item = EntityId> + '_ {
+        self.access_contexts_at(scope, AccessContext::Declaration)
+    }
+    pub(super) fn access_contexts_at(
+        &self,
+        scope: ScopeId,
+        context: AccessContext,
+    ) -> impl Iterator<Item = EntityId> + '_ {
         self.declaration_access
             .function
+            .filter(|_| context == AccessContext::Declaration)
             .into_iter()
             .flat_map(|function| self.friend_entities(function).into_iter().flatten())
             .flat_map(|function| self.graph.friendships.granting(function).iter().copied())
             .chain(
-                self.access_scopes(scope)
+                self.access_scopes(scope, context)
                     .filter_map(|scope| {
                         let current = self.graph.scope(scope);
                         matches!(current.kind, ScopeKind::Class | ScopeKind::Function)

@@ -3,6 +3,7 @@
 //! Access to one canonical member through declarations of different access.
 use super::{
     analyzer::Analyzer,
+    friendships::AccessContext,
     graph::{Access, BindingId, DataMemberKind, EntityId, Graph, ScopeId, ScopeKind},
     member_expressions::AccessFailure,
 };
@@ -188,8 +189,14 @@ impl Analyzer<'_> {
         declarations
     }
 
-    fn imported_base_accessible(&self, class: EntityId, access: Access, scope: ScopeId) -> bool {
-        if access == Access::Public || self.member_or_friend(scope, class) {
+    fn imported_base_accessible(
+        &self,
+        class: EntityId,
+        access: Access,
+        scope: ScopeId,
+        context: AccessContext,
+    ) -> bool {
+        if access == Access::Public || self.member_or_friend_at(scope, class, context) {
             return true;
         }
         if access == Access::Private {
@@ -197,7 +204,7 @@ impl Analyzer<'_> {
         }
         // Each invented-member query owns its own complete target and memo.
         let empty = HashSet::new();
-        self.access_contexts(scope).any(|context| {
+        self.access_contexts_at(scope, context).any(|context| {
             MemberPaths::new(class, Access::Protected, &empty)
                 .access(&self.graph, context)
                 .is_some()
@@ -212,6 +219,7 @@ impl Analyzer<'_> {
         naming: EntityId,
         scope: ScopeId,
         paths: &mut MemberPaths<'_>,
+        context: AccessContext,
     ) -> Option<GrantedAccess> {
         let mut work = vec![AccessTask::Visit(naming)];
         let mut unreached = HashSet::new();
@@ -239,7 +247,7 @@ impl Analyzer<'_> {
                     {
                         continue;
                     }
-                    if self.imported_base_accessible(class, base.access, scope) {
+                    if self.imported_base_accessible(class, base.access, scope, context) {
                         if base.class != paths.declaring {
                             work.push(AccessTask::Unreached(base.class));
                         }
@@ -291,21 +299,22 @@ impl Analyzer<'_> {
                         )
                     });
                 if access == Some(Access::Public)
-                    || access.is_some() && self.member_or_friend(scope, class)
+                    || access.is_some() && self.member_or_friend_at(scope, class, context)
                 {
                     return Some(GrantedAccess::Unrestricted);
                 }
                 if access == Some(Access::Protected)
-                    && let Some(context) = self.access_contexts(scope).find(|&context| {
-                        self.graph.is_base_of(class, context)
-                            && paths.access(&self.graph, context).is_some()
-                    })
+                    && let Some(context) =
+                        self.access_contexts_at(scope, context).find(|&context| {
+                            self.graph.is_base_of(class, context)
+                                && paths.access(&self.graph, context).is_some()
+                        })
                 {
                     return Some(GrantedAccess::Protected(context));
                 }
                 if level != edges {
                     let base = self.graph.entity(class).bases.first()?;
-                    if !self.imported_base_accessible(class, base.access, scope) {
+                    if !self.imported_base_accessible(class, base.access, scope, context) {
                         continue 'query;
                     }
                     class = base.class;
@@ -316,6 +325,24 @@ impl Analyzer<'_> {
             }
         }
         None
+    }
+
+    // analyzer_virtual.cpp's nonfatal deallocation query calls accessible
+    // directly for every matching declaration, without import-frontier checks,
+    // protected-object restrictions, diagnostic emission or access deferral.
+    pub(super) fn declaration_member_accessible(
+        &self,
+        binding: BindingId,
+        naming: EntityId,
+        scope: ScopeId,
+    ) -> bool {
+        let Some(declaring) = self.graph.scope(self.graph.binding_scope(binding)).owner else {
+            return false;
+        };
+        let blocked = HashSet::new();
+        let mut paths = MemberPaths::new(declaring, self.graph.binding_access(binding), &blocked);
+        self.imported_declaration_access(naming, scope, &mut paths, AccessContext::Scope)
+            .is_some()
     }
 
     pub(super) fn imported_member_access_failure(
@@ -345,12 +372,22 @@ impl Analyzer<'_> {
         let mut reached = None;
         if declarations.is_empty() {
             let mut paths = MemberPaths::new(owner, self.graph.binding_access(binding), &blocked);
-            reached = self.imported_declaration_access(naming, scope, &mut paths);
+            reached = self.imported_declaration_access(
+                naming,
+                scope,
+                &mut paths,
+                AccessContext::Declaration,
+            );
         } else {
             for (class, declaration) in declarations {
                 let mut paths =
                     MemberPaths::new(class, self.graph.binding_access(declaration), &blocked);
-                reached = self.imported_declaration_access(naming, scope, &mut paths);
+                reached = self.imported_declaration_access(
+                    naming,
+                    scope,
+                    &mut paths,
+                    AccessContext::Declaration,
+                );
                 if reached.is_some() {
                     break;
                 }
@@ -381,6 +418,72 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn raw_class_access_does_not_inherit_unrelated_declaration_privileges() {
+        let source = SourceBuffer::new(
+            b"struct C;struct B{friend struct C;private:static void operator delete(void*);};struct C{void f();};struct D:B{};".to_vec(),
+        ).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"raw-class-access").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names = [
+            cursor.intern_name(b"B").unwrap(),
+            cursor.intern_name(b"C").unwrap(),
+            cursor.intern_name(b"D").unwrap(),
+        ];
+        let f = cursor.intern_name(b"f").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_semantics(true);
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let scope = analyzer.graph.global;
+        analyzer.declarations(declarations, scope).unwrap();
+        let [base, friend, derived] = names.map(|name| {
+            analyzer
+                .graph
+                .binding(analyzer.graph.own(scope, name, Filter::Prefix).unwrap())
+                .entity
+        });
+        let friend_scope = analyzer.graph.entity(friend).scope.unwrap();
+        let derived_scope = analyzer.graph.entity(derived).scope.unwrap();
+        let binding = analyzer
+            .graph
+            .functions_at(
+                analyzer.graph.entity(base).scope.unwrap(),
+                super::super::allocation::key(crate::lex::vocabulary::Keyword::Delete, false),
+            )
+            .next()
+            .unwrap();
+        let function = analyzer
+            .graph
+            .binding(
+                analyzer
+                    .graph
+                    .own(friend_scope, f, Filter::Ordinary)
+                    .unwrap(),
+            )
+            .entity;
+        for context in 0..3 {
+            analyzer.declaration_access.class = (context == 0).then_some(friend_scope);
+            analyzer.declaration_access.function = (context == 1).then_some(function);
+            analyzer.declaration_access.substitution =
+                (context == 2).then_some((derived_scope, friend_scope));
+            assert!(analyzer.member_or_friend(derived_scope, base));
+            assert!(!analyzer.declaration_member_accessible(binding, derived, derived_scope));
+            assert!(analyzer.declaration_member_accessible(binding, derived, friend_scope));
+        }
+        assert!(
+            analyzer
+                .graph
+                .analysis
+                .substitution
+                .current()
+                .failure
+                .is_none()
+        );
+    }
 
     #[test]
     fn shared_declarations_keep_access_frontiers_and_protected_object_context() {
