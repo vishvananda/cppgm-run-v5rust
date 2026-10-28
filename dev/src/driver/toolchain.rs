@@ -34,6 +34,7 @@ enum OptionCheck<'a> {
     Standard(&'a OsStr),
     Language(&'a OsStr),
     Compatibility(&'a OsStr),
+    Unsupported(&'a OsStr),
 }
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 enum DriverMode {
@@ -167,6 +168,12 @@ fn parse(
             b"--stats" => invocation.audit.statistics = true,
             _ if bytes.starts_with(b"--verify-passes=") => {
                 invocation.audit.verification = Some(OsStr::from_bytes(&bytes[16..]).into());
+            }
+            // The outer driver admits the entire prefix. The toolchain rejects
+            // malformed suffixes only after invocation-shape validation, in
+            // the same ordered pass as target and other option meanings.
+            _ if bytes.starts_with(b"--verify-passes") => {
+                checks.push(OptionCheck::Unsupported(arg));
             }
             b"-fno-exceptions" | b"-fexceptions" => {
                 invocation.preprocessor.modes.exceptions = bytes == b"-fexceptions";
@@ -389,6 +396,7 @@ fn apply_option_checks(
                 }
             }
             OptionCheck::Compatibility(arg) => super::compatibility::validate(arg, host)?,
+            OptionCheck::Unsupported(arg) => return Err(argument("unsupported option: ", arg)),
         }
     }
     Ok(())
@@ -911,6 +919,18 @@ mod tests {
                 b"unsupported target: invalid",
             ),
             (&["-Oinvalid", "a.cpp"], b"unsupported option: -Oinvalid"),
+            (
+                &["--verify-passes-extra", "a.cpp"],
+                b"unsupported option: --verify-passes-extra",
+            ),
+            (
+                &["--target=invalid", "--verify-passes-extra", "a.cpp"],
+                b"unsupported target: invalid",
+            ),
+            (
+                &["-c", "-E", "--verify-passes-extra", "a.cpp"],
+                b"cannot combine -c and -E",
+            ),
             (&["-fshort-enums"], b"invalid usage"),
             (
                 &["-stdlib=libc++", "-MF"],
