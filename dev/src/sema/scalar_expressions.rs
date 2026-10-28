@@ -110,7 +110,6 @@ impl Analyzer<'_> {
             }
             ExprKind::Id(name) => {
                 let found = self.lookup_result(name, scope, Filter::Ordinary)?;
-                self.require_named_result(id, found.functions.as_slice())?;
                 self.named_expression(id, &found, scope)?
             }
             ExprKind::Literal(literal) => self.literal_expression(id, literal, scope)?,
@@ -385,71 +384,87 @@ impl Analyzer<'_> {
             .binding
             .ok_or_else(|| Error::at(self.tree.expressions.get(id).location, "undeclared name"))?;
         if self.graph.binding(binding).kind == BindingKind::Function {
-            if found.functions.as_slice().len() == 1 && self.callee_name != Some(id) {
-                self.check_intrinsic_designation(binding, self.tree.expressions.get(id).location)?;
-            }
-            if found.functions.as_slice().len() == 1
-                && self.callee_name != Some(id)
-                && !self.graph.function_templates.requires_target(binding)
-                && self
-                    .graph
-                    .entity(self.graph.binding(binding).entity)
-                    .availability
-                    == super::graph::FunctionAvailability::Deleted
-                && self
-                    .graph
-                    .entity(self.graph.binding(binding).entity)
-                    .template_head
-                    .is_none()
-            {
-                return Err(Error::at(
-                    self.tree.expressions.get(id).location,
-                    "use of a deleted function",
-                ));
-            }
-            let mut facts = self.function_designation(binding, found.functions.as_slice())?;
-            // Static functions still name a member through the written class.
-            // Keep that access identity even though they need no object.
-            facts.member_naming = found
+            let explicit = matches!(self.tree.expressions.get(id).kind, ExprKind::Id(name)
+                if self.tree.name_lists.get(self.tree.names.get(name).components)
+                    .last().is_some_and(|component| component.arguments.is_some()));
+            let concrete =
+                found.functions.as_slice().len() == 1
+                    && !self.graph.function_templates.requires_target(binding)
+                    && self
+                        .graph
+                        .entity(self.graph.binding(binding).entity)
+                        .template_head
+                        .is_none()
+                    && !self.graph.binding(binding).ty.is_some_and(|ty| {
+                        matches!(self.graph.types.get(ty).kind, TypeKind::Pack(_))
+                    });
+            let naming = found
                 .qualifier
                 .filter(|&home| self.graph.scope(home).kind == super::graph::ScopeKind::Class)
                 .and_then(|home| self.graph.scope(home).owner);
-            if found
-                .functions
-                .as_slice()
-                .iter()
-                .any(|&function| self.member_function_owner(function).is_some())
+            if !explicit
+                && found
+                    .functions
+                    .as_slice()
+                    .iter()
+                    .any(|&function| self.member_function_owner(function).is_some())
+                && let Some(object) = self.implicit_member_object(binding)?
             {
-                facts.object = self.implicit_member_object(binding)?;
-                if let Some(object) = facts.object {
-                    facts.member_naming = found
-                        .qualifier
-                        .filter(|&home| {
-                            self.graph.scope(home).kind == super::graph::ScopeKind::Class
-                        })
-                        .and_then(|home| self.graph.scope(home).owner)
-                        .or_else(|| self.graph.class_of(object.ty));
-                    // template_callee does not bind an implicit receiver until
-                    // template_id_call resolves it. A static specialization can
-                    // win even if lookup's first declaration is nonstatic.
-                    let template_callee = self.callee_name == Some(id)
-                        && matches!(self.tree.expressions.get(id).kind, ExprKind::Id(name)
-                            if self.tree.name_lists.get(self.tree.names.get(name).components)
-                                .last().is_some_and(|component| component.arguments.is_some()));
-                    if let (Some(class), Some(naming)) =
-                        (self.graph.class_of(object.ty), facts.member_naming)
-                        && self.member_function_owner(binding).is_some()
-                        && !template_callee
-                    {
-                        self.check_member_subobject(
-                            binding,
-                            class,
-                            naming,
-                            scope,
-                            self.tree.expressions.get(id).location,
-                        )?;
-                    }
-                    facts.category = V::Prvalue;
+                let class = self
+                    .graph
+                    .class_of(object.ty)
+                    .ok_or(Error::Invariant("implicit function object without class"))?;
+                let naming = naming.unwrap_or(class);
+                if self.member_function_owner(binding).is_some() {
+                    self.check_member_subobject(
+                        binding,
+                        class,
+                        naming,
+                        scope,
+                        self.tree.expressions.get(id).location,
+                    )?;
+                }
+                let mut facts = self.function_designation(binding, found.functions.as_slice())?;
+                facts.object = Some(object);
+                facts.member_naming = Some(naming);
+                facts.category = if concrete && self.member_function_owner(binding).is_none() {
+                    V::Lvalue
+                } else {
+                    V::Prvalue
+                };
+                if concrete {
+                    self.concrete_function_designation(id, binding, &mut facts)?;
+                }
+                return Ok(facts);
+            }
+            let location = self.tree.expressions.get(id).location;
+            if !explicit && concrete && self.callee_name != Some(id) {
+                self.require_deduced_result(self.graph.binding(binding).entity, location)?;
+                self.check_intrinsic_designation(binding, location)?;
+            }
+            let mut facts = self.function_designation(binding, found.functions.as_slice())?;
+            facts.member_naming = naming;
+            if concrete {
+                self.concrete_function_designation(id, binding, &mut facts)?;
+                // The explicit template-id owns its facts before deduction;
+                // ordinary direct names reach this after their prerequisites.
+                self.graph.expression_facts.set(id, facts);
+                super::record(&mut self.graph.expression_types, id.index(), facts.ty);
+                if explicit && self.callee_name != Some(id) {
+                    self.require_deduced_result(self.graph.binding(binding).entity, location)?;
+                    facts.ty = self.graph.types.canonical_function(
+                        self.graph
+                            .entity(self.graph.binding(binding).entity)
+                            .ty
+                            .ok_or(Error::Invariant("deduced designation without type"))?,
+                    )?;
+                    self.graph.expression_facts.set(id, facts);
+                    super::record(&mut self.graph.expression_types, id.index(), facts.ty);
+                }
+                if explicit || self.callee_name != Some(id) {
+                    self.check_function_not_deleted(self.graph.binding(binding).entity, location)?;
+                    self.demand_function(binding, false)?;
+                    self.demand_specialization_body(binding);
                 }
             }
             return Ok(facts);

@@ -141,6 +141,115 @@ impl Analyzer<'_> {
         if found.functions.as_slice().len() == 1 {
             self.check_intrinsic_designation(binding, node.location)?;
         }
+        let concrete = found.functions.as_slice().len() == 1
+            && !self.graph.function_templates.requires_target(binding)
+            && self
+                .graph
+                .entity(self.graph.binding(binding).entity)
+                .template_head
+                .is_none();
+        if concrete && last.arguments.is_none() {
+            let function = self.graph.binding(binding).entity;
+            self.check_function_not_deleted(function, node.location)?;
+            self.require_deduced_result(function, node.location)?;
+            let naming = self
+                .graph
+                .scope(prefix)
+                .owner
+                .ok_or(Error::Invariant("class address without naming class"))?;
+            self.check_named_member_access(binding, naming, naming, scope, node.location)?;
+            if let Some(failure) = self.graph.analysis.substitution.current().failure {
+                return Err(Error::SubstitutionRejected(failure));
+            }
+            let signature = self.graph.types.canonical_function(
+                self.graph
+                    .entity(function)
+                    .ty
+                    .ok_or(Error::Invariant("function address without type"))?,
+            )?;
+            let origin = self.graph.function_origin(function)?;
+            let member = self.member_function_owner(binding).is_some();
+            let mut inner = self.new_expression_facts(signature, V::Lvalue)?;
+            inner.function = Some(origin);
+            self.graph.expression_facts.set(operand, inner);
+            super::record(&mut self.graph.expression_types, operand.index(), signature);
+            if !member {
+                self.demand_function(binding, false)?;
+                self.demand_specialization_body(binding);
+                let pointer = self.graph.types.pointer(signature)?;
+                let mut facts = self.new_expression_facts(pointer, V::Prvalue)?;
+                facts.function = Some(origin);
+                return Ok(Some(facts));
+            }
+            let functions =
+                address_functions.ok_or(Error::Invariant("member address without declarations"))?;
+            self.graph
+                .expression_facts
+                .set_function_declarations(operand, functions);
+            self.graph
+                .expression_facts
+                .set_function_declarations(id, functions);
+            let pointer = self.function_address_type(binding, signature)?;
+            let mut facts = self.new_expression_facts(pointer, V::Prvalue)?;
+            facts.function = Some(origin);
+            self.graph.expression_facts.set(id, facts);
+            super::record(&mut self.graph.expression_types, id.index(), pointer);
+            self.demand_function(binding, false)?;
+            self.demand_specialization_body(binding);
+            return Ok(Some(facts));
+        }
+        if concrete {
+            // The explicit template-id first forms its operand; unlike the
+            // direct ordinary branch, its access check follows that demand.
+            let function = self.graph.binding(binding).entity;
+            let origin = self.graph.function_origin(function)?;
+            let mut inner = self.function_designation(binding, found.functions.as_slice())?;
+            self.concrete_function_designation(operand, binding, &mut inner)?;
+            self.graph.expression_facts.set(operand, inner);
+            super::record(&mut self.graph.expression_types, operand.index(), inner.ty);
+            if self.callee_name != Some(operand) {
+                self.require_deduced_result(function, self.tree.expressions.get(operand).location)?;
+            }
+            let signature = self.graph.types.canonical_function(
+                self.graph
+                    .entity(function)
+                    .ty
+                    .ok_or(Error::Invariant("template address without function type"))?,
+            )?;
+            inner.ty = signature;
+            self.graph.expression_facts.set(operand, inner);
+            super::record(&mut self.graph.expression_types, operand.index(), signature);
+            self.check_function_not_deleted(function, self.tree.expressions.get(operand).location)?;
+            self.demand_function(binding, false)?;
+            self.demand_specialization_body(binding);
+            let naming = self
+                .graph
+                .scope(prefix)
+                .owner
+                .ok_or(Error::Invariant("template address without naming class"))?;
+            if let Some(declaration) = self.selected_function_declaration(
+                binding,
+                self.graph.overloads.get(
+                    address_functions
+                        .ok_or(Error::Invariant("template address without declarations"))?,
+                ),
+            ) {
+                self.check_named_member_access(
+                    declaration,
+                    naming,
+                    naming,
+                    scope,
+                    self.tree.expressions.get(id).location,
+                )?;
+            }
+            if let Some(failure) = self.graph.analysis.substitution.current().failure {
+                return Err(Error::SubstitutionRejected(failure));
+            }
+            let pointer = self.function_address_type(binding, signature)?;
+            let mut facts = self.new_expression_facts(pointer, V::Prvalue)?;
+            facts.function = Some(origin);
+            return Ok(Some(facts));
+        }
         let address = self.graph.expression_facts.add_member_address(
             super::expression_facts::MemberAddress {
                 naming: (self.graph.scope(prefix).kind == ScopeKind::Class)
@@ -149,57 +258,17 @@ impl Analyzer<'_> {
                 scope,
                 functions: address_functions
                     .ok_or(Error::Invariant("function address without lookup"))?,
-                // A sole ordinary declaration is checked at the name during
-                // address formation; template/overload selection checks the
-                // address expression. Retain that source fact with the lookup.
-                location: if last.arguments.is_none()
-                    && found.functions.as_slice().len() == 1
-                    && self
-                        .graph
-                        .entity(self.graph.binding(binding).entity)
-                        .template_head
-                        .is_none()
-                {
-                    Some(node.location)
-                } else {
-                    None
-                },
+                location: None,
             },
         )?;
         let mut inner = self.function_designation(binding, found.functions.as_slice())?;
         inner.member_address = Some(address);
         self.graph.expression_facts.set(operand, inner);
         super::record(&mut self.graph.expression_types, operand.index(), inner.ty);
-        let concrete = found.functions.as_slice().len() == 1
-            && !self.graph.function_templates.requires_target(binding)
-            && self
-                .graph
-                .entity(self.graph.binding(binding).entity)
-                .template_head
-                .is_none();
-        // An overload set has no concrete address type until selection. Its
-        // pending facts retain the source signature without interning a pointer.
-        let ty = if concrete {
-            self.function_address_type(binding, inner.ty)?
-        } else {
-            inner.ty
-        };
-        let mut facts = self.new_expression_facts(ty, V::Prvalue)?;
+        // Pending sets have no pointer type until target selection.
+        let mut facts = self.new_expression_facts(inner.ty, V::Prvalue)?;
         facts.functions = inner.functions;
         facts.member_address = Some(address);
-        if concrete {
-            if self
-                .graph
-                .entity(self.graph.binding(binding).entity)
-                .availability
-                == super::graph::FunctionAvailability::Deleted
-            {
-                return Err(Error::at(node.location, "use of a deleted function"));
-            }
-            self.graph.expression_facts.set(id, facts);
-            self.select_function_designation(id, binding)?;
-            return Ok(Some(self.graph.expression_facts.get(id)?));
-        }
         Ok(Some(facts))
     }
 
@@ -230,6 +299,24 @@ impl Analyzer<'_> {
         let mut facts = self.new_expression_facts(ty, V::Lvalue)?;
         facts.functions = Some(self.graph.overloads.add(functions)?);
         Ok(facts)
+    }
+    pub(super) fn concrete_function_designation(
+        &mut self,
+        id: ast::ExprId,
+        binding: BindingId,
+        facts: &mut ExprFacts,
+    ) -> Result<(), Error> {
+        if let Some(functions) = facts.functions {
+            self.graph
+                .expression_facts
+                .set_function_declarations(id, functions);
+        }
+        facts.functions = None;
+        facts.function = Some(
+            self.graph
+                .function_origin(self.graph.binding(binding).entity)?,
+        );
+        Ok(())
     }
     pub(super) fn check_resolved_function(&mut self, id: ast::ExprId) -> Result<(), Error> {
         let facts = self.graph.expression_facts.get(id)?;
@@ -413,30 +500,51 @@ impl Analyzer<'_> {
         id: ast::ExprId,
         binding: BindingId,
     ) -> Result<(), Error> {
-        if self
-            .graph
-            .entity(self.graph.binding(binding).entity)
-            .availability
-            == super::graph::FunctionAvailability::Deleted
-        {
-            return Err(Error::at(
-                self.tree.expressions.get(id).location,
-                "use of a deleted function",
-            ));
-        }
-        self.require_deduced_result(
-            self.graph.binding(binding).entity,
-            self.tree.expressions.get(id).location,
+        let function = self.graph.binding(binding).entity;
+        self.check_function_not_deleted(function, self.tree.expressions.get(id).location)?;
+        let ty = self.graph.types.canonical_function(
+            self.graph
+                .entity(function)
+                .ty
+                .ok_or(Error::Invariant("function without type"))?,
         )?;
-        let ty = self
-            .graph
-            .entity(self.graph.binding(binding).entity)
-            .ty
-            .ok_or(Error::Invariant("function without type"))?;
-        let ty = self.graph.types.canonical_function(ty)?;
         let root = self.graph.expression_facts.root(id);
+        if self.graph.expression_facts.get(root)?.functions.is_none() {
+            self.demand_function(binding, false)?;
+            self.demand_specialization_body(binding);
+            return Ok(());
+        }
         let address = self.graph.expression_facts.get(root)?.member_address;
-        if let Some(address) = address {
+        let inner = match self.tree.expressions.get(root).kind {
+            ast::ExprKind::Unary { op, operand }
+                if matches!(op.token.as_punctuator(), Some(P::BitAnd | P::Multiply)) =>
+            {
+                Some(operand)
+            }
+            _ => None,
+        };
+        if let Some(inner) = inner {
+            let mut facts = self.graph.expression_facts.get(inner)?;
+            facts.ty = ty;
+            self.concrete_function_designation(inner, binding, &mut facts)?;
+            self.graph.expression_facts.set(inner, facts);
+            super::record(&mut self.graph.expression_types, inner.index(), ty);
+        }
+        let mut facts = self.graph.expression_facts.get(root)?;
+        facts.ty = if inner.is_some() {
+            if address.is_some() {
+                self.function_address_type(binding, ty)?
+            } else {
+                self.graph.types.pointer(ty)?
+            }
+        } else {
+            ty
+        };
+        self.graph.expression_facts.set(root, facts);
+        super::record(&mut self.graph.expression_types, root.index(), facts.ty);
+        if inner.is_some()
+            && let Some(address) = address
+        {
             let address = self.graph.expression_facts.member_address(address);
             if let Some(naming) = address.naming
                 && let Some(declaration) = self.selected_function_declaration(
@@ -455,45 +563,11 @@ impl Analyzer<'_> {
                 )?;
             }
         }
-        self.demand_specialization_body(binding);
-        // Ordinary unary designations are already typed, including their
-        // function-to-pointer operand conversions. Only unresolved overload
-        // designations use the oracle's immediate-unary rewrite below.
-        if self.graph.expression_facts.get(root)?.functions.is_none() {
-            self.demand_function(binding, false)?;
-            return Ok(());
-        }
-        let inner = match self.tree.expressions.get(root).kind {
-            ast::ExprKind::Unary { op, operand }
-                if matches!(op.token.as_punctuator(), Some(P::BitAnd | P::Multiply)) =>
-            {
-                Some(operand)
-            }
-            _ => None,
-        };
-        // resolve_overloaded publishes only the designation and its immediate
-        // unary operand. Deeper unary nodes retain their independently typed facts.
-        for current in std::iter::once(root).chain(inner) {
-            let current = self.graph.expression_facts.root(current);
-            let mut facts = self.graph.expression_facts.get(current)?;
-            facts.ty = if current == root && inner.is_some() {
-                if address.is_some() {
-                    self.function_address_type(binding, ty)?
-                } else {
-                    self.graph.types.pointer(ty)?
-                }
-            } else {
-                ty
-            };
-            facts.functions = None;
-            facts.function = Some(
-                self.graph
-                    .function_origin(self.graph.binding(binding).entity)?,
-            );
-            self.graph.expression_facts.set(current, facts);
-            super::record(&mut self.graph.expression_types, current.index(), facts.ty);
-        }
+        let mut facts = self.graph.expression_facts.get(root)?;
+        self.concrete_function_designation(root, binding, &mut facts)?;
+        self.graph.expression_facts.set(root, facts);
         self.demand_function(binding, false)?;
+        self.demand_specialization_body(binding);
         Ok(())
     }
     pub(super) fn compare_sequences(
@@ -637,6 +711,68 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn failed_explicit_argument_stops_later_demands_and_callee_publication() {
+        for suffix in ["", ",int[1/0]"] {
+            let source = SourceBuffer::new(
+                format!(
+                    "struct Key{{private:template<class>struct Hidden;}};\
+                 template<template<class>class C,class U=int>void only();\
+                 int result=only<Key::template Hidden{suffix}>();"
+                )
+                .into_bytes(),
+            )
+            .unwrap();
+            let mut unit =
+                SyntaxUnit::new(Preprocessor::with_name(&source, b"failed-call-argument").unwrap());
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+            analyzer.set_semantics(true);
+            let marker = 0u8;
+            analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+            let scope = analyzer.graph.global;
+            let declarations = analyzer.tree.decl_lists.get(declarations).to_vec();
+            for &declaration in &declarations[..2] {
+                analyzer.declaration(declaration, scope).unwrap();
+            }
+            let ast::DeclKind::Simple { declarators, .. } =
+                analyzer.tree.declarations.get(declarations[2]).kind
+            else {
+                panic!("initializer declaration");
+            };
+            let initializer = analyzer.tree.init_declarators.get(declarators)[0]
+                .initializer
+                .unwrap();
+            let ast::InitializerKind::Assign(call) = initializer.kind else {
+                panic!("call initializer");
+            };
+            let ast::ExprKind::Call { callee, .. } = analyzer.tree.expressions.get(call).kind
+            else {
+                panic!("call syntax");
+            };
+            let expressions = analyzer.graph.work.totals.expressions;
+            let error = analyzer
+                .with_substitution_soft(None, |analyzer| analyzer.typed_expression(call, scope))
+                .unwrap_err();
+            assert!(
+                matches!(error, Error::SubstitutionRejected(failure) if failure.message == "inaccessible member")
+            );
+            assert_eq!(analyzer.graph.work.totals.expressions, expressions);
+            assert!(analyzer.graph.expression_facts.known(callee).is_none());
+            assert!(analyzer.graph.root_demands.as_slice().is_empty());
+            assert!(
+                analyzer
+                    .graph
+                    .analysis
+                    .substitution
+                    .current()
+                    .failure
+                    .is_none()
+            );
+        }
+    }
 
     #[test]
     fn target_selection_counts_functions_rather_than_binding_handles() {

@@ -6,7 +6,7 @@ use super::{
     analyzer::Analyzer,
     expression_facts::{DestructorTarget, ExprFacts, ObjectArgument, ValueCategory},
     function_resolution::CallTarget,
-    graph::{BindingKind, FunctionAvailability, ScopeId},
+    graph::{BindingKind, ScopeId},
     lookup::Filter,
     types::{Cv, Scalar, TypeKind},
 };
@@ -112,11 +112,8 @@ impl Analyzer<'_> {
                 return Err(Error::at(location, "a class without a destructor"));
             }
             let binding = self.explicit_destructor_binding(class)?;
-            let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if entity.availability == FunctionAvailability::Deleted {
-                return Err(Error::at(location, "use of a deleted function"));
-            }
-            self.check_special_member_access(
+            self.check_function_not_deleted(self.graph.binding(binding).entity, location)?;
+            self.check_special_use_access(
                 binding,
                 object_class.ok_or(Error::Invariant("class destructor without object class"))?,
                 scope,

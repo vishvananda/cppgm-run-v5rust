@@ -109,6 +109,13 @@ impl Analyzer<'_> {
         while let ast::ExprKind::Paren(inner) = self.tree.expressions.get(named).kind {
             named = inner;
         }
+        let explicit_name = matches!(self.tree.expressions.get(named).kind, ast::ExprKind::Id(name)
+            if self.tree.name_lists.get(self.tree.names.get(name).components)
+                .last().is_some_and(|component| component.arguments.is_some()));
+        if !explicit_name && let Some(failure) = self.graph.analysis.substitution.current().failure
+        {
+            return Err(Error::SubstitutionRejected(failure));
+        }
         let pretyped = self
             .pretyped_callable
             .is_some_and(|callable| self.graph.expression_facts.root(callable) == named);
@@ -117,6 +124,9 @@ impl Analyzer<'_> {
                 self.check_coroutine_callee(name, self.tree.expressions.get(id).location)?;
                 let callee_uses = self.dependent_uses.get();
                 let mut found = self.lookup_call_result(name, scope)?;
+                if let Some(failure) = self.graph.analysis.substitution.current().failure {
+                    return Err(Error::SubstitutionRejected(failure));
+                }
                 if let Some(facts) = self.builtin_call(id, name, arguments, scope, &mut found)? {
                     return Ok(facts);
                 }
@@ -168,19 +178,13 @@ impl Analyzer<'_> {
                     .get(syntax_name.components)
                     .last()
                     .ok_or(Error::Invariant("empty call name"))?;
-                // Ordinary member callees cannot acquire ADL candidates. Form
-                // their implicit object before arguments, as binding_expression
-                // does; template-id calls keep their later selection boundary.
-                let member_callee = component.arguments.is_none()
-                    && found.binding.is_some_and(|binding| {
-                        let binding = self.graph.binding(binding);
-                        binding.kind == super::graph::BindingKind::Function
-                            && self.graph.entity(binding.entity).home.is_some_and(|home| {
-                                self.graph.scope(home).kind == super::graph::ScopeKind::Class
-                            })
+                // Known ordinary callees are formed before the arguments;
+                // explicit template callees retain their raw candidate view.
+                let named_value = if component.arguments.is_none() && found.binding.is_some() {
+                    let function = found.binding.is_some_and(|binding| {
+                        self.graph.binding(binding).kind == super::graph::BindingKind::Function
                     });
-                let named_value = if member_callee {
-                    let saved = self.callee_name.replace(named);
+                    let saved = std::mem::replace(&mut self.callee_name, function.then_some(named));
                     let result = self.named_expression(named, &found, scope);
                     self.callee_name = saved;
                     Some(result?)
@@ -199,6 +203,21 @@ impl Analyzer<'_> {
                         self.explicit_function_arguments(syntax, scope, component.location, head)
                     })
                     .transpose()?;
+                if let Some(failure) = self.graph.analysis.substitution.current().failure {
+                    return Err(Error::SubstitutionRejected(failure));
+                }
+                let template_call = explicit.is_some();
+                let template_facts = if template_call {
+                    self.template_call_designation(callee, named, &mut found, scope)?
+                } else {
+                    None
+                };
+                if let Some(facts) = named_value {
+                    self.publish_named_callee(callee, named, facts, scope)?;
+                }
+                if let Some(failure) = self.graph.analysis.substitution.current().failure {
+                    return Err(Error::SubstitutionRejected(failure));
+                }
                 let uses = if component.arguments.is_some() {
                     callee_uses
                 } else {
@@ -207,6 +226,9 @@ impl Analyzer<'_> {
                 for syntax_index in 0..self.tree.expr_lists.get(arguments).len() {
                     let argument = self.tree.expr_lists.get(arguments)[syntax_index];
                     self.type_call_argument(argument, scope)?;
+                    if let Some(failure) = self.graph.analysis.substitution.current().failure {
+                        return Err(Error::SubstitutionRejected(failure));
+                    }
                 }
                 if callee == named
                     && !qualified
@@ -249,15 +271,36 @@ impl Analyzer<'_> {
                     };
                     self.specialize_explicit_functions(component, &mut found, &given, true)?;
                 }
-                let facts = if let Some(facts) = named_value {
+                let mut facts = if let Some(facts) = named_value.or(template_facts) {
                     facts
                 } else {
-                    let saved = self.callee_name.replace(named);
-                    let result = self.named_expression(named, &found, scope);
-                    self.callee_name = saved;
-                    result?
+                    let binding = found
+                        .binding
+                        .ok_or(Error::Invariant("resolved callee without binding"))?;
+                    let ty = self
+                        .graph
+                        .entity(self.graph.binding(binding).entity)
+                        .ty
+                        .ok_or(Error::Invariant("resolved callee without type"))?;
+                    // An ADL-only name has no counted callee facts until the
+                    // selected use succeeds and resolved_call publishes them.
+                    ExprFacts::new(ty, V::Lvalue)
                 };
-                self.publish_named_callee(callee, named, facts, scope)?;
+                if self
+                    .graph
+                    .binding(
+                        found
+                            .binding
+                            .ok_or(Error::Invariant("callee without binding"))?,
+                    )
+                    .kind
+                    == super::graph::BindingKind::Function
+                {
+                    facts.functions = Some(self.graph.overloads.add(found.functions.as_slice())?);
+                }
+                if let Some(template) = template_facts {
+                    self.bind_template_call_object(template, &mut facts)?;
+                }
                 facts
             } else {
                 let saved_callee = self.callee_name.replace(named);
@@ -267,9 +310,23 @@ impl Analyzer<'_> {
                 for syntax_index in 0..self.tree.expr_lists.get(arguments).len() {
                     let argument = self.tree.expr_lists.get(arguments)[syntax_index];
                     self.type_call_argument(argument, scope)?;
+                    if let Some(failure) = self.graph.analysis.substitution.current().failure {
+                        return Err(Error::SubstitutionRejected(failure));
+                    }
                 }
                 facts
             };
+        self.call_from_designation(id, callee, arguments, facts, scope)
+    }
+
+    fn call_from_designation(
+        &mut self,
+        id: ast::ExprId,
+        callee: ast::ExprId,
+        arguments: List<ast::ExprId>,
+        facts: ExprFacts,
+        scope: ScopeId,
+    ) -> Result<ExprFacts, Error> {
         if let Some(target) = facts.destructor {
             let mut result = self.destructor_call(id, arguments, target)?;
             result.dispatch = facts.dispatch;
@@ -278,7 +335,10 @@ impl Analyzer<'_> {
         if self.graph.class_of(facts.ty).is_some() {
             return self.callable_object_call(id, facts, scope);
         }
-        let designation = if let Some(set) = facts.functions {
+        let designation = if let Some(set) = facts
+            .functions
+            .or_else(|| self.graph.expression_facts.function_declarations(callee))
+        {
             Some(set)
         } else if let Some(binding) = facts.function {
             Some(self.graph.overloads.add(&[binding])?)
@@ -321,6 +381,74 @@ impl Analyzer<'_> {
         }
         self.indirect_call(id, callee, arguments, facts.ty, scope)
     }
+    fn bind_template_call_object(
+        &mut self,
+        source: ExprFacts,
+        facts: &mut ExprFacts,
+    ) -> Result<(), Error> {
+        let functions = self.graph.overloads.get(
+            source
+                .functions
+                .ok_or(Error::Invariant("template callee without candidates"))?,
+        );
+        let member = functions
+            .iter()
+            .any(|&binding| self.member_function_owner(binding).is_some());
+        let first = functions.first().copied();
+        if member
+            && let Some(first) = first
+            && let Some(object) = self.implicit_member_object(first)?
+        {
+            facts.object = Some(object);
+            facts.member_naming = facts
+                .member_naming
+                .or_else(|| self.graph.class_of(object.ty));
+        }
+        Ok(())
+    }
+
+    fn template_call_designation(
+        &mut self,
+        callee: ast::ExprId,
+        named: ast::ExprId,
+        found: &mut super::lookup::LookupResult,
+        scope: ScopeId,
+    ) -> Result<Option<ExprFacts>, Error> {
+        if found.binding.is_none() {
+            return Ok(None);
+        }
+        let templates: Vec<_> = found
+            .functions
+            .as_slice()
+            .iter()
+            .copied()
+            .filter(|&binding| {
+                self.graph
+                    .entity(self.graph.binding(binding).entity)
+                    .template_head
+                    .is_some()
+            })
+            .collect();
+        let Some(&first) = templates.first() else {
+            return Err(Error::UnconditionalDiagnostic {
+                location: self.tree.expressions.get(named).location,
+                message: "template-id does not name a function template",
+            });
+        };
+        found.functions = super::lookup::FunctionCandidates::default();
+        for binding in templates {
+            found.functions.push(binding);
+        }
+        found.binding = Some(first);
+        let mut facts = self.function_designation(first, found.functions.as_slice())?;
+        facts.member_naming = found
+            .qualifier
+            .filter(|&home| self.graph.scope(home).kind == super::graph::ScopeKind::Class)
+            .and_then(|home| self.graph.scope(home).owner);
+        self.publish_named_callee(callee, named, facts, scope)?;
+        Ok(Some(facts))
+    }
+
     pub(super) fn finish_selected_call(
         &mut self,
         id: ast::ExprId,
@@ -335,7 +463,6 @@ impl Analyzer<'_> {
         let binding = selected.binding;
         let location = self.tree.expressions.get(id).location;
         self.check_function_not_deleted(self.graph.binding(binding).entity, location)?;
-        self.require_deduced_result(self.graph.binding(binding).entity, location)?;
         let callable = facts.call_form == super::expression_facts::CallForm::CallableObject;
         if let Some(receiver) =
             self.record_call_receiver(callee, binding, &facts, scope, location)?
@@ -347,14 +474,15 @@ impl Analyzer<'_> {
         let argument_buffer =
             super::call_arguments::Arguments::new(self.tree.expr_lists.get(arguments));
         self.apply_call_arguments(selected, argument_buffer.as_slice(), scope, scratch)?;
-        self.select_function_designation(callee, binding)?;
         self.demand_function(binding, true)?;
+        self.demand_specialization_body(binding);
         let ty = self.graph.types.canonical_function(
             self.graph
                 .entity(self.graph.binding(binding).entity)
                 .ty
                 .ok_or(Error::Invariant("function without type"))?,
         )?;
+        self.publish_selected_callee(callee, binding, ty, callable)?;
         let mut facts = self.call_result(ty)?;
         if callable {
             // Calling an object does not replace the object's own designation
@@ -388,6 +516,60 @@ impl Analyzer<'_> {
         self.graph.record_call_binding(id, binding);
         Ok(facts)
     }
+    fn publish_selected_callee(
+        &mut self,
+        callee: ast::ExprId,
+        binding: BindingId,
+        ty: TypeId,
+        callable: bool,
+    ) -> Result<(), Error> {
+        if callable {
+            return Ok(());
+        }
+        let origin = self
+            .graph
+            .function_origin(self.graph.binding(binding).entity)?;
+        let root = self.graph.expression_facts.root(callee);
+        if let Some(facts) = self.graph.expression_facts.known(root) {
+            if facts.functions.is_none() && facts.function == Some(origin) {
+                return Ok(());
+            }
+        } else {
+            let mut facts = self.new_expression_facts(ty, V::Lvalue)?;
+            facts.function = Some(origin);
+            self.graph.expression_facts.set(root, facts);
+            super::record(&mut self.graph.expression_types, root.index(), ty);
+            return Ok(());
+        }
+        let mut current = root;
+        loop {
+            current = self.graph.expression_facts.root(current);
+            let next = if let ast::ExprKind::Unary { op, operand } =
+                self.tree.expressions.get(current).kind
+            {
+                Some((
+                    op.token.as_punctuator() == Some(crate::lex::pp_lexer::Punctuator::BitAnd),
+                    operand,
+                ))
+            } else {
+                None
+            };
+            let mut facts = self.graph.expression_facts.get(current)?;
+            facts.ty = if next.is_some_and(|(address, _)| address) {
+                self.graph.types.pointer(ty)?
+            } else {
+                ty
+            };
+            self.concrete_function_designation(current, binding, &mut facts)?;
+            self.graph.expression_facts.set(current, facts);
+            super::record(&mut self.graph.expression_types, current.index(), facts.ty);
+            let Some((_, operand)) = next else {
+                return Ok(());
+            };
+            current = operand;
+        }
+    }
+
     fn qualified_call_designator(&self, mut expression: ast::ExprId) -> bool {
         while let ast::ExprKind::Paren(inner) = self.tree.expressions.get(expression).kind {
             expression = inner;
@@ -410,7 +592,8 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: crate::support::source::SourceOffset,
     ) -> Result<Option<super::expression_facts::CallReceiver>, Error> {
-        let mut receiver = self.graph.expression_facts.get(callee)?;
+        let existing = self.graph.expression_facts.known(callee);
+        let mut receiver = existing.unwrap_or(*facts);
         receiver.object = facts.object;
         if facts.call_form == super::expression_facts::CallForm::CallableObject {
             receiver.conversion = None;
@@ -418,9 +601,12 @@ impl Analyzer<'_> {
             receiver.member_naming_path = None;
             receiver.member_path = None;
         }
-        let declaration = facts.functions.map_or(facts.function, |set| {
-            self.selected_function_declaration(binding, self.graph.overloads.get(set))
-        });
+        let declaration = facts
+            .functions
+            .or_else(|| self.graph.expression_facts.function_declarations(callee))
+            .map_or(facts.function, |set| {
+                self.selected_function_declaration(binding, self.graph.overloads.get(set))
+            });
         if let Some(object) = facts.object {
             let class = self
                 .graph
@@ -431,12 +617,6 @@ impl Analyzer<'_> {
                 self.check_named_member_access(declaration, naming, class, scope, location)?;
             }
             if let Some(home_type) = self.member_function_owner(binding) {
-                if matches!(
-                    object.source,
-                    super::expression_facts::ObjectSource::Implicit
-                ) {
-                    self.capture_this(location)?;
-                }
                 let home = self
                     .graph
                     .class_of(home_type)
@@ -451,6 +631,13 @@ impl Analyzer<'_> {
                     location
                 };
                 self.check_member_subobject(binding, class, naming, scope, access_location)?;
+                self.require_deduced_result(self.graph.binding(binding).entity, location)?;
+                if matches!(
+                    object.source,
+                    super::expression_facts::ObjectSource::Implicit
+                ) {
+                    self.capture_this(location)?;
+                }
                 let conversion = self
                     .object_sequence(object, binding, false)?
                     .ok_or(Error::Invariant("chosen object conversion missing"))?;
@@ -471,13 +658,16 @@ impl Analyzer<'_> {
                         self.demand_storage_layout(class, location)?;
                     }
                 }
-            } else if self.lowering()
-                && facts.call_form == super::expression_facts::CallForm::CallableObject
-                && object.category == V::Prvalue
-            {
-                // A static operator has no object parameter boundary. Its
-                // discarded prvalue receiver still materializes in the caller.
-                self.demand_storage_layout(class, location)?;
+            } else {
+                self.require_deduced_result(self.graph.binding(binding).entity, location)?;
+                if self.lowering()
+                    && facts.call_form == super::expression_facts::CallForm::CallableObject
+                    && object.category == V::Prvalue
+                {
+                    // A static operator has no object parameter boundary. Its
+                    // discarded prvalue receiver still materializes in the caller.
+                    self.demand_storage_layout(class, location)?;
+                }
             }
         } else {
             if let Some(declaration) = declaration {
@@ -499,6 +689,7 @@ impl Analyzer<'_> {
                     "non-static member function called without an object",
                 ));
             }
+            self.require_deduced_result(self.graph.binding(binding).entity, location)?;
         }
         if facts.call_form == super::expression_facts::CallForm::CallableObject {
             Ok(Some(super::expression_facts::CallReceiver {
@@ -510,7 +701,9 @@ impl Analyzer<'_> {
                 member_path: receiver.member_path,
             }))
         } else {
-            self.graph.expression_facts.set(callee, receiver);
+            if existing.is_some() {
+                self.graph.expression_facts.set(callee, receiver);
+            }
             Ok(None)
         }
     }

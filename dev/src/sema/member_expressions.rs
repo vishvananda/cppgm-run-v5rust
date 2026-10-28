@@ -356,15 +356,22 @@ impl Analyzer<'_> {
             self.check_member_subobject(binding, class, naming, scope, node.location)?;
         }
         if self.graph.binding(binding).kind == BindingKind::Function {
-            self.require_named_result(id, found.functions.as_slice())?;
+            let concrete = found.functions.as_slice().len() == 1
+                && !self.graph.function_templates.requires_target(binding)
+                && self
+                    .graph
+                    .entity(self.graph.binding(binding).entity)
+                    .template_head
+                    .is_none();
             let mut facts = self.function_designation(binding, found.functions.as_slice())?;
-            facts.category = if found.functions.as_slice().len() == 1
-                && self.member_function_owner(binding).is_none()
-            {
+            facts.category = if concrete && self.member_function_owner(binding).is_none() {
                 V::Lvalue
             } else {
                 V::Prvalue
             };
+            if concrete {
+                self.concrete_function_designation(id, binding, &mut facts)?;
+            }
             facts.object = Some(super::expression_facts::ObjectArgument {
                 source: super::expression_facts::ObjectSource::Explicit {
                     expression: base,
@@ -716,12 +723,27 @@ mod tests {
     }
 
     #[test]
-    fn rejected_address_selection_keeps_use_location_without_body_demand() {
-        for (declaration, expression, at) in [
-            ("template<class T>static int f(T);", "((&B::f))", "((&"),
-            ("template<class T>static int f(T);", "((&B::f<int>))", "&B"),
-            ("static int f(int);static int f(long);", "((&B::f))", "((&"),
-            ("static int f(int);", "((&B::f))", "B::f"),
+    fn address_access_rejections_keep_source_locations_and_demands() {
+        for (declaration, expression, at, demanded) in [
+            (
+                "template<class T>static int f(T);",
+                "((&B::f))",
+                "((&",
+                false,
+            ),
+            (
+                "template<class T>static int f(T);",
+                "((&B::f<int>))",
+                "&B",
+                true,
+            ),
+            (
+                "static int f(int);static int f(long);",
+                "((&B::f))",
+                "((&",
+                false,
+            ),
+            ("static int f(int);", "((&B::f))", "B::f", false),
         ] {
             let text = format!("struct B{{private:{declaration}}};int(*p)(int)={expression};");
             let expected = text.find(at).unwrap();
@@ -751,13 +773,20 @@ mod tests {
                 .graph
                 .own(scope, function_name, Filter::Ordinary)
                 .unwrap();
-            assert!(
-                !analyzer
+            // An explicit template-id's operand is odr-used before the outer
+            // address checks access. Deferred overloads and ordinary direct
+            // addresses check access before that use.
+            assert_eq!(
+                analyzer
                     .graph
                     .function_templates
-                    .body_demanded(analyzer.graph.binding(function).entity)
+                    .body_demanded(analyzer.graph.binding(function).entity),
+                demanded
             );
-            assert!(analyzer.graph.root_demands.as_slice().is_empty());
+            assert_eq!(
+                analyzer.graph.root_demands.as_slice().len(),
+                usize::from(demanded)
+            );
         }
     }
 

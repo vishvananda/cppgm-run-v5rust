@@ -5,7 +5,7 @@ use super::{
     Error,
     analyzer::Analyzer,
     expression_facts::{ExprFacts, ObjectArgument, ObjectSource, ValueCategory},
-    graph::{BindingId, BindingKind, FunctionAvailability, ScopeId},
+    graph::{BindingId, BindingKind, ScopeId},
     inheritance::BasePathId,
     lookup::Filter,
     procedural_calls::Candidates,
@@ -92,9 +92,7 @@ impl Analyzer<'_> {
             self.call_scratch = scratch;
             let binding = selected?.binding;
             let entity = self.graph.binding(binding).entity;
-            if self.graph.entity(entity).availability == FunctionAvailability::Deleted {
-                return Err(Error::at(location, "use of a deleted function"));
-            }
+            self.check_function_not_deleted(entity, location)?;
             if let Some(declaration) =
                 self.selected_function_declaration(binding, found.functions.as_slice())
             {

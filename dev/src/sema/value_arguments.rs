@@ -89,23 +89,31 @@ impl Analyzer<'_> {
         template: Option<bool>,
         unknown: bool,
     ) -> Result<TypeId, Error> {
-        if template != Some(false) {
-            let plain = self.plain_template_name(argument);
-            if let Some((name, expansion)) = plain
-                && let Some(ty) = self.template_name_argument(name, scope, template.is_some())?
-            {
-                return if expansion {
-                    self.pack_expansion_type(ty, location)
-                } else {
-                    Ok(ty)
-                };
-            }
-            if template == Some(true) && !plain.is_some_and(|(_, expansion)| expansion) {
-                return Err(Error::at(
-                    location,
-                    "a template template-argument that names no template",
-                ));
-            }
+        let plain = if template == Some(false) {
+            None
+        } else {
+            self.plain_template_name(argument)
+        };
+        let named = if let Some((name, _)) = plain {
+            self.template_name_argument(name, scope, template.is_some())?
+        } else {
+            None
+        };
+        if let Some(failure) = self.graph.analysis.substitution.current().failure {
+            return Err(Error::SubstitutionRejected(failure));
+        }
+        if let Some(ty) = named {
+            return if plain.is_some_and(|(_, expansion)| expansion) {
+                self.pack_expansion_type(ty, location)
+            } else {
+                Ok(ty)
+            };
+        }
+        if template == Some(true) && !plain.is_some_and(|(_, expansion)| expansion) {
+            return Err(Error::UnconditionalDiagnostic {
+                location,
+                message: "a template template-argument that names no template",
+            });
         }
         if let Some(identity) = self.template_argument_identity(argument, scope, location)? {
             return Ok(identity);

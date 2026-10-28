@@ -1217,6 +1217,7 @@ impl Analyzer<'_> {
         let TypeKind::Class(class) = self.graph.types.get(ty).kind else {
             return Ok(());
         };
+        self.check_class_destruction(ty, scope, location)?;
         if !self.graph.entity(class).bases.is_empty() {
             self.prepare_destruction(class)?;
         }
@@ -1224,11 +1225,6 @@ impl Analyzer<'_> {
             return Ok(());
         };
         self.prepare_destruction(class)?;
-        let entity = self.graph.entity(self.graph.binding(destructor).entity);
-        if entity.availability == super::graph::FunctionAvailability::Deleted {
-            return Err(Error::at(location, "use of a deleted function"));
-        }
-        self.check_direct_member_access(destructor, scope, location)?;
         let nontrivial = !self.graph.destructor_trivial(class)?;
         if nontrivial && self.unevaluated == 0 && self.template_depth == 0 {
             self.demand_instance_member(self.graph.binding(destructor).entity);

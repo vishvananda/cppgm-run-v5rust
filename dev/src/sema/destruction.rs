@@ -342,6 +342,16 @@ impl Analyzer<'_> {
         let TypeKind::Class(class) = self.graph.types.get(ty).kind else {
             return Ok(());
         };
+        self.check_existing_destructor(class, self.base_object.unwrap_or(class), scope, location)
+    }
+
+    fn check_existing_destructor(
+        &mut self,
+        class: EntityId,
+        object: EntityId,
+        scope: super::graph::ScopeId,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
         let declaration = self
             .graph
             .destructor_binding(class)
@@ -357,13 +367,7 @@ impl Analyzer<'_> {
         };
         self.check_function_not_deleted(declaration, location)?;
         if let Some(binding) = self.graph.entity(class).declared_destructor {
-            self.check_declaration_member_access(
-                binding,
-                class,
-                Some(self.base_object.unwrap_or(class)),
-                scope,
-                location,
-            )?;
+            self.check_declaration_member_access(binding, class, Some(object), scope, location)?;
         }
         Ok(())
     }
@@ -467,22 +471,12 @@ impl Analyzer<'_> {
             if member && self.graph.entity(child).anonymous_class.is_some() {
                 continue;
             }
-            if let Some(binding) = self.destructor_callable(child)? {
-                if self
-                    .graph
-                    .entity(self.graph.binding(binding).entity)
-                    .availability
-                    == FunctionAvailability::Deleted
-                {
-                    return Err(Error::at(location, "use of a deleted function"));
-                }
-                self.check_special_member_access(
-                    binding,
-                    if member { child } else { class },
-                    scope,
-                    location,
-                )?;
-            }
+            self.check_existing_destructor(
+                child,
+                if member { child } else { class },
+                scope,
+                location,
+            )?;
         }
         Ok(())
     }

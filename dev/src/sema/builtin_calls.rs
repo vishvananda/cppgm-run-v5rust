@@ -366,10 +366,11 @@ impl Analyzer<'_> {
                     | BuiltinFunction::ConstantP
             )
         ) {
-            return Err(Error::at(
+            return self.reject_substitution(
                 location,
                 "a builtin expanded where it is called named other than in a call",
-            ));
+                false,
+            );
         }
         Ok(())
     }

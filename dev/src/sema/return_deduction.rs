@@ -6,7 +6,7 @@ use super::{
     Error,
     analyzer::Analyzer,
     expression_facts::ExprFacts,
-    graph::{BindingId, EntityId, Graph, ScopeId},
+    graph::{EntityId, Graph, ScopeId},
     types::{Cv, Scalar, TypeId, TypeKind},
 };
 use crate::{support::source::SourceOffset, syntax::ast};
@@ -56,28 +56,6 @@ impl Graph {
 }
 
 impl Analyzer<'_> {
-    pub(super) fn require_named_result(
-        &mut self,
-        id: ast::ExprId,
-        functions: &[BindingId],
-    ) -> Result<(), Error> {
-        if self.callee_name != Some(id)
-            && let [binding] = functions
-            && !self.graph.function_templates.requires_target(*binding)
-            && self
-                .graph
-                .entity(self.graph.binding(*binding).entity)
-                .template_head
-                .is_none()
-        {
-            self.require_deduced_result(
-                self.graph.binding(*binding).entity,
-                self.tree.expressions.get(id).location,
-            )?;
-        }
-        Ok(())
-    }
-
     pub(super) fn require_deduced_result(
         &mut self,
         function: EntityId,
@@ -109,10 +87,11 @@ impl Analyzer<'_> {
                 return Ok(());
             }
         }
-        Err(Error::at(
+        self.reject_substitution(
             location,
             "a function whose return type is not deduced yet (7.1.6.4p11)",
-        ))
+            false,
+        )
     }
 
     fn return_type(

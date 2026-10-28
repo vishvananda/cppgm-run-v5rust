@@ -105,12 +105,21 @@ impl Analyzer<'_> {
         location: crate::support::source::SourceOffset,
     ) -> Result<Option<TypeId>, Error> {
         let ty = match argument.kind {
-            ast::TemplateArgumentKind::Type(ty) => self.type_syntax(ty, scope)?,
+            ast::TemplateArgumentKind::Type(ty) => {
+                let ty = self.type_syntax(ty, scope)?;
+                if let Some(failure) = self.graph.analysis.substitution.current().failure {
+                    return Err(Error::SubstitutionRejected(failure));
+                }
+                ty
+            }
             ast::TemplateArgumentKind::Expression(expression) => {
                 let ExprKind::Id(name) = self.tree.expressions.get(expression).kind else {
                     return Ok(None);
                 };
                 let result = self.lookup_result(name, scope, Filter::Ordinary)?;
+                if let Some(failure) = self.graph.analysis.substitution.current().failure {
+                    return Err(Error::SubstitutionRejected(failure));
+                }
                 let found = result.binding.ok_or_else(|| {
                     Error::at(self.tree.names.get(name).location, "undeclared name")
                 })?;
@@ -155,7 +164,10 @@ impl Analyzer<'_> {
             }
         };
         if matches!(self.graph.types.get(ty).kind, TypeKind::Auto(_)) {
-            return Err(Error::at(location, "auto as a template argument"));
+            return Err(Error::UnconditionalDiagnostic {
+                location,
+                message: "auto as a template argument",
+            });
         }
         Ok(Some(ty))
     }

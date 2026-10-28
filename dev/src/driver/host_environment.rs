@@ -248,7 +248,7 @@ mod tests {
             if semantic {
                 assert!(matches!(
                     result,
-                    Err(crate::sema::Error::Diagnostic {
+                    Err(crate::sema::Error::UnconditionalDiagnostic {
                         message: "a builtin expanded where it is called named other than in a call",
                         ..
                     })

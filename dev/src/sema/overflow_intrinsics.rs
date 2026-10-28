@@ -285,7 +285,7 @@ mod designation_tests {
             analyzer.set_lowering();
             assert!(matches!(
                 analyzer.analyze(declarations),
-                Err(Error::Diagnostic {
+                Err(Error::UnconditionalDiagnostic {
                     message: "a builtin expanded where it is called named other than in a call",
                     ..
                 })

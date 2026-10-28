@@ -9,7 +9,7 @@ use super::{
         Conversion, ConversionRank, ExprFacts, ObjectArgument, ObjectSource, ValueCategory,
         ValueConversion,
     },
-    graph::{BindingId, EntityId, FunctionAvailability, ScopeId},
+    graph::{BindingId, EntityId, ScopeId},
     inheritance::BasePathId,
     procedural_calls::{ArgumentSequence, UserConversion},
     specifiers::Explicitness,
@@ -578,10 +578,8 @@ impl Analyzer<'_> {
         };
         let entity = self.graph.binding(binding).entity;
         // convert_class_operand does not check deletion in the frozen builtin path.
-        if usage != ConversionUse::Builtin
-            && self.graph.entity(entity).availability == FunctionAvailability::Deleted
-        {
-            return Err(Error::at(location, "use of a deleted function"));
+        if usage != ConversionUse::Builtin {
+            self.check_function_not_deleted(entity, location)?;
         }
         let defer_demand = usage == ConversionUse::Scalar
             && matches!(
@@ -645,24 +643,17 @@ impl Analyzer<'_> {
                 "a conversion function of an ambiguous base class subobject",
             ));
         }
-        let path = self
-            .check_named_member_access(binding, class, class, scope, location)
-            .and_then(|()| {
-                if class == owner {
-                    Ok(None)
-                } else {
-                    self.checked_base_path(class, owner, scope, location, true, false)
-                        .map(Some)
-                }
-            });
-        // C++ apply_user_conversion records this use even when a soft access
-        // failure rejects the surrounding specialization. The retained body
-        // demand remains observable in the semantic tool's output.
-        if !defer_demand || path.is_err() {
+        self.check_named_member_access(binding, class, class, scope, location)?;
+        let path = if class == owner {
+            None
+        } else {
+            Some(self.checked_base_path(class, owner, scope, location, true, false)?)
+        };
+        if !defer_demand {
             self.demand_specialization_body(binding);
             self.demand_function(binding, true)?;
         }
-        path
+        Ok(path)
     }
 
     pub(super) fn cast_conversion_function(

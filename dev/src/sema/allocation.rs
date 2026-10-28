@@ -8,7 +8,7 @@ use super::{
     constructor_initialization::ConstructorArguments,
     expression_facts::{ExprFacts, ValueCategory},
     function_names::{SpecialName, ValueKey},
-    graph::{BindingId, BindingKind, EntityId, FunctionAvailability, ScopeId},
+    graph::{BindingId, BindingKind, EntityId, ScopeId},
     lookup::{Filter, LookupResult},
     procedural_calls::Candidates,
     types::{Scalar, TypeId, TypeKind},
@@ -323,14 +323,7 @@ impl Analyzer<'_> {
                 location,
                 "no usual deallocation function for the delete-expression",
             ))?;
-        if self
-            .graph
-            .entity(self.graph.binding(function).entity)
-            .availability
-            == FunctionAvailability::Deleted
-        {
-            return Err(Error::at(location, "use of a deleted function"));
-        }
+        self.check_function_not_deleted(self.graph.binding(function).entity, location)?;
         if let Some(naming) = naming
             && let Some(declaration) =
                 self.selected_function_declaration(function, found.functions.as_slice())
@@ -498,9 +491,7 @@ impl Analyzer<'_> {
             )?;
             let chosen = self.select_call(location, args.len() + 1, 0, &scratch)?;
             let function = self.graph.binding(chosen.binding).entity;
-            if self.graph.entity(function).availability == FunctionAvailability::Deleted {
-                return Err(Error::at(location, "use of a deleted function"));
-            }
+            self.check_function_not_deleted(function, location)?;
             if let Some(naming) = naming
                 && let Some(declaration) =
                     self.selected_function_declaration(chosen.binding, found.functions.as_slice())

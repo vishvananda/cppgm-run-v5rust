@@ -6,7 +6,7 @@ use super::{
     expression_facts::{ExprFacts, ObjectArgument, ObjectSource},
     function_resolution::CallTarget,
     function_templates::TemplateOrdering,
-    graph::{BindingId, FunctionAvailability, ScopeId},
+    graph::{BindingId, ScopeId},
     procedural_calls::ArgumentSequence,
     types::{Scalar, TypeKind},
 };
@@ -349,14 +349,7 @@ impl Analyzer<'_> {
             return Ok(None);
         };
         let location = self.tree.expressions.get(id).location;
-        if self
-            .graph
-            .entity(self.graph.binding(binding).entity)
-            .availability
-            == FunctionAvailability::Deleted
-        {
-            return Err(Error::at(location, "use of a deleted function"));
-        }
+        self.check_function_not_deleted(self.graph.binding(binding).entity, location)?;
         if self.member_function_owner(binding).is_some()
             && let Some(declaration) = self.selected_function_declaration(binding, set)
         {
@@ -373,6 +366,9 @@ impl Analyzer<'_> {
             &scratch.sequences[first..first + operands.len()],
             scope,
         )?;
+        if let Some(failure) = self.graph.analysis.substitution.current().failure {
+            return Err(Error::SubstitutionRejected(failure));
+        }
         if let Some(facts) = self.type_identity(id, op, operands, binding)? {
             return Ok(Some(facts));
         }

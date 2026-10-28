@@ -6,7 +6,7 @@ use super::{
     expression_facts::{ExprFacts, ValueCategory},
     function_names::{SpecialName, ValueKey},
     function_resolution::CallTarget,
-    graph::{BindingId, BindingKind, FunctionAvailability, ScopeId},
+    graph::{BindingId, BindingKind, ScopeId},
     literal_numbers::{CookedFloating, NumberId},
     lookup::Filter,
     types::{Cv, Scalar, TypeId, TypeKind},
@@ -516,9 +516,7 @@ impl Analyzer<'_> {
     ) -> Result<ExprFacts, Error> {
         let location = self.tree.expressions.get(id).location;
         let entity = self.graph.binding(binding).entity;
-        if self.graph.entity(entity).availability == FunctionAvailability::Deleted {
-            return Err(Error::at(location, "use of a deleted function"));
-        }
+        self.check_function_not_deleted(entity, location)?;
         self.demand_specialization_body(binding);
         self.demand_function(binding, true)?;
         let ty = self

@@ -337,6 +337,9 @@ pub(super) struct ExpressionFacts {
     // Qualified addresses keep their original lookup independently of the
     // specialization set. The dense use fact carries only a compact identity.
     member_addresses: Vec<MemberAddress>,
+    // The source function list survives resolving its separate overload flag.
+    function_declarations:
+        std::collections::HashMap<ast::ExprId, super::function_resolution::OverloadId>,
     // Only nonelided class copies own a lowering action. Selection remains
     // on the source facts, independently of its existing operand conversion.
     copy_actions: std::collections::HashMap<ast::ExprId, super::copy_initialization::CopyAction>,
@@ -572,6 +575,19 @@ impl ExpressionFacts {
     }
     pub(super) fn member_address(&self, id: MemberAddressId) -> MemberAddress {
         self.member_addresses[id.0 as usize]
+    }
+    pub(super) fn function_declarations(
+        &self,
+        id: ast::ExprId,
+    ) -> Option<super::function_resolution::OverloadId> {
+        self.function_declarations.get(&self.root(id)).copied()
+    }
+    pub(super) fn set_function_declarations(
+        &mut self,
+        id: ast::ExprId,
+        functions: super::function_resolution::OverloadId,
+    ) {
+        self.function_declarations.insert(self.root(id), functions);
     }
     pub(super) fn callable_receiver(&self, id: ast::ExprId) -> Option<CallReceiver> {
         self.callable_receivers.get(&self.root(id)).copied()

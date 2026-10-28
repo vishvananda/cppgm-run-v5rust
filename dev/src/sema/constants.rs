@@ -1942,17 +1942,10 @@ impl Analyzer<'_> {
                     && let Some(super::procedural_calls::UserConversion::Function(binding)) =
                         sequence.user_conversion
                 {
-                    if self
-                        .graph
-                        .entity(self.graph.binding(binding).entity)
-                        .availability
-                        == super::graph::FunctionAvailability::Deleted
-                    {
-                        return Err(Error::at(
-                            self.tree.expressions.get(expr).location,
-                            "use of a deleted function",
-                        ));
-                    }
+                    self.check_function_not_deleted(
+                        self.graph.binding(binding).entity,
+                        self.tree.expressions.get(expr).location,
+                    )?;
                     self.convert_class_operand(expr, binding, scope)?;
                 }
             } else {

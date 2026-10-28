@@ -270,17 +270,10 @@ impl Analyzer<'_> {
         };
         for (operand, sequence) in operands.into_iter().zip(sequences) {
             if let Some(UserConversion::Function(binding)) = sequence.user_conversion {
-                if self
-                    .graph
-                    .entity(self.graph.binding(binding).entity)
-                    .availability
-                    == super::graph::FunctionAvailability::Deleted
-                {
-                    return Err(Error::at(
-                        self.tree.expressions.get(operand).location,
-                        "use of a deleted function",
-                    ));
-                }
+                self.check_function_not_deleted(
+                    self.graph.binding(binding).entity,
+                    self.tree.expressions.get(operand).location,
+                )?;
                 self.apply_builtin_conversion(operand, sequence, scope)?;
             }
             self.convert_operand_scalar(operand, ty, false)?;
