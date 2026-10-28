@@ -15,6 +15,7 @@ pub(super) struct Observations {
 pub(super) struct Query {
     pub kind: QueryKind,
     pub observations: Observations,
+    pub memo: Option<Box<super::interpreter_memo::Memo>>,
 }
 pub(super) struct Observed<T> {
     pub result: Result<T, Error>,
@@ -60,6 +61,7 @@ impl Analyzer<'_> {
             let query = analyzer.constant_query.replace(Query {
                 kind,
                 observations: Observations::default(),
+                memo: None,
             });
             let frames = analyzer.constexpr_frames.enter_evaluation();
             let construction = analyzer.graph.aggregate_constants.suspend_construction();

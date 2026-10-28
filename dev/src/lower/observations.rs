@@ -105,7 +105,7 @@ impl Statistics {
         let work = self.semantic;
         write!(
             out,
-            "cppgm++ lowir stats: units={} functions={} declarations={} globals={} instructions={} blocks={} slots={} mangled_names={} vtables={} virtual_slots={} override_steps={} specializations={} instantiated_classes={} instantiated_functions={} instantiated_arguments={} instantiated_variables={} value_substitutions={} partial_candidates={} substitution_failures={} limited_lookups={} constant_evaluations={} constant_steps={} base_steps={} symbols={} names={} lowir_arena_bytes={}",
+            "cppgm++ lowir stats: units={} functions={} declarations={} globals={} instructions={} blocks={} slots={} mangled_names={} vtables={} virtual_slots={} override_steps={} specializations={} instantiated_classes={} instantiated_functions={} instantiated_arguments={} instantiated_variables={} value_substitutions={} partial_candidates={} substitution_failures={} limited_lookups={} constant_evaluations={} constant_steps={} base_steps={} constant_call_builds={} constant_call_reuses={} symbols={} names={} lowir_arena_bytes={}",
             self.units,
             built.functions,
             self.declarations,
@@ -129,6 +129,8 @@ impl Statistics {
             work.constant_evaluations,
             work.constant_steps,
             work.base_steps,
+            work.constant_call_builds,
+            work.constant_call_reuses,
             self.symbols,
             self.names,
             self.arena_bytes

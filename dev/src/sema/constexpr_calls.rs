@@ -997,6 +997,58 @@ impl Analyzer<'_> {
         object: Option<Address>,
         location: SourceOffset,
     ) -> Result<Returned, Error> {
+        let key = self.constant_call_key(function, object, bound, location)?;
+        if let Some(known) = key
+            .as_ref()
+            .and_then(|key| self.constant_query.as_ref()?.memo.as_ref()?.get(key))
+        {
+            self.constexpr_frames
+                .reuse_call(known.steps, known.depth, location)?;
+            self.graph.work.totals.constant_call_reuses += 1;
+            return Ok(Returned::Value(Value::Integer(known.value)));
+        }
+        let mut frame = self.constant_function_frame(function, returns, bound, object)?;
+        frame.destination = destination;
+        let parent_depth = self.constexpr_frames.depth();
+        let first_step = self.constexpr_frames.steps();
+        let (result, peak) = self.with_observed_constant_frame(frame, |analyzer| {
+            analyzer.constant_function_body(function, returns, location)
+        });
+        if let Some(key) = key
+            && let Ok(Returned::Value(Value::Integer(value))) = &result
+            && !value.indeterminate()
+        {
+            let steps = self.constexpr_frames.steps() - first_step;
+            let depth = peak - parent_depth;
+            let query = self
+                .constant_query
+                .as_mut()
+                .ok_or(Error::Invariant("call lost its logical query"))?;
+            if !query.observations.met_incomplete_layout
+                && query
+                    .memo
+                    .as_mut()
+                    .ok_or(Error::Invariant("eligible call lost its memo"))?
+                    .remember(
+                        key,
+                        super::interpreter_memo::ResultValue {
+                            value: *value,
+                            steps,
+                            depth,
+                        },
+                    )
+            {
+                self.graph.work.totals.constant_call_builds += 1;
+            }
+        }
+        result
+    }
+    fn constant_function_body(
+        &mut self,
+        function: EntityId,
+        returns: TypeId,
+        location: SourceOffset,
+    ) -> Result<Returned, Error> {
         let body = self
             .graph
             .lower_function_body(function)
@@ -1010,26 +1062,21 @@ impl Analyzer<'_> {
                 "a function-try-block in a constant expression",
             ));
         }
-        let mut frame = self.constant_function_frame(function, returns, bound, object)?;
-        frame.destination = destination;
-        self.with_constant_frame(frame, |analyzer| {
-            analyzer
-                .constant_compound(body.compound)
-                .and_then(|flow| match flow {
-                    super::constexpr_statements::Flow::Return(value) => Ok(value),
-                    _ if matches!(
-                        analyzer.graph.types.get(returns).kind,
-                        TypeKind::Scalar(Scalar::Void)
-                    ) =>
-                    {
-                        Ok(Returned::Void)
-                    }
-                    _ => Err(nonconstant(
-                        location,
-                        "a constexpr function flows off its end",
-                    )),
-                })
-        })
+        self.constant_compound(body.compound)
+            .and_then(|flow| match flow {
+                super::constexpr_statements::Flow::Return(value) => Ok(value),
+                _ if matches!(
+                    self.graph.types.get(returns).kind,
+                    TypeKind::Scalar(Scalar::Void)
+                ) =>
+                {
+                    Ok(Returned::Void)
+                }
+                _ => Err(nonconstant(
+                    location,
+                    "a constexpr function flows off its end",
+                )),
+            })
     }
     pub(super) fn constant_function_frame(
         &self,
@@ -1059,10 +1106,17 @@ impl Analyzer<'_> {
         frame: Frame,
         execute: impl FnOnce(&mut Self) -> Result<T, Error>,
     ) -> Result<T, Error> {
+        self.with_observed_constant_frame(frame, execute).0
+    }
+    fn with_observed_constant_frame<T>(
+        &mut self,
+        frame: Frame,
+        execute: impl FnOnce(&mut Self) -> Result<T, Error>,
+    ) -> (Result<T, Error>, usize) {
         self.constexpr_frames.push(frame);
         let result = execute(self);
-        self.constexpr_frames.pop();
-        result
+        let peak = self.constexpr_frames.pop();
+        (result, peak)
     }
 }
 

@@ -32,7 +32,7 @@ impl SourceObservations {
             out.write_all(path)?;
             writeln!(
                 out,
-                ": tokens={} scopes={} bindings={} entities={} types={} names={} lookups={} member_cache={} parser_kept_searches={} constant_evaluations={} constant_steps={} syntax_arena_bytes={} semantic_arena_bytes={} parse_ms={} analyze_ms={} print_ms={} peak_rss_kb={peak_rss}",
+                ": tokens={} scopes={} bindings={} entities={} types={} names={} lookups={} member_cache={} parser_kept_searches={} constant_evaluations={} constant_steps={} constant_call_builds={} constant_call_reuses={} syntax_arena_bytes={} semantic_arena_bytes={} parse_ms={} analyze_ms={} print_ms={} peak_rss_kb={peak_rss}",
                 s.tokens,
                 g.scopes,
                 g.bindings,
@@ -44,6 +44,8 @@ impl SourceObservations {
                 s.kept_searches,
                 g.work.constant_evaluations,
                 g.work.constant_steps,
+                g.work.constant_call_builds,
+                g.work.constant_call_reuses,
                 s.arena_bytes,
                 g.arena_bytes,
                 self.parse_ms,

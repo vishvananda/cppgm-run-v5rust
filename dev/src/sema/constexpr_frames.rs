@@ -315,6 +315,34 @@ impl Frames {
     pub(super) fn depth(&self) -> usize {
         self.control.depth
     }
+    pub(super) fn steps(&self) -> u64 {
+        self.control.steps
+    }
+    pub(super) fn reuse_call(
+        &mut self,
+        steps: u64,
+        depth: usize,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        if steps > (1_u64 << 24).saturating_sub(self.control.steps) {
+            return Err(nonconstant(
+                location,
+                "constant evaluation exceeds its step budget",
+            ));
+        }
+        if depth > 512_usize.saturating_sub(self.control.depth) {
+            return Err(nonconstant(location, "constexpr calls nested too deeply"));
+        }
+        self.control.steps += steps;
+        if let Some(frame) = self
+            .control
+            .call
+            .and_then(|index| self.stack.get_mut(index))
+        {
+            frame.peak_depth = frame.peak_depth.max(self.control.depth + depth);
+        }
+        Ok(())
+    }
     pub(super) fn current(&self) -> Result<&Frame, Error> {
         self.stack
             .get(self.control.floor..)
@@ -346,13 +374,14 @@ impl Frames {
         }
         self.stack.push(frame);
     }
-    pub(super) fn pop(&mut self) {
+    pub(super) fn pop(&mut self) -> usize {
         if !self.active() {
-            return;
+            return 0;
         }
-        if let Some(frame) = self.stack.pop()
-            && frame.role != FrameRole::Initializer
-        {
+        let Some(frame) = self.stack.pop() else {
+            return 0;
+        };
+        if frame.role != FrameRole::Initializer {
             self.control.depth -= 1;
             self.control.call = frame.parent_call;
             if frame.role == FrameRole::Ordinary
@@ -363,6 +392,7 @@ impl Frames {
                 parent.peak_depth = parent.peak_depth.max(frame.peak_depth);
             }
         }
+        frame.peak_depth
     }
     pub(super) fn region(&self) -> Region {
         Region {
@@ -507,6 +537,29 @@ impl Frames {
             .get(id.slot as usize)
             .filter(|object| object.id == id && object.alive)
             .ok_or_else(|| nonconstant(location, "an access to an object whose lifetime has ended"))
+    }
+    pub(super) fn bound_integer(
+        &self,
+        place: Address,
+        location: SourceOffset,
+    ) -> Result<super::constants::Constant, Error> {
+        let Root::Object(id) = place.root else {
+            return Err(Error::Invariant(
+                "call memo parameter outside evaluation storage",
+            ));
+        };
+        let object = self.object(id, location)?;
+        if place.offset != 0 || place.past_end || object.cells.len() != 1 {
+            return Err(Error::Invariant(
+                "call memo parameter is not a whole scalar",
+            ));
+        }
+        match self.cells[object.cells.start].value {
+            Some(TemporaryValue::Integer(value)) => Ok(value),
+            _ => Err(Error::Invariant(
+                "call memo parameter is not an initialized integer",
+            )),
+        }
     }
     pub(super) fn ty(&self, id: ObjectId, location: SourceOffset) -> Result<TypeId, Error> {
         Ok(self.object(id, location)?.ty)
@@ -1018,6 +1071,29 @@ mod tests {
         lex::vocabulary::Keyword,
         sema::{constants::Constant, graph::Graph, types::Scalar},
     };
+
+    #[test]
+    fn call_replay_checks_steps_before_depth_and_changes_state_only_on_success() {
+        let mut graph = Graph::new();
+        let ty = graph.types.scalar(Scalar::Bool).unwrap();
+        let mut frames = Frames::default();
+        frames.push(Frame::new(ty, graph.global, FrameRole::Ordinary));
+        frames.control.steps = (1 << 24) - 4;
+        let location = SourceOffset(77);
+        frames.reuse_call(4, 511, location).unwrap();
+        assert_eq!(frames.steps(), 1 << 24);
+        assert_eq!(frames.current_call().unwrap().peak_depth, 512);
+        assert!(matches!(frames.reuse_call(1, 512, location),
+            Err(Error::NonConstant { location: SourceOffset(77), message, .. })
+                if message == "constant evaluation exceeds its step budget"));
+        assert_eq!(frames.steps(), 1 << 24);
+        frames.control.steps = 0;
+        assert!(matches!(frames.reuse_call(1, 512, location),
+            Err(Error::NonConstant { location: SourceOffset(77), message, .. })
+                if message == "constexpr calls nested too deeply"));
+        assert_eq!(frames.steps(), 0);
+        assert_eq!(frames.current_call().unwrap().peak_depth, 512);
+    }
 
     #[test]
     fn independent_queries_hide_names_preserve_objects_and_restore_control() {

@@ -103,6 +103,7 @@ mod initializer_lists;
 mod instance_definitions;
 mod integer_intrinsics;
 mod integral;
+mod interpreter_memo;
 mod interpreter_queries;
 mod invoke;
 mod jumps;
