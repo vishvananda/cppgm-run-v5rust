@@ -259,7 +259,9 @@ impl Function<'_, '_, '_, '_> {
             .ok_or(crate::sema::Error::Invariant(
                 "destruction action without destructor",
             ))?;
-        let guard = if unwinding && !self.graph.lower_function(destructor)?.nothrow {
+        let guard = if unwinding
+            && self.lifetime_call_throws(crate::sema::lowering::CallTarget::Direct(destructor))?
+        {
             let guard = self.open_destructor_unwind_guard()?;
             Some(guard)
         } else {
@@ -330,7 +332,11 @@ impl Function<'_, '_, '_, '_> {
                     count = count.wrapping_mul(bound);
                     element = child;
                 }
-                if !unwinding && !self.graph.lower_function(destructor)?.nothrow {
+                if !unwinding
+                    && self.lifetime_call_throws(crate::sema::lowering::CallTarget::Direct(
+                        destructor,
+                    ))?
+                {
                     self.destroy_member_array_guarded(element, object, count)?;
                 } else {
                     self.destroy_array_loop(element, object, count)?;

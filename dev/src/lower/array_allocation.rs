@@ -28,14 +28,12 @@ pub(super) struct Shape {
 }
 
 impl Function<'_, '_, '_, '_> {
-    pub(super) fn array_length_throws(&self, use_: &AllocationView) -> Result<bool, Error> {
+    pub(super) fn array_length_throws(&mut self, use_: &AllocationView) -> Result<bool, Error> {
         let Some(array) = use_.array else {
             return Ok(false);
         };
-        Ok(
-            (!self.graph.lower_function(use_.function)?.nothrow || use_.reserved)
-                && self.array_storage_shape(use_, array)?.checked,
-        )
+        Ok((!self.function_nothrow(use_.function)? || use_.reserved)
+            && self.array_storage_shape(use_, array)?.checked)
     }
     fn array_storage_shape(
         &self,
@@ -109,7 +107,7 @@ impl Function<'_, '_, '_, '_> {
         let shape = self.array_storage_shape(use_, array)?;
         let source = self.graph.lower_expression(id)?.ty;
         let function = self.graph.lower_function(use_.function)?;
-        let nothrow = function.nothrow && !use_.reserved;
+        let nothrow = self.function_nothrow(use_.function)? && !use_.reserved;
         let mut end = None;
         let mut slot = None;
         if nothrow && shape.checked {

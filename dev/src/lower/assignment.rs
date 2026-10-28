@@ -488,6 +488,8 @@ impl Function<'_, '_, '_, '_> {
                 self.temporary_alive(parameters[0], source)?;
             }
         }
+        let throws =
+            self.lifetime_call_throws(crate::sema::lowering::CallTarget::Direct(selected))?;
         self.symbols
             .view(&*self.graph, &*self.tree, self.cursor)
             .demand(selected);
@@ -496,7 +498,7 @@ impl Function<'_, '_, '_, '_> {
             .view(&*self.graph, &*self.tree, self.cursor)
             .callee(selected, &mut self.builder)?;
         let arguments = self.builder.arguments(&[destination, source])?;
-        self.before_lifetime_call(!facts.nothrow)?;
+        self.before_lifetime_call(throws)?;
         let result = self.emit(
             I::Call(Call {
                 result: Type::Ptr,

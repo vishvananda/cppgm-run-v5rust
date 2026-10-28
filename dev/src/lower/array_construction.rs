@@ -6,7 +6,7 @@ use crate::{
         model::{Facts, InstructionKind as I, RuntimeInstruction as R, Value},
         vocabulary::{Binary, Compare, Type},
     },
-    sema::lowering::{ConstructorId, EntityId, TypeId, TypeView},
+    sema::lowering::{ConstructorId, EntityId, TypeId},
     syntax::ast,
 };
 
@@ -76,10 +76,11 @@ impl Function<'_, '_, '_, '_> {
         let condition = self.new_block("array_new_ctor_cond")?;
         let body = self.new_block("array_new_ctor_body")?;
         let end = self.new_block("array_new_ctor_end")?;
-        let guarded = self.default_constructor_throws(constructor)?
+        let effects = self.constructor_element_effects(constructor)?;
+        let guarded = effects.raises
             || self.lifetime.full_expression
                 && self.lifetime.temporary_segment.allows_eager_arguments();
-        let temporaries = self.array_default_temporaries(constructor)?;
+        let temporaries = effects.made;
         let cleanup = if guarded {
             Some(self.new_block("array_new_ctor_cleanup")?)
         } else {
@@ -169,33 +170,6 @@ impl Function<'_, '_, '_, '_> {
             }
         }
         self.place(after)
-    }
-    pub(super) fn array_default_temporaries(
-        &mut self,
-        constructor: ConstructorId,
-    ) -> Result<bool, Error> {
-        let Some(entity) = self.graph.lower_constructor_entity(constructor) else {
-            return Ok(false);
-        };
-        let ty = self.graph.lower_constructor_function(constructor)?.ty;
-        let TypeView::Function { parameters, .. } = self.graph.lower_type(ty)? else {
-            return Err(crate::sema::Error::Invariant("array default signature").into());
-        };
-        let parameters = parameters.to_vec();
-        let parameters = parameters.as_slice();
-        let mut made = false;
-        for (index, &parameter) in parameters.iter().enumerate() {
-            made |= matches!(self.graph.lower_type(parameter)?, TypeView::Class(_))
-                && self
-                    .symbols
-                    .view(&*self.graph, &*self.tree, self.cursor)
-                    .storage_destructor(parameter)?
-                    .is_some();
-            if let Some(default) = self.graph.lower_default(entity, index) {
-                made |= self.expression_temporaries(default)?.made;
-            }
-        }
-        Ok(made)
     }
     pub(super) fn allocated_element_address(
         &mut self,

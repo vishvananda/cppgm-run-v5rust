@@ -11,15 +11,15 @@ use crate::{
     syntax::ast::{self, Condition, ExprKind, StmtKind},
 };
 impl Function<'_, '_, '_, '_> {
-    pub(super) fn default_constructor_throws(&mut self, id: ConstructorId) -> Result<bool, Error> {
+    pub(super) fn copy_constructor_throws(&mut self, id: ConstructorId) -> Result<bool, Error> {
         let facts = Entry::Constructor(id, Variant::Complete).facts(&*self.graph)?;
-        if !facts.nothrow {
+        if self.entry_call_throws(Entry::Constructor(id, Variant::Complete))? {
             return Ok(true);
         }
         if let Some(entity) = self.graph.lower_constructor_entity(id)
             && let TypeView::Function { parameters, .. } = self.graph.lower_type(facts.ty)?
         {
-            for index in 0..parameters.len() {
+            for index in 1..parameters.len() {
                 if let Some(expr) = self.graph.lower_default(entity, index)
                     && self.expression_throws(expr)?
                 {
@@ -44,7 +44,7 @@ impl Function<'_, '_, '_, '_> {
         result
     }
     fn scan_expression_throws(
-        &self,
+        &mut self,
         root: ast::ExprId,
         work: &mut Vec<ast::ExprId>,
         hidden: bool,
@@ -80,18 +80,18 @@ impl Function<'_, '_, '_, '_> {
                 .graph
                 .lower_class_copy(id)?
                 .or(self.graph.lower_conversion_copy(id))
-                && (hidden
-                    || !Entry::Constructor(constructor, Variant::Complete)
-                        .facts(&*self.graph)?
-                        .nothrow)
+                && self.entry_throws_in_context(
+                    Entry::Constructor(constructor, Variant::Complete),
+                    hidden,
+                )?
             {
                 return Ok(true);
             }
             if let Some((constructor, _)) = self.graph.lower_class_conversion(id)
-                && (hidden
-                    || !Entry::Constructor(constructor, Variant::Complete)
-                        .facts(&*self.graph)?
-                        .nothrow)
+                && self.entry_throws_in_context(
+                    Entry::Constructor(constructor, Variant::Complete),
+                    hidden,
+                )?
             {
                 return Ok(true);
             }
@@ -108,10 +108,10 @@ impl Function<'_, '_, '_, '_> {
                 return Ok(true);
             }
             if let Some(constructor) = self.graph.lower_list_constructor(id)?
-                && (hidden
-                    || !Entry::Constructor(constructor, Variant::Complete)
-                        .facts(&*self.graph)?
-                        .nothrow)
+                && self.entry_throws_in_context(
+                    Entry::Constructor(constructor, Variant::Complete),
+                    hidden,
+                )?
             {
                 return Ok(true);
             }
@@ -158,7 +158,12 @@ impl Function<'_, '_, '_, '_> {
                     }
                     if let Some((constructor, arguments)) = use_.constructor
                         && (hidden
-                            || self.allocated_constructor_work(constructor, arguments, work)?)
+                            || self.allocated_constructor_work(
+                                constructor,
+                                arguments,
+                                work,
+                                hidden,
+                            )?)
                     {
                         return Ok(true);
                     }
@@ -226,10 +231,10 @@ impl Function<'_, '_, '_, '_> {
                 }
                 ExprKind::Braced { elements, .. } => {
                     if let Some(constructor) = self.graph.lower_list_constructor(id)?
-                        && (hidden
-                            || !Entry::Constructor(constructor, Variant::Complete)
-                                .facts(&*self.graph)?
-                                .nothrow)
+                        && self.entry_throws_in_context(
+                            Entry::Constructor(constructor, Variant::Complete),
+                            hidden,
+                        )?
                     {
                         return Ok(true);
                     }
@@ -292,9 +297,7 @@ impl Function<'_, '_, '_, '_> {
         }
         if let Some(constructor) = self.graph.lower_construction(entity)
             && (initializer.is_some() || !self.graph.lower_constructor_trivial(constructor))
-            && !Entry::Constructor(constructor, Variant::Complete)
-                .facts(&*self.graph)?
-                .nothrow
+            && self.entry_call_throws(Entry::Constructor(constructor, Variant::Complete))?
         {
             return Ok(true);
         }
@@ -454,7 +457,7 @@ impl Function<'_, '_, '_, '_> {
             for action in actions {
                 if let Some(constructor) = action.constructor
                     && !self.graph.lower_constructor_trivial(constructor)
-                    && self.default_constructor_throws(constructor)?
+                    && self.copy_constructor_throws(constructor)?
                 {
                     return Ok(true);
                 }
@@ -462,12 +465,10 @@ impl Function<'_, '_, '_, '_> {
             return Ok(false);
         }
         if let Some(delegation) = self.graph.lower_constructor(id).delegation {
-            return Ok(
-                !Entry::Constructor(delegation.constructor, Variant::Complete)
-                    .facts(&*self.graph)?
-                    .nothrow
-                    || self.initializer_throws(Some(delegation.initializer))?,
-            );
+            return Ok(self.entry_call_throws(Entry::Constructor(
+                delegation.constructor,
+                Variant::Complete,
+            ))? || self.initializer_throws(Some(delegation.initializer))?);
         }
         for base_index in 0..self.graph.lower_constructor(id).bases.len()
             + self.graph.lower_constructor(id).indirect_bases.len()
@@ -480,9 +481,7 @@ impl Function<'_, '_, '_, '_> {
             };
             if let Some(constructor) = base.constructor
                 && !self.graph.lower_constructor_trivial(constructor)
-                && !Entry::Constructor(constructor, Variant::Base)
-                    .facts(&*self.graph)?
-                    .nothrow
+                && self.entry_call_throws(Entry::Constructor(constructor, Variant::Base))?
             {
                 return Ok(true);
             }
@@ -505,10 +504,7 @@ impl Function<'_, '_, '_, '_> {
                 }
                 continue;
             }
-            if !Entry::Constructor(constructor, Variant::Complete)
-                .facts(&*self.graph)?
-                .nothrow
-            {
+            if self.entry_call_throws(Entry::Constructor(constructor, Variant::Complete))? {
                 return Ok(true);
             }
         }

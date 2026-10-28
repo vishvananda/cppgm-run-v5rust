@@ -232,10 +232,10 @@ impl Function<'_, '_, '_, '_> {
             };
             values.push(value);
         }
-        let throws = self.lifetime_call_throws(CallTarget::Direct(use_.function))?
-            || self.lifetime.full_expression
-                && self.lifetime.temporary_segment.allows_eager_arguments()
-                && function.builtin.is_none();
+        let mut deallocator = use_.deallocator.filter(|_| !use_.reserved);
+        if deallocator.is_some() && !self.allocation_initializer_throws(id)? {
+            deallocator = None;
+        }
         self.symbols
             .view(&*self.graph, &*self.tree, self.cursor)
             .demand(use_.function);
@@ -244,6 +244,7 @@ impl Function<'_, '_, '_, '_> {
             .view(&*self.graph, &*self.tree, self.cursor)
             .callee(use_.function, &mut self.builder)?;
         let arguments = self.builder.arguments(&values)?;
+        let throws = self.lifetime_call_throws(CallTarget::Direct(use_.function))?;
         self.before_lifetime_call(throws)?;
         let object = self.lifetime_result(
             I::Call(Call {
@@ -257,17 +258,11 @@ impl Function<'_, '_, '_, '_> {
             source,
         )?;
         let object = self.finish_lifetime_call(object, throws)?;
-        let deallocator = use_.deallocator.filter(|_| !use_.reserved);
-        let deallocator = if self.allocation_initializer_throws(id)? {
-            deallocator
-        } else {
-            None
-        };
         let work = initializer.is_some()
             || use_
                 .constructor
                 .is_some_and(|(id, _)| !self.graph.lower_constructor_trivial(id));
-        let end = if function.nothrow && !use_.reserved && work {
+        let end = if self.function_nothrow(use_.function)? && !use_.reserved && work {
             if self.lifetime.tracking.active && self.lifetime.region {
                 self.close_lifetime_region()?;
             }
@@ -445,7 +440,7 @@ impl Function<'_, '_, '_, '_> {
         let use_ = self.graph.lower_allocation(id)?;
         if let Some((constructor, arguments)) = use_.constructor {
             let mut defaults = Vec::new();
-            if self.allocated_constructor_work(constructor, arguments, &mut defaults)? {
+            if self.allocated_constructor_work(constructor, arguments, &mut defaults, false)? {
                 return Ok(true);
             }
             for default in defaults {
@@ -463,19 +458,26 @@ impl Function<'_, '_, '_, '_> {
         if use_.constructor.is_none()
             && let TypeView::Class(class) = self.graph.lower_type(use_.target)?
         {
-            return self.omitted_aggregate_throws(class, 0);
+            return self.omitted_aggregate_throws_in_context(class, 0, false);
         }
         Ok(false)
     }
 
     pub(super) fn allocated_constructor_work(
-        &self,
+        &mut self,
         constructor: crate::sema::lowering::ConstructorId,
         arguments: ConstructorArguments,
         work: &mut Vec<ast::ExprId>,
+        hidden: bool,
     ) -> Result<bool, Error> {
         if !self.graph.lower_constructor_trivial(constructor)
-            && !self.graph.lower_constructor_function(constructor)?.nothrow
+            && self.entry_throws_in_context(
+                super::construction::Entry::Constructor(
+                    constructor,
+                    super::construction::Variant::Complete,
+                ),
+                hidden,
+            )?
         {
             return Ok(true);
         }

@@ -1194,13 +1194,14 @@ impl Function<'_, '_, '_, '_> {
                     let value = self
                         .emit(I::Addr(crate::lowir::model::Value::Symbol(symbol)), source)?
                         .value;
+                    let nothrow = self.function_nothrow(entity)?;
                     let signature = self
                         .symbols
                         .view(&*self.graph, &*self.tree, self.cursor)
                         .call_signature(
                             self.builder.program(),
                             self.graph.lower_function(invoker)?.ty,
-                            self.graph.lower_function(invoker)?.nothrow,
+                            nothrow,
                         )?;
                     (value, Some(signature))
                 } else if dispatch {

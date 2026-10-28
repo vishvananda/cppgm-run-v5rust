@@ -105,17 +105,10 @@ impl Function<'_, '_, '_, '_> {
             .collect::<Result<_, Error>>()?;
         self.copying.active = true;
         let mut guarded = 0;
-        let mut throws = Vec::with_capacity(actions.len());
-        for (index, action) in actions.iter().enumerate() {
-            let throwing = if let Some(constructor) = action.constructor {
-                !self.graph.lower_constructor_trivial(constructor)
-                    && self.default_constructor_throws(constructor)?
-            } else {
-                false
-            };
-            throws.push(throwing);
-            if throwing {
+        for index in (0..actions.len()).rev() {
+            if self.copy_action_throws(actions[index])? {
                 guarded = index;
+                break;
             }
         }
         let mut first = transfers.iter().take_while(|action| action.trivial).count();
@@ -166,8 +159,8 @@ impl Function<'_, '_, '_, '_> {
             for (index, &action) in actions.iter().enumerate() {
                 if let Some(base) = self.shared_copy_base(class, action) {
                     planned.insert(base, index);
-                } else {
-                    later |= throws[index];
+                } else if !later {
+                    later = self.copy_action_throws(action)?;
                 }
             }
             let order: Vec<_> = self
@@ -180,7 +173,9 @@ impl Function<'_, '_, '_, '_> {
             let mut tracked = vec![false; order.len()];
             for (position, &index) in order.iter().enumerate().rev() {
                 tracked[position] = later || index < guarded;
-                later |= throws[index];
+                if !later {
+                    later = self.copy_action_throws(actions[index])?;
+                }
             }
             for (position, &index) in order.iter().enumerate() {
                 let address =
@@ -229,6 +224,14 @@ impl Function<'_, '_, '_, '_> {
         self.copy_truncate(0);
         self.store_vptr(class, self.graph.lower_constructor(id).object_pointer()?)?;
         Ok(())
+    }
+    fn copy_action_throws(&mut self, action: SubobjectCopy) -> Result<bool, Error> {
+        if let Some(constructor) = action.constructor {
+            Ok(!self.graph.lower_constructor_trivial(constructor)
+                && self.copy_constructor_throws(constructor)?)
+        } else {
+            Ok(false)
+        }
     }
     fn note_copied_member(
         &mut self,
@@ -523,7 +526,8 @@ impl Function<'_, '_, '_, '_> {
         };
         let parameters = parameters.to_vec();
         let parameters = parameters.as_slice();
-        self.begin_lifetime_call(!facts.nothrow)?;
+        let throws = self.entry_call_throws(entry)?;
+        self.begin_lifetime_call(throws)?;
         let mut values = vec![destination, source];
         for (index, &parameter) in parameters.iter().enumerate().skip(1) {
             let function = entry
@@ -537,8 +541,8 @@ impl Function<'_, '_, '_, '_> {
                     ))?;
             values.push(self.constructor_default_value(expression, parameter, location)?);
         }
-        let result = self.emit_address_constructor_call(entry, facts.nothrow, &values);
-        if !facts.nothrow && self.lifetime.full_expression {
+        let result = self.emit_address_constructor_call(entry, !throws, &values);
+        if throws && self.lifetime.full_expression {
             self.lifetime.call_marks.pop();
         }
         result
@@ -578,22 +582,22 @@ impl Function<'_, '_, '_, '_> {
         };
         let parameters = parameters.to_vec();
         let parameters = parameters.as_slice();
-        let throws = self.default_constructor_throws(id)?;
+        let throws = self.entry_call_throws(entry)?;
+        let defaults = self.copy_default_effects(id, location)?;
+        let outer_throws = throws || defaults.raises;
         let chained = if parameters.len() > 1 {
-            self.begin_copy_call(throws)?
+            self.begin_copy_call(outer_throws)?
         } else {
             false
         };
-        let made = if parameters.len() > 1 {
+        let made = if chained && parameters.len() > 1 {
             self.copy_defaults_temporaries(id)?
         } else {
             false
         };
         let scope = self.begin_copy_temporaries(chained && made);
-        let began = parameters.len() > 1
-            && !self.lifetime.full_expression
-            && (made || !self.lifetime.cleanups.is_empty())
-            && throws;
+        let began =
+            parameters.len() > 1 && !self.lifetime.full_expression && defaults.made && outer_throws;
         if began {
             self.lifetime.full_expression = true;
             self.lifetime.region_start = super::lifetime::RegionStart::Pending;
@@ -621,13 +625,13 @@ impl Function<'_, '_, '_, '_> {
             values.insert(1, self.hidden_vtt_value()?);
         }
         let chained = if parameters.len() == 1 {
-            self.begin_copy_call(throws)?
+            self.begin_copy_call(outer_throws)?
         } else {
             chained
         };
         // copy_lowering.cpp::call_copy demands the selected entry only;
         // the copy body publishes any vtable its own initialization uses.
-        self.emit_address_constructor_call(entry, facts.nothrow, &values)?;
+        self.emit_address_constructor_call(entry, !throws, &values)?;
         if self.element_temporaries.depth == 0 {
             let mut throwing_destructor = false;
             for index in first..self.lifetime.cleanups.len() {

@@ -921,34 +921,64 @@ impl Function<'_, '_, '_, '_> {
         }
         Ok(())
     }
+    pub(super) fn function_nothrow(
+        &mut self,
+        entity: crate::sema::lowering::EntityId,
+    ) -> Result<bool, Error> {
+        super::unit_frontend::Context {
+            graph: self.graph,
+            tree: self.tree,
+            cursor: self.cursor,
+            symbols: self.symbols,
+        }
+        .function_nothrow(entity)
+    }
+    pub(super) fn entry_throws_in_context(
+        &mut self,
+        entry: super::construction::Entry,
+        hidden: bool,
+    ) -> Result<bool, Error> {
+        if let Some(entity) = entry.entity(&*self.graph) {
+            self.call_throws_in_context(crate::sema::lowering::CallTarget::Direct(entity), hidden)
+        } else {
+            Ok(hidden || !entry.facts(&*self.graph)?.nothrow)
+        }
+    }
+    pub(super) fn entry_call_throws(
+        &mut self,
+        entry: super::construction::Entry,
+    ) -> Result<bool, Error> {
+        self.entry_throws_in_context(
+            entry,
+            self.lifetime.temporary_segment.allows_eager_arguments(),
+        )
+    }
     pub(super) fn lifetime_call_throws(
-        &self,
+        &mut self,
         target: crate::sema::lowering::CallTarget,
     ) -> Result<bool, Error> {
-        // call_may_throw brackets ordinary functions in a hidden temporary
-        // segment even when their declaration is noexcept. The declaration's
-        // unwind fact remains unchanged; this decides the segment's regions
-        // and scalar result staging, including converted class receivers.
         self.call_throws_in_context(
             target,
             self.lifetime.temporary_segment.allows_eager_arguments(),
         )
     }
     pub(super) fn call_throws_in_context(
-        &self,
+        &mut self,
         target: crate::sema::lowering::CallTarget,
         hidden: bool,
     ) -> Result<bool, Error> {
         Ok(match target {
             crate::sema::lowering::CallTarget::Direct(entity) => {
                 let facts = self.graph.lower_function(entity)?;
+                // The builtin and hidden-region short circuits precede any
+                // pending specification demand, as in call_may_throw.
                 facts.builtin.is_none()
-                    && (!facts.nothrow
-                        || hidden
-                            && !matches!(
-                                facts.name,
-                                crate::sema::lowering::FunctionName::Destructor(_)
-                            ))
+                    && (hidden
+                        && !matches!(
+                            facts.name,
+                            crate::sema::lowering::FunctionName::Destructor(_)
+                        )
+                        || !self.function_nothrow(entity)?)
             }
             crate::sema::lowering::CallTarget::Indirect(_, nothrow) => hidden || !nothrow,
         })

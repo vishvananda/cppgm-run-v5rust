@@ -100,11 +100,15 @@ impl Function<'_, '_, '_, '_> {
             false
         };
         let trailing = array.constant.is_none_or(|count| count > shape.listed);
-        let rest_throws = if trailing
+        let rest_throws = if shape.listed != 0
+            && trailing
             && constructs
             && let Some(id) = constructor
         {
-            !self.graph.lower_constructor_function(id)?.nothrow
+            self.entry_throws_in_context(
+                super::construction::Entry::Constructor(id, super::construction::Variant::Complete),
+                false,
+            )?
         } else {
             false
         };

@@ -65,7 +65,7 @@ impl Function<'_, '_, '_, '_> {
             .view(&*self.graph, &*self.tree, self.cursor)
             .class_destructor(ty)?
             .map_or(Ok(false), |entity| {
-                Ok(!self.graph.lower_function(entity)?.nothrow)
+                self.lifetime_call_throws(crate::sema::lowering::CallTarget::Direct(entity))
             })
     }
     pub(super) fn cleanup_unwind_guard(&mut self) -> Result<BlockId, Error> {

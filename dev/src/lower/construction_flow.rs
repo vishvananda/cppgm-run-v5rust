@@ -30,7 +30,7 @@ impl Function<'_, '_, '_, '_> {
         })
     }
     fn scan_initializer_branches(
-        &self,
+        &mut self,
         initializer: Option<ast::Initializer>,
         work: &mut Vec<(ast::ExprId, bool)>,
     ) -> Result<bool, Error> {
@@ -145,14 +145,13 @@ impl Function<'_, '_, '_, '_> {
                     ..
                 } => {
                     let use_ = self.graph.lower_allocation(id)?;
-                    let function = self.graph.lower_function(use_.function)?;
                     let work_required = initializer.is_some()
                         || use_
                             .constructor
                             .is_some_and(|(id, _)| !self.graph.lower_constructor_trivial(id));
                     if conditional
                         || use_.array.is_none()
-                            && function.nothrow
+                            && self.function_nothrow(use_.function)?
                             && !use_.reserved
                             && work_required
                     {

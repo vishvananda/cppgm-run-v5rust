@@ -237,6 +237,18 @@ impl Function<'_, '_, '_, '_> {
         class: EntityId,
         depth: u8,
     ) -> Result<bool, Error> {
+        self.omitted_aggregate_throws_in_context(
+            class,
+            depth,
+            self.lifetime.temporary_segment.allows_eager_arguments(),
+        )
+    }
+    pub(super) fn omitted_aggregate_throws_in_context(
+        &mut self,
+        class: EntityId,
+        depth: u8,
+        hidden: bool,
+    ) -> Result<bool, Error> {
         self.check_stack()?;
         if !self.graph.lower_aggregate_class(class) {
             return self
@@ -244,7 +256,13 @@ impl Function<'_, '_, '_, '_> {
                 .lower_ready_default_constructor(class)
                 .map(|id| {
                     Ok(!self.graph.lower_constructor_trivial(id)
-                        && !self.graph.lower_constructor_function(id)?.nothrow)
+                        && self.entry_throws_in_context(
+                            super::construction::Entry::Constructor(
+                                id,
+                                super::construction::Variant::Complete,
+                            ),
+                            hidden,
+                        )?)
                 })
                 .transpose()
                 .map(Option::unwrap_or_default);
@@ -258,7 +276,7 @@ impl Function<'_, '_, '_, '_> {
                 ty = element;
             }
             if let TypeView::Class(child) = self.graph.lower_type(ty)?
-                && self.omitted_aggregate_throws(child, depth + 1)?
+                && self.omitted_aggregate_throws_in_context(child, depth + 1, hidden)?
             {
                 return Ok(true);
             }

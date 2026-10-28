@@ -280,7 +280,9 @@ impl Function<'_, '_, '_, '_> {
                 .view(&*self.graph, &*self.tree, self.cursor)
                 .class_destructor(ty)?
             {
-                if !self.graph.lower_function(destructor)?.nothrow {
+                if self
+                    .lifetime_call_throws(crate::sema::lowering::CallTarget::Direct(destructor))?
+                {
                     return Ok(true);
                 }
                 *alive |= self.automatic_destructor(entity)?.is_some();

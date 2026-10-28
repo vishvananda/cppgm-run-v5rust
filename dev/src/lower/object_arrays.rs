@@ -65,8 +65,9 @@ impl Function<'_, '_, '_, '_> {
             count = count.wrapping_mul(bound);
             element = inner;
         }
-        let throws = self.default_constructor_throws(constructor)?;
-        let temporaries = self.array_default_temporaries(constructor)?;
+        let effects = self.constructor_element_effects(constructor)?;
+        let throws = effects.raises;
+        let temporaries = effects.made;
         if temporaries && throws {
             self.before_lifetime_call(true)?;
         }

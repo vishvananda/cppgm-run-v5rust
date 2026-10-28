@@ -7,8 +7,50 @@ use crate::{
         model::{BlockId, InstructionKind as I, RuntimeInstruction as R, Value},
         vocabulary::Type,
     },
-    sema::lowering::{ConstructorId, TypeId, TypeView},
+    sema::lowering::{ConstructorId, EntityId, TypeId, TypeView},
 };
+#[derive(Clone, Copy)]
+pub(super) struct Effects {
+    pub made: bool,
+    pub raises: bool,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum EffectConstructor {
+    Function(EntityId),
+    Plan(ConstructorId),
+}
+impl EffectConstructor {
+    fn for_constructor(graph: &crate::sema::Graph, id: ConstructorId) -> Self {
+        graph
+            .lower_constructor_entity(id)
+            .map_or(Self::Plan(id), |entity| {
+                Self::Function(graph.lower_function_entity(entity))
+            })
+    }
+}
+#[derive(Default)]
+pub(super) struct ConstructorEffects {
+    entries: std::collections::HashMap<(EffectConstructor, bool), Effects>,
+}
+impl ConstructorEffects {
+    fn get(&self, graph: &crate::sema::Graph, id: ConstructorId, hidden: bool) -> Option<Effects> {
+        self.entries
+            .get(&(EffectConstructor::for_constructor(graph, id), hidden))
+            .copied()
+    }
+    fn insert(
+        &mut self,
+        graph: &crate::sema::Graph,
+        id: ConstructorId,
+        hidden: bool,
+        effects: Effects,
+    ) {
+        self.entries.insert(
+            (EffectConstructor::for_constructor(graph, id), hidden),
+            effects,
+        );
+    }
+}
 #[derive(Clone, Copy)]
 struct Handler {
     block: BlockId,
@@ -94,30 +136,80 @@ impl Function<'_, '_, '_, '_> {
         self.element_temporaries.made.push((ty, slot));
         Ok(slot)
     }
-    pub(super) fn copy_defaults_temporaries(&mut self, id: ConstructorId) -> Result<bool, Error> {
-        let facts = self.graph.lower_constructor_function(id)?;
-        let TypeView::Function { parameters, .. } = self.graph.lower_type(facts.ty)? else {
-            return Err(crate::sema::Error::Invariant("copy default signature").into());
+    pub(super) fn constructor_element_effects(
+        &mut self,
+        id: ConstructorId,
+    ) -> Result<Effects, Error> {
+        use super::construction::{Entry, Variant};
+        let hidden = self.lifetime.temporary_segment.allows_eager_arguments();
+        let entry = Entry::Constructor(id, Variant::Complete);
+        if self.graph.lower_constructor_trivial(id) {
+            return Ok(Effects {
+                made: false,
+                raises: self.entry_throws_in_context(entry, hidden)?,
+            });
+        }
+        if let Some(effects) = self.symbols.element_effects.get(&*self.graph, id, hidden) {
+            return Ok(effects);
+        }
+        let facts = entry.facts(&*self.graph)?;
+        let mut effects = Effects {
+            made: self.caller_destroys_parameters(facts.ty)?,
+            raises: self.entry_throws_in_context(entry, hidden)?,
         };
-        let parameters = parameters.to_vec();
-        let parameters = parameters.as_slice();
-        let function = self
-            .graph
-            .lower_constructor_entity(id)
-            .ok_or(crate::sema::Error::Invariant("copy defaults function"))?;
-        let mut made = false;
-        for (index, &parameter) in parameters.iter().enumerate().skip(1) {
-            made |= matches!(self.graph.lower_type(parameter)?, TypeView::Class(_))
-                && self
-                    .symbols
-                    .view(&*self.graph, &*self.tree, self.cursor)
-                    .storage_destructor(parameter)?
-                    .is_some();
-            if let Some(expression) = self.graph.lower_default(function, index) {
-                made |= self.expression_temporaries(expression)?.made;
+        if let Some(function) = self.graph.lower_constructor_entity(id) {
+            let TypeView::Function { parameters, .. } = self.graph.lower_type(facts.ty)? else {
+                return Err(crate::sema::Error::Invariant("element default signature").into());
+            };
+            for index in 0..parameters.len() {
+                if let Some(argument) = self.graph.lower_default(function, index) {
+                    effects.made = effects.made || self.expression_temporaries(argument)?.made;
+                    effects.raises =
+                        effects.raises || self.expression_throws_in_context(argument, hidden)?;
+                }
             }
         }
-        Ok(made)
+        self.symbols
+            .element_effects
+            .insert(&*self.graph, id, hidden, effects);
+        Ok(effects)
+    }
+    pub(super) fn copy_defaults_temporaries(&mut self, id: ConstructorId) -> Result<bool, Error> {
+        Ok(self.constructor_element_effects(id)?.made)
+    }
+    pub(super) fn copy_default_effects(
+        &mut self,
+        id: ConstructorId,
+        location: crate::support::source::SourceOffset,
+    ) -> Result<Effects, Error> {
+        let ty = self.graph.lower_constructor_function(id)?.ty;
+        let TypeView::Function { parameters, .. } = self.graph.lower_type(ty)? else {
+            return Err(crate::sema::Error::Invariant("copy default signature").into());
+        };
+        let count = parameters.len();
+        let mut effects = Effects {
+            made: !self.lifetime.cleanups.is_empty(),
+            raises: false,
+        };
+        for index in 1..count {
+            let function = self
+                .graph
+                .lower_constructor_entity(id)
+                .ok_or(crate::sema::Error::Invariant("copy defaults function"))?;
+            let argument = self.graph.lower_default(function, index).ok_or(
+                crate::sema::Error::Diagnostic {
+                    location,
+                    message: "a copy without an argument for a parameter",
+                },
+            )?;
+            effects.made = effects.made || self.expression_temporaries(argument)?.made;
+            effects.raises = effects.raises
+                || self.expression_throws_in_context(
+                    argument,
+                    self.lifetime.temporary_segment.allows_eager_arguments(),
+                )?;
+        }
+        Ok(effects)
     }
     pub(super) fn begin_copy_temporaries(&mut self, active: bool) -> Option<Scope> {
         self.begin_element_temporaries(active, false)

@@ -297,23 +297,28 @@ impl Function<'_, '_, '_, '_> {
                 ),
                 ExprKind::New { initializer, .. } => {
                     let use_ = self.graph.lower_allocation(id)?;
-                    let function = self.graph.lower_function(use_.function)?;
-                    if function.nothrow && !use_.reserved {
-                        let made = match initializer.map(|value| value.kind) {
-                            Some(
-                                ast::InitializerKind::Assign(root)
-                                | ast::InitializerKind::Braced(root),
-                            ) if matches!((self.graph.lower_type(use_.target)?,
+                    let made = match initializer.map(|value| value.kind) {
+                        Some(
+                            ast::InitializerKind::Assign(root) | ast::InitializerKind::Braced(root),
+                        ) if matches!((self.graph.lower_type(use_.target)?,
                                     self.graph.lower_type(self.graph.lower_expression(root)?.ty)?),
                                     (TypeView::Class(a), TypeView::Class(b)) if a == b) =>
-                            {
-                                self.operand_temporaries(root)?.made
-                            }
-                            _ => self.initializer_temporaries(initializer)?,
-                        };
-                        if made {
-                            return Ok(true);
+                        {
+                            self.operand_temporaries(root)?.made
                         }
+                        _ => self.initializer_temporaries(initializer)?,
+                    };
+                    let work_required = initializer.is_some()
+                        || use_
+                            .constructor
+                            .is_some_and(|(id, _)| !self.graph.lower_constructor_trivial(id));
+                    if made
+                        && use_.array.is_none()
+                        && self.function_nothrow(use_.function)?
+                        && !use_.reserved
+                        && work_required
+                    {
+                        return Ok(true);
                     }
                 }
                 _ => (),

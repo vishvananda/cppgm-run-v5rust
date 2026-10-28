@@ -45,7 +45,10 @@ impl Function<'_, '_, '_, '_> {
             .view(&*self.graph, &*self.tree, self.cursor)
             .class_destructor(element)?
             .is_some()
-            && self.default_constructor_throws(constructor)?;
+            && self.copy_constructor_throws(constructor)?;
+        // The constructor chain does not use element scopes, but the source
+        // still completes the shared default-argument effect query here.
+        self.constructor_element_effects(constructor)?;
         let size = types::layout(&*self.graph, element)?.0;
         if count > 8 {
             let source = self.assignment_source(function)?;
@@ -106,7 +109,7 @@ impl Function<'_, '_, '_, '_> {
             .view(&*self.graph, &*self.tree, self.cursor)
             .class_destructor(element)?
             .is_some()
-            && self.default_constructor_throws(constructor)?;
+            && self.copy_constructor_throws(constructor)?;
         let elements = Elements {
             element,
             count,
@@ -120,7 +123,7 @@ impl Function<'_, '_, '_, '_> {
         if count > 8 {
             return self.copy_capture_loop(elements, temporaries);
         }
-        if temporaries && self.default_constructor_throws(constructor)? {
+        if temporaries && self.copy_constructor_throws(constructor)? {
             self.before_lifetime_call(true)?;
         }
         let size = types::layout(&*self.graph, element)?.0;
@@ -172,7 +175,7 @@ impl Function<'_, '_, '_, '_> {
         let slot = self.generated_slot("copy_array_index", Type::I64)?;
         let zero = self.builder.integer(0)?;
         self.effect(I::Store(Facts::memory(false, true), Type::I64, zero, slot))?;
-        let throws = self.default_constructor_throws(constructor)?;
+        let throws = self.copy_constructor_throws(constructor)?;
         self.before_lifetime_call(throws)?;
         if guarded {
             self.enclose_element_region(&mut None)?;

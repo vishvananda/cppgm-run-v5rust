@@ -274,6 +274,14 @@ impl Function<'_, '_, '_, '_> {
         let Some(id) = constructor else {
             return Ok(false);
         };
+        if matches!(self.graph.lower_type(ty)?, TypeView::Reference { .. })
+            || !self.entry_call_throws(super::construction::Entry::Constructor(
+                id,
+                super::construction::Variant::Complete,
+            ))?
+        {
+            return Ok(false);
+        }
         let storage = self.graph.lower_constructor_copies_storage(id);
         let array = matches!(self.graph.lower_type(ty)?, TypeView::Array { .. });
         let called = !array
@@ -286,7 +294,7 @@ impl Function<'_, '_, '_, '_> {
                 .view(&*self.graph, &*self.tree, self.cursor)
                 .class_destructor(ty)?
                 .is_some();
-        Ok(!(storage && (array || !called)) && !self.graph.lower_constructor_function(id)?.nothrow)
+        Ok(!(storage && (array || !called)))
     }
     fn closure_member_region(&mut self) -> Result<(), Error> {
         self.close_lifetime_region()?;

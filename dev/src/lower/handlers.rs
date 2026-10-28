@@ -455,12 +455,13 @@ impl Function<'_, '_, '_, '_> {
         if let Some(constructor) = self.graph.lower_construction(entity) {
             // The host handler becomes active only after its copy
             // completes. A throw before then must terminate (15.3p7).
-            let guarded = self
+            let guarded = self.entry_call_throws(super::construction::Entry::Constructor(
+                constructor,
+                super::construction::Variant::Complete,
+            ))? && self
                 .symbols
                 .view(&*self.graph, &*self.tree, self.cursor)
-                .host_objects()
-                && (!self.graph.lower_constructor_function(constructor)?.nothrow
-                    || self.lifetime.temporary_segment.allows_eager_arguments());
+                .host_objects();
             let region = if guarded {
                 let guard = self.new_block("lexical_cleanup_terminate")?;
                 let next = self.new_block("call_unwind_end")?;

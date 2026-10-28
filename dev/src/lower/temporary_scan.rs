@@ -69,6 +69,7 @@ impl Function<'_, '_, '_, '_> {
         &mut self,
         constructor: ConstructorId,
         written: &[ast::ExprId],
+        throws: bool,
     ) -> Result<(), Error> {
         if !self.lifetime.full_expression
             || !self.lifetime.temporary_segment.allows_eager_arguments()
@@ -109,7 +110,7 @@ impl Function<'_, '_, '_, '_> {
         }
         if made {
             self.lifetime.temporary_segment = super::lifetime::TemporarySegment::Eager;
-            if !function.nothrow {
+            if throws {
                 self.open_temporary_region_at(self.lifetime.expression_start)?;
             }
         }
@@ -600,14 +601,12 @@ impl Function<'_, '_, '_, '_> {
         }
         Ok(())
     }
-    fn caller_destroys_parameters(&self, ty: TypeId) -> Result<bool, Error> {
+    pub(super) fn caller_destroys_parameters(&self, ty: TypeId) -> Result<bool, Error> {
         let TypeView::Function { parameters, .. } = self.graph.lower_type(ty)? else {
             return Err(
                 crate::sema::Error::Invariant("temporary signature without function").into(),
             );
         };
-        let parameters = parameters.to_vec();
-        let parameters = parameters.as_slice();
         for &parameter in parameters {
             // A nontrivial destructor implies the indirect class boundary.
             // References and ordinary direct-register classes contribute none.

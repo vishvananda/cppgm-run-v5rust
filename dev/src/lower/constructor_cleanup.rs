@@ -213,11 +213,12 @@ impl Function<'_, '_, '_, '_> {
             .ok_or(crate::sema::Error::Invariant(
                 "delegated cleanup without destructor",
             ))?;
-        let facts = self.graph.lower_function(destructor)?;
-        let guarded = !facts.nothrow;
+        let guarded =
+            self.lifetime_call_throws(crate::sema::lowering::CallTarget::Direct(destructor))?;
         if guarded {
             self.open_destructor_unwind_guard()?;
         }
+        let facts = self.graph.lower_function(destructor)?;
         let hidden = variant == Variant::Base
             && !self
                 .graph

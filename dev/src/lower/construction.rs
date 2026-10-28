@@ -255,11 +255,12 @@ impl Function<'_, '_, '_, '_> {
                     .lower_class_conversion(source)
                     .is_some_and(|(selected, _)| selected == id)
         });
+        let throws = self.entry_call_throws(entry)?;
         if publish_table && !declared && !converting && !list_call {
-            self.note_constructor_temporaries(id, written)?;
+            self.note_constructor_temporaries(id, written, throws)?;
         }
-        self.begin_lifetime_call(!facts.nothrow)?;
-        if !facts.nothrow
+        self.begin_lifetime_call(throws)?;
+        if throws
             && self.lifetime.full_expression
             && let Some(mark) = self.lifetime.call_marks.last_mut()
         {
@@ -365,13 +366,13 @@ impl Function<'_, '_, '_, '_> {
         }
         let result = self.emit_constructor_call_with_elision(
             entry,
-            facts.nothrow,
+            !throws,
             &values,
             copy_elision,
             publish_table,
             argument_classes,
         );
-        if !facts.nothrow && self.lifetime.full_expression {
+        if throws && self.lifetime.full_expression {
             self.lifetime.call_marks.pop();
         }
         result
@@ -540,7 +541,8 @@ impl Function<'_, '_, '_, '_> {
             })?;
             values.push(value);
         }
-        self.emit_constructor_call(entry, facts.nothrow, &values)
+        let throws = self.entry_call_throws(entry)?;
+        self.emit_constructor_call(entry, !throws, &values)
     }
     pub(super) fn zero_class_object(
         &mut self,
@@ -645,9 +647,8 @@ impl Function<'_, '_, '_, '_> {
             let ty = self.graph.lower_entity_type(child.member)?;
             if matches!(self.graph.lower_type(ty)?, TypeView::Array { .. })
                 && !self.graph.lower_constructor_trivial(child.constructor)
-                && !Entry::Constructor(child.constructor, Variant::Complete)
-                    .facts(&*self.graph)?
-                    .nothrow
+                && self
+                    .entry_call_throws(Entry::Constructor(child.constructor, Variant::Complete))?
             {
                 self.construction.detached = true;
                 break;
