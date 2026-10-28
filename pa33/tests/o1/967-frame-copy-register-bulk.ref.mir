@@ -1,0 +1,58 @@
+machine_ir x86_64 linux
+
+startup
+    call @main [args=()]
+    mov rdi, rax
+    exit
+
+global @source
+  storage data
+  item i64 11
+  item i64 29
+
+global @target
+  storage data
+  item i64 7
+
+function @probe
+  abi
+    param %a -> rdi : i64
+    param %b -> rsi : i64
+    param %c -> rdx : i64
+    param %d -> rcx : i64
+    param %source -> r8 : ptr
+    param %target -> r9 : ptr
+    return i64 -> rax
+  frame
+    stack_size 16
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+    slot $copy -> [rbp-8] : obj<8x8>
+
+  block ^entry
+    zero_bytes 8x8, r9
+    load.i64 rax, [r8+8]
+    ret rax
+
+function @main
+  abi
+    return i32 -> rax
+  frame
+    stack_size 0
+    scratch_bytes 0
+    frame_pointer keep
+    epilogues duplicated
+
+  block ^entry
+    mov rdi, 0
+    mov rsi, 0
+    mov rdx, 0
+    mov rcx, 0
+    mov r8, @source
+    mov r9, @target
+    call @probe [args=(rcx,rdx,rsi,rdi,r8,r9)]
+    cmp.i64 rax, 29
+    setne rax
+    movzx rax, rax
+    ret rax

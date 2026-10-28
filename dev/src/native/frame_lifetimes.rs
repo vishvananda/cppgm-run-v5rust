@@ -153,7 +153,9 @@ pub(super) fn forward_copies(function: &mut Function, objects: &[Object]) -> usi
                 copied.clear();
                 continue;
             }
-            if let Some((to, width)) = destination(op) {
+            // Frozen writes_memory tests operand kind before alias invalidation.
+            // A bulk register address applies only COPY_CLOBBERS below.
+            if let Some((to, width)) = destination(op).filter(|(to, _)| to.is_memory()) {
                 if let Some(o) = direct(&index, to) {
                     let lo = fixed_frame(to).unwrap_or(0);
                     let hi = lo.wrapping_add(width.cast_signed());
@@ -547,5 +549,44 @@ mod tests {
         ];
         function.blocks[0].range = 0..4;
         assert_eq!(forward_copies(&mut function, &objects), 0);
+    }
+    #[test]
+    fn register_bulk_destinations_preserve_unclobbered_copy_addresses() {
+        use super::super::{bulk::Bulk, memory::Memory};
+        let source = Operand::Memory(Memory::new(Base::Register(R::R8), 8));
+        let saved = Op::Bulk(Bulk::new(Operand::Frame(-16), Some(source), 8, 8));
+        let reload = Op::Scalar(ScalarOp::Load(R::RAX, Type::I64, Operand::Frame(-16)));
+        let objects = [Object::new(-16, 8, 8)];
+        for from in [None, Some(Operand::Register(R::RDX))] {
+            let bulk = Op::Bulk(Bulk::new(Operand::Register(R::R9), from, 8, 8));
+            let mut function = function(&[saved, bulk, reload]);
+            assert_eq!(forward_copies(&mut function, &objects), 1);
+            assert!(matches!(
+                function.instructions[2].op,
+                Op::Scalar(ScalarOp::Load(R::RAX, Type::I64, from)) if from == source
+            ));
+        }
+        // A memory destination still invalidates unknown aliases.
+        let bulk = Op::Bulk(Bulk::new(
+            Operand::Memory(Memory::new(Base::Register(R::R9), 8)),
+            None,
+            8,
+            8,
+        ));
+        let mut memory_write = function(&[saved, bulk, reload]);
+        assert_eq!(forward_copies(&mut memory_write, &objects), 0);
+        // Register destinations retain the bulk clobbers, including r10.
+        let source = Operand::Memory(Memory::new(Base::Register(R::R10), 8));
+        let mut clobbered = function(&[
+            Op::Scalar(ScalarOp::Load(R::R11, Type::I64, source)),
+            Op::Scalar(ScalarOp::Store(
+                Operand::Frame(-16),
+                Type::I64,
+                Operand::Register(R::R11),
+            )),
+            Op::Bulk(Bulk::new(Operand::Register(R::R9), None, 8, 8)),
+            reload,
+        ]);
+        assert_eq!(forward_copies(&mut clobbered, &objects), 0);
     }
 }
