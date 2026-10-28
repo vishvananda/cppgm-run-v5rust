@@ -18,6 +18,13 @@ pub(crate) enum Type {
     Object { bytes: u64, align: u8 },
 }
 impl Type {
+    /// The frozen object payload holds 48 target bits; source layout stays u64.
+    pub(crate) fn object(bytes: u64, align: u8) -> Self {
+        Self::Object {
+            bytes: bytes & ((1_u64 << 48) - 1),
+            align,
+        }
+    }
     pub(crate) fn scalar(text: &str) -> Option<Self> {
         Some(match text {
             "void" => Self::Void,

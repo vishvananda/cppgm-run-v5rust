@@ -51,15 +51,27 @@ pub(super) struct ClassStorage {
     pub destruction: bool,
     pub value_zero: bool,
 }
+// Source layout and encoded LowIR storage have distinct widths. Keep raw
+// sizes here so pointer strides, ABI extents and copy counts remain u64.
+enum Storage {
+    Scalar(Type),
+    Object { bytes: u64, align: u8 },
+}
 pub(super) fn storage(graph: &Graph, ty: TypeId) -> Result<Type, Error> {
+    Ok(match storage_layout(graph, ty)? {
+        Storage::Scalar(ty) => ty,
+        Storage::Object { bytes, align } => Type::object(bytes, align),
+    })
+}
+fn storage_layout(graph: &Graph, ty: TypeId) -> Result<Storage, Error> {
     if let Some((_, element)) = graph.lower_member_pointer_type(ty) {
-        return Ok(
+        return Ok(Storage::Scalar(
             if matches!(graph.lower_type(element)?, TypeView::Function { .. }) {
                 Type::I128
             } else {
                 Type::I64
             },
-        );
+        ));
     }
     Ok(match graph.lower_type(ty)? {
         TypeView::Vector { element, bound } => {
@@ -76,7 +88,7 @@ pub(super) fn storage(graph: &Graph, ty: TypeId) -> Result<Type, Error> {
             }
             .checked_next_power_of_two()
             .ok_or(crate::lowir::Error::Limit)?;
-            Type::Object {
+            Storage::Object {
                 bytes,
                 align: u8::try_from(bytes.trailing_zeros())
                     .map_err(|_| crate::lowir::Error::Limit)?,
@@ -84,12 +96,12 @@ pub(super) fn storage(graph: &Graph, ty: TypeId) -> Result<Type, Error> {
         }
         TypeView::Complex(part) => {
             let (bytes, align) = layout(graph, part)?;
-            Type::Object {
+            Storage::Object {
                 bytes: bytes.checked_mul(2).ok_or(crate::lowir::Error::Limit)?,
                 align,
             }
         }
-        TypeView::Scalar(scalar) => match scalar {
+        TypeView::Scalar(scalar) => Storage::Scalar(match scalar {
             Scalar::Void => Type::Void,
             Scalar::Bool | Scalar::UnsignedChar => Type::U8,
             Scalar::SignedChar | Scalar::Basic(F::Char) => Type::I8,
@@ -105,16 +117,20 @@ pub(super) fn storage(graph: &Graph, ty: TypeId) -> Result<Type, Error> {
             Scalar::Basic(F::Float | F::Float32) => Type::F32,
             Scalar::Basic(F::Double | F::Float64 | F::Float32x) => Type::F64,
             Scalar::Basic(F::LongDouble | F::Float64x) => Type::F80,
-            Scalar::Basic(F::Float16 | F::BFloat16) => Type::Object { bytes: 2, align: 1 },
-            Scalar::Basic(F::Float128 | F::GnuFloat128) => Type::Object {
-                bytes: 16,
-                align: 4,
-            },
-        },
+            Scalar::Basic(F::Float16 | F::BFloat16) => {
+                return Ok(Storage::Object { bytes: 2, align: 1 });
+            }
+            Scalar::Basic(F::Float128 | F::GnuFloat128) => {
+                return Ok(Storage::Object {
+                    bytes: 16,
+                    align: 4,
+                });
+            }
+        }),
         TypeView::Pointer(_)
         | TypeView::BlockPointer(_)
         | TypeView::Reference { .. }
-        | TypeView::Function { .. } => Type::Ptr,
+        | TypeView::Function { .. } => Storage::Scalar(Type::Ptr),
         TypeView::Array { element, bound } => {
             if bound == 0 {
                 return Err(Error::Missing("unknown-bound array storage layout"));
@@ -145,12 +161,12 @@ pub(super) fn storage(graph: &Graph, ty: TypeId) -> Result<Type, Error> {
                 .into());
             }
             let (bytes, align) = layout(graph, element)?;
-            Type::Object {
+            Storage::Object {
                 bytes: bytes.checked_mul(count).ok_or(crate::lowir::Error::Limit)?,
                 align,
             }
         }
-        TypeView::Enum(underlying) => return storage(graph, underlying),
+        TypeView::Enum(underlying) => return storage_layout(graph, underlying),
         TypeView::Class(entity) => {
             if !graph.lower_complete_object(ty)? {
                 return Err(crate::sema::Error::at(
@@ -165,7 +181,7 @@ pub(super) fn storage(graph: &Graph, ty: TypeId) -> Result<Type, Error> {
                 align =
                     u8::try_from(bytes.trailing_zeros()).map_err(|_| crate::lowir::Error::Limit)?;
             }
-            Type::Object { bytes, align }
+            Storage::Object { bytes, align }
         }
         TypeView::Value { .. } | TypeView::Address { .. } => {
             return Err(Error::Missing("template argument used as storage type"));
@@ -183,15 +199,17 @@ pub(super) fn layout(graph: &Graph, ty: TypeId) -> Result<(u64, u8), Error> {
             },
         );
     }
-    let ty = storage(graph, ty)?;
+    let ty = storage_layout(graph, ty)?;
     Ok(match ty {
-        Type::Object { bytes, align } => (bytes, align),
-        Type::F80 | Type::I128 => (16, 4),
-        Type::F64 | Type::Ptr | Type::I64 => (8, 3),
-        Type::F32 | Type::I32 | Type::U32 => (4, 2),
-        Type::I16 | Type::U16 => (2, 1),
-        Type::I8 | Type::U8 => (1, 0),
-        _ => return Err(Error::Missing("aggregate target layout")),
+        Storage::Object { bytes, align } => (bytes, align),
+        Storage::Scalar(ty) => match ty {
+            Type::F80 | Type::I128 => (16, 4),
+            Type::F64 | Type::Ptr | Type::I64 => (8, 3),
+            Type::F32 | Type::I32 | Type::U32 => (4, 2),
+            Type::I16 | Type::U16 => (2, 1),
+            Type::I8 | Type::U8 => (1, 0),
+            _ => return Err(Error::Missing("aggregate target layout")),
+        },
     })
 }
 // ProgramLowering::size_of is a located size demand, distinct from the
@@ -219,11 +237,10 @@ pub(super) fn local_storage(
     if requested != 0 && !matches!(graph.lower_type(ty)?, TypeView::Reference { .. }) {
         let (size, natural) = layout(graph, ty)?;
         if requested > 1u64 << natural {
-            return Ok(Type::Object {
-                bytes: size.wrapping_add(requested - 1) / requested * requested,
-                align: u8::try_from(requested.trailing_zeros())
-                    .map_err(|_| crate::lowir::Error::Limit)?,
-            });
+            return Ok(Type::object(
+                size.wrapping_add(requested - 1) / requested * requested,
+                u8::try_from(requested.trailing_zeros()).map_err(|_| crate::lowir::Error::Limit)?,
+            ));
         }
     }
     Ok(storage)

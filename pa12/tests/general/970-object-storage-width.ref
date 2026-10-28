@@ -1,0 +1,23 @@
+function @storage() -> void [binding=strong, object=_Z7storagev] {
+  slot $first : obj<1x1>
+  slot $second : obj<16x1>
+
+  block ^entry:
+    %t1 = addr $first
+    %t2 = addr $second
+    return void
+}
+function @step(%value : ptr) -> ptr [binding=strong, object=_Z4stepP3One] {
+  slot $value : ptr
+
+  block ^entry:
+    store typed ptr %value, $value
+    %t1 = load typed ptr $value
+    %t2 = binary mul i64 1, 281474976710657
+    %t3 = index i8 %t1, %t2
+    return ptr %t3
+}
+function @main() -> i32 [role=entry, binding=strong, keep_alias=yes] {
+  block ^entry:
+    return i32 0
+}

@@ -1247,14 +1247,7 @@ impl Analyzer<'_> {
                     let truth = value.truth();
                     let decided = if op == P::LogicalOr { truth } else { !truth };
                     if decided {
-                        match self.evaluate_constant(right, scope, true) {
-                            Ok(right_value) => self.check_constant_bool(
-                                right_value,
-                                self.tree.expressions.get(right).location,
-                            )?,
-                            Err(Error::NonConstant { .. }) => (),
-                            Err(error) => return Err(error),
-                        }
+                        self.check_skipped_constant(right, scope)?;
                         value = self.boolean(truth)?;
                     } else {
                         let right_value = self.evaluate_constant(right, scope, skipping)?;
@@ -1288,6 +1281,19 @@ impl Analyzer<'_> {
         })();
         self.constant_spine.truncate(base);
         result
+    }
+    fn check_skipped_constant(&mut self, right: ast::ExprId, scope: ScopeId) -> Result<(), Error> {
+        match self.evaluate_constant(right, scope, true) {
+            Ok(value) => self.check_constant_bool(value, self.tree.expressions.get(right).location),
+            Err(error @ Error::NonConstant { .. })
+                if self.template_depth != 0
+                    && self.instantiation_dependent_operand(right, scope)? =>
+            {
+                Err(error)
+            }
+            Err(Error::NonConstant { .. }) => Ok(()),
+            Err(error) => Err(error),
+        }
     }
     pub(super) fn promoted_type(&mut self, ty: TypeId) -> Result<TypeId, Error> {
         let ty = if let TypeKind::Enum(entity) = self.graph.types.get(ty).kind {
