@@ -89,7 +89,7 @@ impl super::graph::Graph {
 }
 impl Analyzer<'_> {
     pub(super) fn static_storage_value(&self, value: Value) -> bool {
-        !matches!(value, Value::Address(entity, _) if self.graph.entity(entity).variable
+        !matches!(value, Value::Address(entity, _) if self.graph.entity(entity).object().variable
             .is_some_and(|variable| variable.thread_storage == super::specifiers::ThreadStorage::ThreadLocal))
     }
     pub(super) fn finish_static_initializers(&mut self) -> Result<(), Error> {
@@ -240,19 +240,19 @@ impl Analyzer<'_> {
                     && let Some(id) = self.graph.lower_extended_temporary(entity)
                     && let Some(value) = self.graph.static_temporary_value(id, 0)
                 {
-                    let variable = self.graph.entity_mut(entity);
-                    variable.static_initializer = Some(value);
-                    variable.reference_temporary = None;
+                    let mut variable = self.graph.entity_mut(entity);
+                    variable.initialization_mut().static_initializer = Some(value);
+                    variable.initialization_mut().reference_temporary = None;
                     return Ok(());
                 }
                 let value_type = self.bare_type(object)?;
                 let entity_id = entity;
-                let entity = self.graph.entity_mut(entity);
-                entity.reference_temporary = Some(ReferenceTemporary {
+                let mut entity = self.graph.entity_mut(entity);
+                entity.initialization_mut().reference_temporary = Some(ReferenceTemporary {
                     binding: object,
                     value: value_type,
                 });
-                entity.static_initializer = value;
+                entity.initialization_mut().static_initializer = value;
                 if value.is_some() {
                     self.record_static_reference_storage(entity_id, object);
                 }
@@ -264,6 +264,7 @@ impl Analyzer<'_> {
                             if self
                                 .graph
                                 .entity(root)
+                                .object()
                                 .variable
                                 .is_some_and(|v| !v.automatic) =>
                         {
@@ -282,8 +283,10 @@ impl Analyzer<'_> {
                     Err(Error::NonConstant { .. } | Error::Missing(_)) => None,
                     Err(error) => return Err(error),
                 };
-                self.graph.entity_mut(entity).static_initializer =
-                    value.filter(|value| self.static_storage_value(*value));
+                self.graph
+                    .entity_mut(entity)
+                    .initialization_mut()
+                    .static_initializer = value.filter(|value| self.static_storage_value(*value));
             }
             return Ok(());
         }
@@ -305,7 +308,7 @@ impl Analyzer<'_> {
         // initialization_value consumes the already evaluated variable before
         // asking for another constant probe. Its initializer may be a call or
         // size query whose expression has no scalar fold fact of its own.
-        let recorded = match self.graph.entity(entity).constant {
+        let recorded = match self.graph.entity(entity).object().constant {
             super::constants::ConstantState::Value(value) => {
                 Some(super::constant_addresses::TemporaryValue::Integer(value))
             }
@@ -363,7 +366,10 @@ impl Analyzer<'_> {
                 Err(error) => return Err(error),
             };
         }
-        self.graph.entity_mut(entity).static_initializer = value;
+        self.graph
+            .entity_mut(entity)
+            .initialization_mut()
+            .static_initializer = value;
         Ok(())
     }
     pub(super) fn static_scalar(
@@ -513,6 +519,7 @@ impl Analyzer<'_> {
                     if self
                         .graph
                         .entity(entity)
+                        .object()
                         .variable
                         .is_some_and(|variable| !variable.automatic) =>
                 {
@@ -608,6 +615,7 @@ impl Analyzer<'_> {
                         if self
                             .graph
                             .entity(entity)
+                            .object()
                             .variable
                             .is_some_and(|variable| !variable.automatic) =>
                     {
@@ -1021,18 +1029,27 @@ mod tests {
                     .entity
             };
             let x = graph.entity(entity(b"x"));
-            assert!(x.variable_definition.is_some());
+            assert!(x.object().variable_definition.is_some());
             if lowering {
-                assert!(matches!(x.static_initializer, Some(Value::Integer(7))));
+                assert!(matches!(
+                    x.initialization().static_initializer,
+                    Some(Value::Integer(7))
+                ));
                 assert!(
-                    matches!(graph.entity(entity(b"d")).static_initializer, Some(Value::Floating(F::Double, bits)) if bits == 1 << 63)
+                    matches!(graph.entity(entity(b"d")).initialization().static_initializer, Some(Value::Floating(F::Double, bits)) if bits == 1 << 63)
                 );
                 assert!(
-                    matches!(graph.entity(entity(b"p")).static_initializer, Some(Value::Address(root, 0)) if root == entity(b"target"))
+                    matches!(graph.entity(entity(b"p")).initialization().static_initializer, Some(Value::Address(root, 0)) if root == entity(b"target"))
                 );
             } else {
-                assert!(x.static_initializer.is_none());
-                assert!(graph.entity(entity(b"p")).static_initializer.is_none());
+                assert!(x.initialization().static_initializer.is_none());
+                assert!(
+                    graph
+                        .entity(entity(b"p"))
+                        .initialization()
+                        .static_initializer
+                        .is_none()
+                );
             }
             let reference = graph.entity(entity(b"reference"));
             let temporary_id = entity(b"temporary");
@@ -1040,21 +1057,33 @@ mod tests {
             let same = graph.entity(entity(b"same"));
             if lowering {
                 assert!(
-                    matches!(reference.static_initializer, Some(Value::Address(root, 0)) if root == entity(b"y"))
+                    matches!(reference.initialization().static_initializer, Some(Value::Address(root, 0)) if root == entity(b"y"))
                 );
-                assert!(reference.reference_temporary.is_none());
+                assert!(reference.initialization().reference_temporary.is_none());
                 assert!(matches!(
-                    temporary.static_initializer,
+                    temporary.initialization().static_initializer,
                     Some(Value::Integer(7))
                 ));
-                let object = temporary.reference_temporary.unwrap().binding;
+                let object = temporary
+                    .initialization()
+                    .reference_temporary
+                    .unwrap()
+                    .binding;
                 assert_eq!(graph.lower_cv(object), 1);
                 assert_eq!(
-                    graph.lower_cv(temporary.reference_temporary.unwrap().value),
+                    graph.lower_cv(
+                        temporary
+                            .initialization()
+                            .reference_temporary
+                            .unwrap()
+                            .value
+                    ),
                     0
                 );
-                let Some(Value::Temporary(indirect, 0)) =
-                    graph.entity(entity(b"indirect")).static_initializer
+                let Some(Value::Temporary(indirect, 0)) = graph
+                    .entity(entity(b"indirect"))
+                    .initialization()
+                    .static_initializer
                 else {
                     panic!("evaluated forward reference backing");
                 };
@@ -1067,16 +1096,16 @@ mod tests {
                     matches!(image, [super::super::static_arrays::Item::Scalar(_, Value::Temporary(id, 0))]
                     if Some(*id) == graph.lower_extended_temporary(entity(b"later")))
                 );
-                let Some(Value::Temporary(id, 0)) = same.static_initializer else {
+                let Some(Value::Temporary(id, 0)) = same.initialization().static_initializer else {
                     panic!("shared published temporary");
                 };
                 assert_eq!(Some(id), graph.lower_extended_temporary(temporary_id));
-                assert!(same.reference_temporary.is_none());
+                assert!(same.initialization().reference_temporary.is_none());
             } else {
-                assert!(reference.static_initializer.is_none());
-                assert!(temporary.static_initializer.is_none());
-                assert!(temporary.reference_temporary.is_none());
-                assert!(same.static_initializer.is_none());
+                assert!(reference.initialization().static_initializer.is_none());
+                assert!(temporary.initialization().static_initializer.is_none());
+                assert!(temporary.initialization().reference_temporary.is_none());
+                assert!(same.initialization().static_initializer.is_none());
             }
             let pointers = graph.lower_array_image(entity(b"pointers"));
             let values = graph.lower_array_image(entity(b"values"));
@@ -1095,6 +1124,7 @@ mod tests {
             assert!(
                 graph
                     .entity(entity(b"dynamic"))
+                    .initialization()
                     .static_initializer
                     .is_none()
             );

@@ -58,7 +58,7 @@ impl Analyzer<'_> {
         } = lookup;
         if let Some(class) = self.graph.class_of(left.ty)
             && self.complete_class(class)?
-            && let Some(home) = self.graph.entity(class).scope
+            && let Some(home) = self.graph.entity(class).context().scope
         {
             self.prepare_assignment_lookup(home, key, false)?;
             let found = self
@@ -343,7 +343,7 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         let entity = self.graph.entity(self.graph.binding(binding).entity);
         let Some(SpecialName::Operator { token, .. }) =
-            entity.function.and_then(|props| props.special)
+            entity.callable().function.and_then(|props| props.special)
         else {
             return Ok(());
         };
@@ -363,7 +363,7 @@ impl Analyzer<'_> {
                 "this operator function must be a non-static member",
             ));
         }
-        if entity.template_head.is_some() {
+        if entity.context().template_head.is_some() {
             return Ok(());
         }
         let ty = entity

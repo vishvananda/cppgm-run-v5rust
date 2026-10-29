@@ -524,6 +524,7 @@ impl Analyzer<'_> {
         };
         self.graph
             .entity(entity)
+            .context()
             .template_parameter
             .is_some_and(|info| info.index(depth) == Some(index) && info.is_pack() == expansion)
     }
@@ -536,6 +537,7 @@ impl Analyzer<'_> {
                     && self
                         .graph
                         .entity(binding.entity)
+                        .context()
                         .template_parameter
                         .is_some_and(|info| info.depth() == depth)
             })
@@ -573,7 +575,12 @@ impl Analyzer<'_> {
                     if !matches!(binding.kind, BindingKind::Type | BindingKind::TemplateValue) {
                         continue;
                     }
-                    let Some(info) = self.graph.entity(binding.entity).template_parameter else {
+                    let Some(info) = self
+                        .graph
+                        .entity(binding.entity)
+                        .context()
+                        .template_parameter
+                    else {
                         continue;
                     };
                     let mut covered = info.depth() == depth;
@@ -604,7 +611,12 @@ impl Analyzer<'_> {
                     if !matches!(binding.kind, BindingKind::Type | BindingKind::TemplateValue) {
                         continue;
                     }
-                    let Some(info) = self.graph.entity(binding.entity).template_parameter else {
+                    let Some(info) = self
+                        .graph
+                        .entity(binding.entity)
+                        .context()
+                        .template_parameter
+                    else {
                         continue;
                     };
                     match result {
@@ -675,6 +687,7 @@ impl Analyzer<'_> {
                 let info = self
                     .graph
                     .entity(parameter)
+                    .context()
                     .template_parameter
                     .ok_or(Error::Invariant("operand pack without position"))?;
                 let mut bound = info.depth() == depth;
@@ -900,9 +913,12 @@ impl Analyzer<'_> {
             return true;
         }
         match &self.graph.types.get(ty).kind {
-            TypeKind::TemplateParameter { entity, .. } => {
-                self.graph.entity(*entity).template_parameter.is_none()
-            }
+            TypeKind::TemplateParameter { entity, .. } => self
+                .graph
+                .entity(*entity)
+                .context()
+                .template_parameter
+                .is_none(),
             TypeKind::Pointer(element)
             | TypeKind::Reference { element, .. }
             | TypeKind::Expansion(element) => self.operand_names_placeholder(*element, level + 1),
@@ -1268,6 +1284,7 @@ impl Analyzer<'_> {
                 .any(|&entity| {
                     self.graph
                         .entity(entity)
+                        .context()
                         .template_parameter
                         .is_some_and(|info| info.index(depth) == Some(index))
                 })
@@ -1302,7 +1319,12 @@ impl Analyzer<'_> {
                 if !matches!(binding.kind, BindingKind::Type | BindingKind::TemplateValue) {
                     continue;
                 }
-                let Some(info) = self.graph.entity(binding.entity).template_parameter else {
+                let Some(info) = self
+                    .graph
+                    .entity(binding.entity)
+                    .context()
+                    .template_parameter
+                else {
                     continue;
                 };
                 let Some(index) = info.index(depth).filter(|&index| index < count) else {
@@ -1407,6 +1429,7 @@ impl Analyzer<'_> {
                 && pattern.named_value_parameter.is_some_and(|named| {
                     self.graph
                         .entity(named)
+                        .context()
                         .template_parameter
                         .is_some_and(|parameter| parameter.depth() != environment.depth)
                 });
@@ -1752,7 +1775,11 @@ impl Analyzer<'_> {
             let binding = self.graph.binding(source);
             let result = (|| {
                 if kind == ScopeKind::TemplateParameters {
-                    if let Some(parameter) = self.graph.entity(binding.entity).template_parameter
+                    if let Some(parameter) = self
+                        .graph
+                        .entity(binding.entity)
+                        .context()
+                        .template_parameter
                         && let Some(index) = parameter.index(environment.depth)
                         && let Some(Some(ty)) = environment.arguments.get(index)
                     {
@@ -1842,6 +1869,7 @@ impl Analyzer<'_> {
             let Some(position) = self
                 .graph
                 .entity(binding.entity)
+                .context()
                 .template_parameter
                 .and_then(|info| info.index(environment.depth))
             else {
@@ -2032,10 +2060,10 @@ mod tests {
             .class_of(analyzer.graph.binding(binding).ty.unwrap())
             .unwrap();
         assert!(matches!(
-            analyzer.graph.entity(class).layout,
+            analyzer.graph.entity(class).class().layout,
             super::super::layout::LayoutState::NotStarted
         ));
-        let home = analyzer.graph.entity(class).scope.unwrap();
+        let home = analyzer.graph.entity(class).context().scope.unwrap();
         for binding in analyzer.graph.functions_at(home, f.into()) {
             assert!(
                 !analyzer
@@ -2104,7 +2132,11 @@ mod tests {
             let binding = graph
                 .own(graph.global, name, super::super::lookup::Filter::Ordinary)
                 .unwrap();
-            let home = graph.entity(graph.binding(binding).entity).scope.unwrap();
+            let home = graph
+                .entity(graph.binding(binding).entity)
+                .context()
+                .scope
+                .unwrap();
             homes.push(home);
             let functions: Vec<_> = graph.functions_at(home, f.into()).collect();
             assert_eq!(functions.len(), count);
@@ -2152,11 +2184,17 @@ mod tests {
         let home = analyzer
             .graph
             .entity(analyzer.graph.binding(binding).entity)
+            .context()
             .scope
             .unwrap();
         let binding = analyzer.graph.functions_at(home, f.into()).next().unwrap();
         let entity = analyzer.graph.binding(binding).entity;
-        let head = analyzer.graph.entity(entity).template_head.unwrap();
+        let head = analyzer
+            .graph
+            .entity(entity)
+            .context()
+            .template_head
+            .unwrap();
         assert!(matches!(
             analyzer.declaration(declarations[1], global),
             Err(Error::Diagnostic {
@@ -2164,7 +2202,10 @@ mod tests {
                 ..
             })
         ));
-        assert_eq!(analyzer.graph.entity(entity).template_head, Some(head));
+        assert_eq!(
+            analyzer.graph.entity(entity).context().template_head,
+            Some(head)
+        );
         assert!(analyzer.graph.templates.default_argument(head, 0).is_none());
         assert!(!analyzer.graph.entity(entity).defined);
         assert_eq!(analyzer.graph.functions_at(home, f.into()).count(), 1);
@@ -2803,6 +2844,7 @@ mod pending_tests {
         let head = analyzer
             .graph
             .entity(analyzer.graph.binding(other).entity)
+            .context()
             .template_head
             .unwrap();
         let parameter = analyzer.graph.templates.parameters(head)[0];

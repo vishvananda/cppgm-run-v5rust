@@ -63,7 +63,7 @@ impl Analyzer<'_> {
                 match self.deferred[index] {
                     DeferredMember::ConstantValue(..) | DeferredMember::Initializer(_) => (),
                     DeferredMember::Body(body) => {
-                        if self.graph.entity(body.entity).scope.is_none() {
+                        if self.graph.entity(body.entity).context().scope.is_none() {
                             self.function_body(body)?;
                         }
                     }
@@ -161,6 +161,7 @@ impl Analyzer<'_> {
         let initializer = self
             .graph
             .entity(entity)
+            .initialization()
             .member_initializer
             .ok_or(Error::Invariant("member initializer query without syntax"))?;
         if lazy {
@@ -289,7 +290,7 @@ mod tests {
                     .unwrap(),
             )
             .entity;
-        let members = &graph.entity(class).members;
+        let members = &graph.entity(class).class().members;
         assert_eq!(members.len(), 3);
         assert!(
             members

@@ -82,6 +82,7 @@ impl Analyzer<'_> {
             if self
                 .graph
                 .entity(parameter)
+                .context()
                 .template_parameter
                 .is_some_and(super::templates::ParameterInfo::is_pack)
             {
@@ -92,6 +93,7 @@ impl Analyzer<'_> {
                 TypeKind::Value { ty, .. } | TypeKind::Address { ty, .. } => self
                     .graph
                     .entity(parameter)
+                    .context()
                     .template_parameter
                     .and_then(|info| info.value_type)
                     .is_some_and(|declared| declared == ty),
@@ -205,6 +207,7 @@ impl Analyzer<'_> {
             let head = self
                 .graph
                 .entity(candidate)
+                .context()
                 .template_head
                 .ok_or(Error::Invariant("partial without head"))?;
             // Only class candidates install their primary as the raw owner.
@@ -375,10 +378,10 @@ impl Analyzer<'_> {
         pattern: &[TypeId],
         other: &(Vec<TypeId>, EntityId),
     ) -> Result<bool, Error> {
-        let Some(head) = self.graph.entity(first).template_head else {
+        let Some(head) = self.graph.entity(first).context().template_head else {
             return Err(Error::Invariant("ordering without head"));
         };
-        let Some(second) = self.graph.entity(other.1).template_head else {
+        let Some(second) = self.graph.entity(other.1).context().template_head else {
             return Err(Error::Invariant("ordering without head"));
         };
         if pattern.len() != other.0.len() {
@@ -510,7 +513,7 @@ impl Analyzer<'_> {
             let Some(&parameter) = self.graph.templates.parameters(primary).get(index) else {
                 break;
             };
-            let Some(info) = self.graph.entity(parameter).template_parameter else {
+            let Some(info) = self.graph.entity(parameter).context().template_parameter else {
                 continue;
             };
             let Some(ty) = info.value_type.filter(|&ty| self.graph.dependent_type(ty)) else {
@@ -523,6 +526,7 @@ impl Analyzer<'_> {
                 && (self
                     .graph
                     .entity(entity)
+                    .context()
                     .template_parameter
                     .is_some_and(|info| info.index(depth).is_some())
                     || self.named_bound_parameter(argument, depth).is_some())
@@ -561,6 +565,7 @@ impl Analyzer<'_> {
                     if let Some(index) = self
                         .graph
                         .entity(*entity)
+                        .context()
                         .template_parameter
                         .and_then(|parameter| parameter.index(depth))
                     {
@@ -697,7 +702,12 @@ mod tests {
             )
             .unwrap();
         let entity = analyzer.graph.binding(binding).entity;
-        let head = analyzer.graph.entity(entity).template_head.unwrap();
+        let head = analyzer
+            .graph
+            .entity(entity)
+            .context()
+            .template_head
+            .unwrap();
         let parameter = analyzer.graph.templates.parameters(head)[0];
         let mut ty = analyzer.graph.entity(parameter).ty.unwrap();
         for _ in 0..2048 {
@@ -742,6 +752,7 @@ mod tests {
         let head = analyzer
             .graph
             .entity(analyzer.graph.binding(binding).entity)
+            .context()
             .template_head
             .unwrap();
         let parameters = analyzer.graph.templates.parameters(head);

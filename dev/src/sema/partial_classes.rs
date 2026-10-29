@@ -99,6 +99,7 @@ impl Analyzer<'_> {
         let primary_head = self
             .graph
             .entity(primary)
+            .context()
             .template_head
             .ok_or(Error::Invariant("primary without head"))?;
         let last = self
@@ -133,10 +134,10 @@ impl Analyzer<'_> {
             .graph
             .types
             .intern(TypeKind::Class(entity), Cv::default())?;
-        let partial = self.graph.entity_mut(entity);
+        let mut partial = self.graph.entity_mut(entity);
         partial.ty = Some(ty);
         partial.home = Some(home);
-        partial.template_head = Some(head);
+        partial.context_mut().template_head = Some(head);
         let index = self.partial_index_key(primary_head, &arguments);
         let store = &mut self.graph.class_templates.partials;
         let patterns = store.patterns.entry(primary).or_default();
@@ -232,6 +233,7 @@ impl Analyzer<'_> {
         let head = self
             .graph
             .entity(primary)
+            .context()
             .template_head
             .ok_or(Error::Invariant("partial primary lost head"))?;
         self.template_depth += 1;
@@ -448,7 +450,7 @@ mod tests {
             analyzer.graph.types.get(arguments[0]).kind,
             TypeKind::Scalar(_)
         ));
-        assert!(analyzer.graph.entity(undemanded).scope.is_none());
+        assert!(analyzer.graph.entity(undemanded).context().scope.is_none());
         assert!(
             !analyzer
                 .graph
@@ -457,8 +459,8 @@ mod tests {
                 .started(undemanded)
         );
         assert_ne!(
-            analyzer.graph.entity(first).scope,
-            analyzer.graph.entity(partial).scope
+            analyzer.graph.entity(first).context().scope,
+            analyzer.graph.entity(partial).context().scope
         );
         assert_eq!(analyzer.tree.bodies.mark(), bodies);
         let syntax = (

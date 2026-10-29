@@ -18,7 +18,12 @@ impl Analyzer<'_> {
     pub(super) fn variable_template_primary(&self, binding: BindingId) -> Option<EntityId> {
         let binding = self.graph.binding(binding);
         (binding.kind == BindingKind::Variable
-            && self.graph.entity(binding.entity).template_head.is_some())
+            && self
+                .graph
+                .entity(binding.entity)
+                .context()
+                .template_head
+                .is_some())
         .then_some(binding.entity)
     }
 
@@ -89,6 +94,7 @@ impl Analyzer<'_> {
         let primary_head = self
             .graph
             .entity(primary)
+            .context()
             .template_head
             .ok_or(Error::Invariant("variable template lost head"))?;
         let mut arguments = self.form_template_arguments(last, scope, Some(primary_head))?;
@@ -106,12 +112,12 @@ impl Analyzer<'_> {
             .graph
             .add_entity(Some(ty), template.name, Keyword::Int)?;
         let home = self.graph.entity(primary).home;
-        let entity = self.graph.entity_mut(partial);
+        let mut entity = self.graph.entity_mut(partial);
         entity.home = home;
-        entity.template_head = Some(head);
+        entity.context_mut().template_head = Some(head);
         entity.defined = init.initializer.is_some();
         entity.constexpr = specs.constexpr;
-        entity.variable_definition = init.initializer.map(|_| init.declarator);
+        entity.object_mut().variable_definition = init.initializer.map(|_| init.declarator);
         self.retain_variable_template_pattern(
             partial,
             init,
@@ -152,7 +158,7 @@ impl Analyzer<'_> {
             self.variable_template_primary(binding).is_some()
         } else {
             self.graph.scope(home).kind == ScopeKind::Namespace
-                || self.graph.entity(entity).data_member
+                || self.graph.entity(entity).object().data_member
                     == Some(super::graph::DataMemberKind::Static)
         };
         if primary {

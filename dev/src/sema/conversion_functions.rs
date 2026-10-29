@@ -146,8 +146,9 @@ impl Analyzer<'_> {
             let mut next = 0;
             while let Some(earlier) = self.graph.next_function(scope, key, &mut next) {
                 let entity = self.graph.entity(self.graph.binding(earlier).entity);
-                if entity.template_head.is_none()
+                if entity.context().template_head.is_none()
                     && entity
+                        .callable()
                         .member_function
                         .is_some_and(|key| key.signature == signature)
                 {
@@ -188,7 +189,7 @@ impl Analyzer<'_> {
         for index in 0..count {
             let binding = visible.as_slice(&self.graph)[index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if entity.template_head.is_some() {
+            if entity.context().template_head.is_some() {
                 continue;
             }
             let ty = entity
@@ -218,6 +219,7 @@ impl Analyzer<'_> {
                 if self
                     .graph
                     .entity(self.graph.binding(binding).entity)
+                    .context()
                     .template_head
                     .is_none()
                 {
@@ -300,7 +302,9 @@ impl Analyzer<'_> {
         for index in 0..count {
             let binding = visible.as_slice(&self.graph)[index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if entity.explicitness == Explicitness::Explicit || entity.template_head.is_some() {
+            if entity.callable().explicitness == Explicitness::Explicit
+                || entity.context().template_head.is_some()
+            {
                 continue;
             }
             let signature = entity.ty.ok_or(Error::Invariant("conversion signature"))?;
@@ -420,8 +424,15 @@ impl Analyzer<'_> {
                     *visits += 1;
                     self.closure_conversion(current, true)?;
                 }
-                for index in (0..self.graph.entity(current).declared_conversions.len()).rev() {
-                    let binding = self.graph.entity(current).declared_conversions[index];
+                for index in (0..self
+                    .graph
+                    .entity(current)
+                    .class()
+                    .declared_conversions
+                    .len())
+                    .rev()
+                {
+                    let binding = self.graph.entity(current).class().declared_conversions[index];
                     let key = self.conversion_hiding_key(binding)?;
                     let count = hiding.entry(key).or_default();
                     if leaving {
@@ -435,14 +446,21 @@ impl Analyzer<'_> {
                 }
                 // Own declarations hide all corresponding base declarations, even
                 // when they were themselves hidden by a more derived declaration.
-                for index in (0..self.graph.entity(current).declared_conversions.len()).rev() {
-                    let binding = self.graph.entity(current).declared_conversions[index];
+                for index in (0..self
+                    .graph
+                    .entity(current)
+                    .class()
+                    .declared_conversions
+                    .len())
+                    .rev()
+                {
+                    let binding = self.graph.entity(current).class().declared_conversions[index];
                     *hiding
                         .entry(self.conversion_hiding_key(binding)?)
                         .or_default() += 1;
                 }
                 work.push((current, true));
-                for base in self.graph.entity(current).bases.iter().rev() {
+                for base in self.graph.entity(current).class().bases.iter().rev() {
                     if self.graph.entity(base.class).complete {
                         work.push((base.class, false));
                     }
@@ -458,7 +476,7 @@ impl Analyzer<'_> {
 
     fn conversion_hiding_key(&mut self, binding: BindingId) -> Result<(TypeId, bool), Error> {
         let entity = self.graph.entity(self.graph.binding(binding).entity);
-        let template = entity.template_head.is_some();
+        let template = entity.context().template_head.is_some();
         let ty = entity
             .ty
             .ok_or(Error::Invariant("conversion without signature"))?;
@@ -530,7 +548,7 @@ impl Analyzer<'_> {
         // user_conversion/direct_reference_conversion require a complete
         // source before admitting its functions as implicit candidates. Named
         // conversion lookup inside the class still uses its current snapshot.
-        if !self.complete_class(class)? || self.graph.entity(class).scope.is_none() {
+        if !self.complete_class(class)? || self.graph.entity(class).context().scope.is_none() {
             return Ok(());
         }
         let object = match self.graph.types.get(target).kind {
@@ -553,7 +571,7 @@ impl Analyzer<'_> {
         for index in 0..count {
             let binding = visible.as_slice(&self.graph)[index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if entity.explicitness == Explicitness::Explicit && !direct {
+            if entity.callable().explicitness == Explicitness::Explicit && !direct {
                 continue;
             }
             let Some(binding) =
@@ -562,7 +580,7 @@ impl Analyzer<'_> {
                 continue;
             };
             let entity = self.graph.entity(self.graph.binding(binding).entity);
-            let explicit = entity.explicitness == Explicitness::Explicit;
+            let explicit = entity.callable().explicitness == Explicitness::Explicit;
             if explicit && !direct {
                 continue;
             }
@@ -909,7 +927,7 @@ mod tests {
             .own(global, base, super::super::lookup::Filter::Prefix)
             .unwrap();
         let base = analyzer.graph.binding(binding).entity;
-        let conversion = analyzer.graph.entity(base).declared_conversions[0];
+        let conversion = analyzer.graph.entity(base).class().declared_conversions[0];
         assert!(analyzer.graph.root_demands.as_slice().iter().any(|demand| matches!(
             demand,
             super::super::function_demands::Demand::Function { binding, .. } if *binding == conversion
@@ -990,7 +1008,11 @@ mod tests {
             let function = graph
                 .binding(graph.own(graph.global, name, Filter::Ordinary).unwrap())
                 .entity;
-            let definition = graph.entity(function).function_definition.unwrap();
+            let definition = graph
+                .entity(function)
+                .callable()
+                .function_definition
+                .unwrap();
             let ast::DeclKind::Function { body, .. } = tree.declarations.get(definition).kind
             else {
                 panic!("function")
@@ -1036,12 +1058,13 @@ mod tests {
                 .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
                 .entity;
             if spelling == b"Unused" {
-                assert!(graph.entity(class).implicit_copies.is_none());
+                assert!(graph.entity(class).special().implicit_copies.is_none());
             }
-            for &binding in &graph.entity(class).declared_constructors {
+            for &binding in &graph.entity(class).class().declared_constructors {
                 assert!(
                     graph
                         .entity(graph.binding(binding).entity)
+                        .initialization()
                         .constructor
                         .is_none()
                 );
@@ -1083,8 +1106,8 @@ mod tests {
         };
         let base = class(b"Base");
         let derived = class(b"Derived");
-        let scope = graph.entity(derived).scope.unwrap();
-        let conversions = &graph.entity(derived).declared_conversions;
+        let scope = graph.entity(derived).context().scope.unwrap();
+        let conversions = &graph.entity(derived).class().declared_conversions;
         assert_eq!(conversions.len(), 2);
         let imported = conversions
             .iter()
@@ -1152,6 +1175,7 @@ mod tests {
         assert!(
             graph
                 .entity(base)
+                .class()
                 .declared_conversions
                 .iter()
                 .all(|&binding| !demanded(binding))
@@ -1251,7 +1275,7 @@ mod tests {
                         .unwrap(),
                 )
                 .entity;
-            for &binding in &graph.entity(class).declared_conversions {
+            for &binding in &graph.entity(class).class().declared_conversions {
                 let demanded = graph.root_demands.as_slice().iter().any(|demand|
                     matches!(demand, super::super::function_demands::Demand::Function { binding: found, .. }
                         if *found == binding));
@@ -1267,7 +1291,7 @@ mod tests {
             )
             .entity;
         assert!(matches!(
-            graph.entity(class).layout,
+            graph.entity(class).class().layout,
             super::super::layout::LayoutState::NotStarted
         ));
     }
@@ -1296,7 +1320,7 @@ mod tests {
                 .own(graph.global, name, super::super::lookup::Filter::Prefix)
                 .unwrap();
             assert!(matches!(
-                graph.entity(graph.binding(binding).entity).layout,
+                graph.entity(graph.binding(binding).entity).class().layout,
                 super::super::layout::LayoutState::NotStarted
             ));
         }
@@ -1432,7 +1456,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             selected.binding,
-            graph.entity(boxed).declared_conversions[0]
+            graph.entity(boxed).class().declared_conversions[0]
         );
         assert_eq!(
             graph
@@ -1450,9 +1474,10 @@ mod tests {
         assert!(demanded(selected.binding));
         for &binding in graph
             .entity(base)
+            .class()
             .declared_conversions
             .iter()
-            .chain(&graph.entity(unused).declared_conversions)
+            .chain(&graph.entity(unused).class().declared_conversions)
         {
             assert!(!demanded(binding));
         }

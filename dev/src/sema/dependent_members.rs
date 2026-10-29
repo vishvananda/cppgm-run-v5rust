@@ -131,7 +131,7 @@ impl Analyzer<'_> {
         self.complete_class(class)?;
         // A class being defined exposes its members so far. Never memoize a
         // failed lookup: completing that class can make a later trial succeed.
-        let Some(scope) = self.graph.entity(class).scope else {
+        let Some(scope) = self.graph.entity(class).context().scope else {
             return environment.reject_with(
                 crate::support::source::SourceOffset(0),
                 "a dependent name's qualifier is not a complete class",
@@ -215,7 +215,7 @@ mod tests {
         let graph = analyzer.analyze(declarations).unwrap();
         assert!(!graph.dependent_members.facts.is_empty());
         for &entity in graph.dependent_members.facts.keys() {
-            assert!(graph.entity(entity).scope.is_none());
+            assert!(graph.entity(entity).context().scope.is_none());
         }
         let probe = cursor.intern_name(b"probe").unwrap();
         for binding in graph.functions_at(graph.global, probe.into()) {
@@ -249,8 +249,8 @@ mod tests {
         for &entity in graph.dependent_members.facts.keys() {
             let ty = graph.entity(entity).ty.unwrap();
             assert!(graph.dependent_type(ty));
-            assert!(graph.entity(entity).scope.is_none());
-            assert!(graph.entity(entity).template_parameter.is_none());
+            assert!(graph.entity(entity).context().scope.is_none());
+            assert!(graph.entity(entity).context().template_parameter.is_none());
             let canonical = graph.types.canonical_function(ty).unwrap();
             let previous = if graph.entity(entity).name == Some(inner) {
                 &mut canonical_inner

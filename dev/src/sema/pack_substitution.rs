@@ -60,6 +60,7 @@ impl Analyzer<'_> {
                 let info = self
                     .graph
                     .entity(parameter)
+                    .context()
                     .template_parameter
                     .ok_or(Error::Invariant("expansion without pack parameter"))?;
                 let Some(index) = info.index(environment.depth) else {
@@ -202,7 +203,12 @@ mod tests {
             .own(global, name, super::super::lookup::Filter::Ordinary)
             .unwrap();
         let primary = analyzer.graph.binding(binding).entity;
-        let head = analyzer.graph.entity(primary).template_head.unwrap();
+        let head = analyzer
+            .graph
+            .entity(primary)
+            .context()
+            .template_head
+            .unwrap();
         let parameter = analyzer.graph.templates.parameters(head)[0];
         let ty = analyzer.graph.entity(parameter).ty.unwrap();
         let pointer = analyzer.graph.types.pointer(ty).unwrap();

@@ -71,14 +71,14 @@ impl Graph {
         class: EntityId,
         selected: Option<EntityId>,
     ) -> Option<EntityId> {
-        selected.filter(|&member| self.entity(member).home == self.entity(class).scope)
+        selected.filter(|&member| self.entity(member).home == self.entity(class).context().scope)
     }
 
     // aggregates.h::UnionListMember: an empty list prefers the variant
     // initialized by a brace-or-equal-initializer, including anonymous storage.
     pub(super) fn union_list_member(&self, class: EntityId, empty: bool) -> Option<EntityId> {
         let mut first = None;
-        for &member in &self.entity(class).members {
+        for &member in &self.entity(class).class().members {
             if self.unnamed_bit_field(member) {
                 continue;
             }
@@ -86,13 +86,13 @@ impl Graph {
                 return Some(member);
             }
             let entity = self.entity(member);
-            if entity.member_initializer.is_some()
+            if entity.initialization().member_initializer.is_some()
                 || entity
                     .ty
                     .and_then(|ty| self.class_of(ty))
                     .is_some_and(|child| {
                         self.anonymous_member_storage(child).is_some()
-                            && self.entity(child).initialized_members != 0
+                            && self.entity(child).class().initialized_members != 0
                     })
             {
                 return Some(member);
@@ -103,7 +103,7 @@ impl Graph {
     }
     pub(super) fn aggregate_class(&self, class: EntityId) -> bool {
         let entity = self.entity(class);
-        entity.aggregation == Aggregation::Eligible && entity.bases.is_empty()
+        entity.class().aggregation == Aggregation::Eligible && entity.class().bases.is_empty()
     }
 }
 impl Analyzer<'_> {
@@ -253,8 +253,8 @@ impl Analyzer<'_> {
                     })
             })
             .flatten();
-        for index in 0..self.graph.entity(class).members.len() {
-            let member = self.graph.entity(class).members[index];
+        for index in 0..self.graph.entity(class).class().members.len() {
+            let member = self.graph.entity(class).class().members[index];
             if self.graph.unnamed_bit_field(member)
                 || selected.is_some_and(|selected| member != selected)
             {
@@ -277,7 +277,7 @@ impl Analyzer<'_> {
                     ast::ExprKind::Braced { elements, .. } if elements.is_empty())
             {
                 let at = self.tree.expressions.get(element).location;
-                if self.graph.entity(member).array_member == ArrayMemberKind::ZeroLength {
+                if self.graph.entity(member).object().array_member == ArrayMemberKind::ZeroLength {
                     return Err(Error::at(
                         at,
                         "a zero-length array member initialized with elements",
@@ -285,7 +285,7 @@ impl Analyzer<'_> {
                 }
                 let context = self.flexible_initialization.as_mut().filter(|context| {
                     context.class == class && context.elements == elements
-                        && index + 1 == self.graph.entity(class).members.len()
+                        && index + 1 == self.graph.entity(class).class().members.len()
                 }).ok_or_else(|| Error::at(at,
                     "a flexible array member initialized outside the initializer of an object of static storage duration"))?;
                 context.given = true;
@@ -411,7 +411,7 @@ mod tests {
             .binding(graph.own(graph.global, unused, Filter::Prefix).unwrap())
             .entity;
         assert!(matches!(
-            graph.entity(unused).layout,
+            graph.entity(unused).class().layout,
             crate::sema::layout::LayoutState::NotStarted
         ));
     }

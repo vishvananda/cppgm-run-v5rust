@@ -98,7 +98,7 @@ impl Graph {
         {
             return Ok(None);
         }
-        Ok(match variable.constant {
+        Ok(match variable.object().constant {
             super::constants::ConstantState::MemberPointer(value) => Some(value),
             _ => None,
         })
@@ -127,7 +127,8 @@ impl Graph {
         if !self.entity(entity).constexpr {
             return Ok(None);
         }
-        let super::constants::ConstantState::Value(value) = self.entity(entity).constant else {
+        let super::constants::ConstantState::Value(value) = self.entity(entity).object().constant
+        else {
             return Ok(None);
         };
         let extended = if kind.signed && value.bits >> 63 != 0 {
@@ -168,7 +169,7 @@ impl Graph {
         {
             return Ok(None);
         }
-        let super::constants::ConstantState::Floating(value) = variable.constant else {
+        let super::constants::ConstantState::Floating(value) = variable.object().constant else {
             return Ok(None);
         };
         self.floating_constants
@@ -191,7 +192,7 @@ impl Graph {
         {
             return Ok(None);
         }
-        if variable.reference_temporary.is_some()
+        if variable.initialization().reference_temporary.is_some()
             && matches!(self.types.get(self.lower_entity_type(entity)?).kind,
                 TypeKind::Reference { element, .. } if matches!(self.types.get(element).kind, TypeKind::MemberPointer { .. }))
         {
@@ -245,13 +246,13 @@ impl Graph {
             _ => return Ok(None),
         };
         let variable = self.entity(entity);
-        if variable.variable.is_none()
+        if variable.object().variable.is_none()
             || !variable.constexpr
             || variable
                 .ty
                 .is_some_and(|ty| matches!(self.types.get(ty).kind, TypeKind::Reference { .. }))
             || matches!(tree.expressions.get(id).kind, ExprKind::Member { .. })
-                && variable.data_member != Some(DataMemberKind::Static)
+                && variable.object().data_member != Some(DataMemberKind::Static)
         {
             return Ok(None);
         }
@@ -270,7 +271,7 @@ impl Graph {
                         self.scope(scope).kind,
                         ScopeKind::Namespace | ScopeKind::Class
                     )
-                }) && self.entity(root).variable.is_some_and(|variable| {
+                }) && self.entity(root).object().variable.is_some_and(|variable| {
                     variable.thread_storage != super::specifiers::ThreadStorage::ThreadLocal
                 }) =>
             {
@@ -317,7 +318,7 @@ impl Graph {
         };
         if (!matches!(tree.expressions.get(id).kind, ExprKind::Id(_)) && !temporary)
             || !self.lower_class_empty(class)?
-            || self.entity(function).explicitness == Explicitness::Explicit
+            || self.entity(function).callable().explicitness == Explicitness::Explicit
             || self.types.get(result).kind != TypeKind::Scalar(Scalar::Bool)
             || self.types.get(result).cv.0 != 0
         {
@@ -352,6 +353,7 @@ impl Graph {
             self.binding(binding).kind == BindingKind::Enumerator
                 && self
                     .entity(self.binding(binding).entity)
+                    .enumerated()
                     .enumeration
                     .is_none()
         });

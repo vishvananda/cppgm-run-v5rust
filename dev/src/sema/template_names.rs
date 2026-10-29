@@ -48,6 +48,7 @@ impl Analyzer<'_> {
                     let parameter = self.graph.templates.parameters(head)[position];
                     self.graph
                         .entity(parameter)
+                        .context()
                         .template_parameter
                         .and_then(|info| info.value_type)
                         .filter(|&ty| !self.graph.dependent_type(ty))
@@ -128,6 +129,7 @@ impl Analyzer<'_> {
                     && self
                         .graph
                         .entity(binding.entity)
+                        .context()
                         .template_parameter
                         .is_some()
                 {
@@ -203,7 +205,11 @@ impl Analyzer<'_> {
             TypeKind::Class(entity) | TypeKind::Enum(entity) => self.graph.entity(entity),
             _ => return false,
         };
-        let mut current = entity.enumeration.map(|e| e.owner).or(entity.home);
+        let mut current = entity
+            .enumerated()
+            .enumeration
+            .map(|e| e.owner)
+            .or(entity.home);
         while let Some(scope) = current {
             let node = self.graph.scope(scope);
             match node.kind {

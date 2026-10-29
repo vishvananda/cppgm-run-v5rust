@@ -75,6 +75,7 @@ impl Analyzer<'_> {
                 && self
                     .graph
                     .entity(parameters[0])
+                    .context()
                     .template_parameter
                     .is_some_and(|info| info.value_type.is_some())
                 && self.argument_parameter_pack(head, 1)
@@ -119,7 +120,12 @@ impl Analyzer<'_> {
         Ok(found.binding.is_some_and(|binding| {
             let binding = self.graph.binding(binding);
             binding.kind == BindingKind::Alias
-                && self.graph.entity(binding.entity).template_head.is_some()
+                && self
+                    .graph
+                    .entity(binding.entity)
+                    .context()
+                    .template_head
+                    .is_some()
         }))
     }
 
@@ -220,6 +226,7 @@ impl Analyzer<'_> {
         let head = self
             .graph
             .entity(alias)
+            .context()
             .template_head
             .ok_or(Error::Invariant("alias template without head"))?;
         self.fill_template_arguments_in(head, &mut arguments, location, None)?;
@@ -446,6 +453,7 @@ impl Analyzer<'_> {
                     } else if let Some(index) = self
                         .graph
                         .entity(*entity)
+                        .context()
                         .template_parameter
                         .and_then(|p| p.index(depth))
                         && index < 64
@@ -699,7 +707,7 @@ mod tests {
         let TypeKind::Class(class) = analyzer.graph.types.get(x).kind else {
             panic!("class alias")
         };
-        assert!(analyzer.graph.entity(class).scope.is_none());
+        assert!(analyzer.graph.entity(class).context().scope.is_none());
         assert!(!analyzer.graph.entity(class).complete);
         let a = analyzer
             .graph
@@ -808,7 +816,7 @@ mod tests {
             );
         }
         assert_eq!(analyzer.tree.expressions.mark(), syntax_mark);
-        assert!(analyzer.graph.entity(entity).scope.is_none());
+        assert!(analyzer.graph.entity(entity).context().scope.is_none());
         assert!(analyzer.graph.root_demands.as_slice().is_empty());
     }
 }

@@ -70,6 +70,7 @@ impl Analyzer<'_> {
                 .filter(|&binding| {
                     self.graph
                         .entity(self.graph.binding(binding).entity)
+                        .context()
                         .template_head
                         .is_some()
                 })
@@ -128,7 +129,11 @@ impl Analyzer<'_> {
         if let Some(frame) = self.capture_frames.get(function) {
             return Ok(frame.object_type());
         }
-        if entity.function.is_some_and(|function| function.is_static) {
+        if entity
+            .callable()
+            .function
+            .is_some_and(|function| function.is_static)
+        {
             return Ok(None);
         }
         let Some(class) = entity
@@ -176,7 +181,7 @@ impl Analyzer<'_> {
         else {
             return Ok(None);
         };
-        if self.graph.entity(member).data_member == Some(DataMemberKind::Instance) {
+        if self.graph.entity(member).object().data_member == Some(DataMemberKind::Instance) {
             home = self.graph.member_holder(member, Some(class))?;
         }
         Ok(
@@ -301,7 +306,7 @@ impl Analyzer<'_> {
             return self.reject_substitution(location, "member access on a non-class", false);
         };
         self.complete_class(class)?;
-        let class_scope = self.graph.entity(class).scope;
+        let class_scope = self.graph.entity(class).context().scope;
         if class_scope.is_none()
             || !self.graph.entity(class).complete
                 && !class_scope.is_some_and(|class_scope| self.graph.encloses(class_scope, scope))
@@ -356,7 +361,7 @@ impl Analyzer<'_> {
                 self.graph.entity(self.graph.binding(other).entity).home == entity.home
             });
         if shared
-            && (entity.data_member == Some(DataMemberKind::Instance)
+            && (entity.object().data_member == Some(DataMemberKind::Instance)
                 || self.member_function_owner(binding).is_some())
         {
             self.check_member_subobject(binding, class, naming, scope, node.location)?;
@@ -367,6 +372,7 @@ impl Analyzer<'_> {
                 && self
                     .graph
                     .entity(self.graph.binding(binding).entity)
+                    .context()
                     .template_head
                     .is_none();
             let mut facts = self.function_designation(binding, found.functions.as_slice())?;
@@ -398,6 +404,7 @@ impl Analyzer<'_> {
             && self
                 .graph
                 .entity(self.graph.binding(binding).entity)
+                .object()
                 .data_member
                 == Some(DataMemberKind::Instance)
         {
@@ -420,7 +427,7 @@ impl Analyzer<'_> {
                 if let TypeKind::Reference { element, .. } = self.graph.types.get(member_ty).kind {
                     member_ty = element;
                     category = V::Lvalue;
-                } else if entity.data_member == Some(DataMemberKind::Instance) {
+                } else if entity.object().data_member == Some(DataMemberKind::Instance) {
                     let cv = self.graph.types.get(ty).cv;
                     let cv = Cv(cv.0
                         & if entity.mutability == Mutability::Mutable {
@@ -430,13 +437,15 @@ impl Analyzer<'_> {
                         });
                     member_ty = self.graph.types.qualify(member_ty, cv)?;
                 }
-                if self.graph.entity(member.entity).data_member == Some(DataMemberKind::Static) {
+                if self.graph.entity(member.entity).object().data_member
+                    == Some(DataMemberKind::Static)
+                {
                     category = V::Lvalue;
                 }
                 self.new_expression_facts(member_ty, category)?
             }
             BindingKind::Enumerator => {
-                let ConstantState::Value(value) = entity.constant else {
+                let ConstantState::Value(value) = entity.object().constant else {
                     return Err(Error::Invariant("enumerator member without value"));
                 };
                 let mut facts = self.new_expression_facts(value.ty, V::Prvalue)?;
@@ -451,11 +460,9 @@ impl Analyzer<'_> {
             }
         };
         facts.set_member(Some(binding), &mut self.graph.expression_facts)?;
-        facts.set_bit_field(self.graph.entity(member.entity).bit_field.is_some());
-        facts.set_field_identity(
-            self.graph.entity(member.entity).bit_field,
-            &mut self.graph.expression_facts,
-        )?;
+        let bit_field = self.graph.entity(member.entity).object().bit_field;
+        facts.set_bit_field(bit_field.is_some());
+        facts.set_field_identity(bit_field, &mut self.graph.expression_facts)?;
         self.static_member_constant(&mut facts, member.entity);
         facts.set_member_naming(Some(naming), &mut self.graph.expression_facts)?;
         facts.set_member_path(
@@ -463,7 +470,8 @@ impl Analyzer<'_> {
             &mut self.graph.expression_facts,
         )?;
         if class != naming
-            && self.graph.entity(member.entity).data_member == Some(DataMemberKind::Instance)
+            && self.graph.entity(member.entity).object().data_member
+                == Some(DataMemberKind::Instance)
         {
             facts.set_member_naming_path(
                 Some(self.graph.retain_base_path(class, naming)?),
@@ -481,7 +489,7 @@ impl Analyzer<'_> {
     ) -> Result<Option<super::inheritance::BasePathId>, Error> {
         let entity = self.graph.binding(binding).entity;
         let member = self.graph.entity(entity);
-        if member.data_member != Some(DataMemberKind::Instance) {
+        if member.object().data_member != Some(DataMemberKind::Instance) {
             return Ok(None);
         }
         let holder = self.graph.member_holder(entity, Some(class))?;
@@ -507,13 +515,14 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         let member = self.graph.binding(binding).entity;
-        let home = if self.graph.entity(member).data_member == Some(DataMemberKind::Instance) {
-            self.graph.member_holder(member, Some(naming))?
-        } else {
-            self.member_function_owner(binding)
-                .and_then(|ty| self.graph.class_of(ty))
-                .ok_or(Error::Invariant("nonstatic member without class"))?
-        };
+        let home =
+            if self.graph.entity(member).object().data_member == Some(DataMemberKind::Instance) {
+                self.graph.member_holder(member, Some(naming))?
+            } else {
+                self.member_function_owner(binding)
+                    .and_then(|ty| self.graph.class_of(ty))
+                    .ok_or(Error::Invariant("nonstatic member without class"))?
+            };
         if self.graph.base_count(class, naming) > 1 || self.graph.base_count(naming, home) > 1 {
             return Err(Error::at(
                 location,
@@ -536,6 +545,7 @@ impl Analyzer<'_> {
         let class_scope = self
             .graph
             .entity(class)
+            .context()
             .scope
             .ok_or(Error::Invariant("member class without scope"))?;
         let node = *self.tree.names.get(name);
@@ -786,7 +796,7 @@ mod tests {
                 .own(analyzer.graph.global, class_name, Filter::Elaborated)
                 .unwrap();
             let class = analyzer.graph.binding(binding).entity;
-            let scope = analyzer.graph.entity(class).scope.unwrap();
+            let scope = analyzer.graph.entity(class).context().scope.unwrap();
             let function = analyzer
                 .graph
                 .own(scope, function_name, Filter::Ordinary)
@@ -847,7 +857,7 @@ mod tests {
             .unwrap();
         let mut specialization = None;
         for (index, class) in classes.into_iter().enumerate() {
-            let scope = analyzer.graph.entity(class).scope.unwrap();
+            let scope = analyzer.graph.entity(class).context().scope.unwrap();
             let found = analyzer
                 .qualified_result(scope, names[3].into(), Filter::Ordinary)
                 .unwrap();
@@ -877,7 +887,7 @@ mod tests {
             let owner = analyzer.member_function_owner(selected).unwrap();
             assert_eq!(analyzer.graph.class_of(owner), Some(classes[0]));
             assert!(matches!(
-                analyzer.graph.entity(class).layout,
+                analyzer.graph.entity(class).class().layout,
                 super::super::layout::LayoutState::NotStarted
             ));
         }

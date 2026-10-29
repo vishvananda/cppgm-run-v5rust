@@ -43,7 +43,7 @@ impl Analyzer<'_> {
         } else {
             specs.explicitness
         };
-        self.graph.entity_mut(function).explicitness = explicitness;
+        self.graph.entity_mut(function).callable_mut().explicitness = explicitness;
         Ok(())
     }
 
@@ -62,7 +62,7 @@ impl Analyzer<'_> {
             .get(&entity)
             .copied()
         else {
-            return Ok(self.graph.entity(entity).explicitness);
+            return Ok(self.graph.entity(entity).callable().explicitness);
         };
         // Check before allocating the specialization frame or copying syntax.
         // Resource exhaustion must escape substitution as a limit, rather than
@@ -82,6 +82,7 @@ impl Analyzer<'_> {
             if let Some(position) = self
                 .graph
                 .entity(binding.entity)
+                .context()
                 .template_parameter
                 .and_then(|info| info.index(depth))
                 && let Some(&ty) = arguments.get(position)
@@ -209,7 +210,7 @@ mod tests {
                     .unwrap(),
             )
             .entity;
-        let primary = analyzer.graph.entity(class).declared_constructors[0];
+        let primary = analyzer.graph.entity(class).class().declared_constructors[0];
         let int = analyzer
             .graph
             .types
@@ -258,6 +259,7 @@ mod tests {
             analyzer
                 .graph
                 .entity(analyzer.graph.binding(binding).entity)
+                .class()
                 .declared_constructors[0]
         });
         let int = analyzer
@@ -286,6 +288,7 @@ mod tests {
             analyzer
                 .graph
                 .entity(analyzer.graph.binding(implicit).entity)
+                .callable()
                 .explicitness
                 == Explicitness::Converting
         );
@@ -293,6 +296,7 @@ mod tests {
             analyzer
                 .graph
                 .entity(analyzer.graph.binding(explicit).entity)
+                .callable()
                 .explicitness
                 == Explicitness::Explicit
         );

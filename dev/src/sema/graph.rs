@@ -156,87 +156,35 @@ pub(super) enum ClassRepresentation {
 pub(super) struct Entity {
     pub inline: super::specifiers::InlinePreference,
     pub ty: Option<TypeId>,
-    pub scope: Option<ScopeId>,
     pub home: Option<ScopeId>,
     pub name: Option<NameId>,
     pub key: Keyword,
     pub defined: bool,
     pub availability: FunctionAvailability,
-    pub defaults: Vec<Option<super::default_arguments::DefaultArgument>>,
     pub complete: bool,
-    pub representation: ClassRepresentation,
-    pub enumeration: Option<super::enumerations::EnumInfo>,
-    pub constant: super::constants::ConstantState,
-    pub implicit_default: Option<ScopeId>,
-    pub user_constructor: Option<BindingId>,
-    pub declared_constructors: Vec<BindingId>,
-    pub declared_destructor: Option<BindingId>,
-    pub implicit_destructor: Option<BindingId>,
-    pub destruction: Option<super::destruction::Destruction>,
-    pub destruction_preparation: super::destruction::Preparation,
-    pub declared_conversions: Vec<BindingId>,
-    pub special_definition: Option<super::special_members::SpecialDefinition>,
-    pub destructor_specification: super::exceptions::DestructorSpecification,
-    pub data_member: Option<DataMemberKind>,
-    pub array_member: super::aggregate_initialization::ArrayMemberKind,
     pub member_access: Access,
     pub mutability: Mutability,
-    pub exceptions: super::exceptions::ExceptionState,
-    pub exception_origin: super::exceptions::SpecificationOrigin,
-    pub exception_omission: super::exceptions::OmittedSpecification,
-    pub target_unwind: super::exceptions::TargetUnwind,
     pub constexpr: bool,
-    pub explicitness: super::specifiers::Explicitness,
-    pub implicit_copies: Option<super::copy_initialization::ImplicitCopies>,
-    pub copy_preparation: super::copy_properties::Preparation,
-    pub copy_properties: Option<super::copy_properties::CopyPropertiesId>,
-    pub copy_origin: super::copy_construction::Origin,
-    pub copy_kind: Option<super::types::RefKind>,
-    pub assignment_kind: Option<super::types::RefKind>,
-    pub assignment: Option<super::assignment::Properties>,
-    pub assignment_origin: super::assignment::Origin,
-    pub assignment_exceptions: super::assignment::ExceptionSource,
-    pub function: Option<FunctionProperties>,
-    pub builtin: Option<super::builtin_calls::BuiltinFunction>,
-    pub definition_emission: super::function_demands::DefinitionEmission,
-    pub function_definition: Option<crate::syntax::ast::DeclId>,
-    pub analyzed_body: Option<crate::syntax::ast::BodyId>,
-    pub parameter_entities: Vec<EntityId>,
-    pub function_parameters: Option<crate::syntax::ast::ParameterClause>,
-    pub demands: super::function_demands::DemandList,
-    pub member_function: Option<MemberKey>,
-    pub special_name: Option<crate::syntax::ast::Name>,
-    pub members: Vec<EntityId>,
-    pub polymorphism: super::virtual_members::Polymorphism,
-    pub literal: super::literal_types::LiteralState,
-    pub aggregation: super::aggregate_initialization::Aggregation,
-    pub emptiness: Option<bool>,
-    pub bases: Vec<super::inheritance::BaseClass>,
-    pub base_dependency: crate::syntax::ast::BaseDependency,
-    pub derivation: super::inheritance::Derivation,
-    pub layout: super::layout::LayoutState,
-    pub storage_attributes: super::layout_attributes::StorageAttributes,
-    pub class_packing: u32,
-    pub layout_category: super::layout::LayoutCategory,
-    pub member_offset: Option<u64>,
-    pub bit_field: Option<super::bit_fields::BitFieldId>,
-    // Presentation provenance for an unnamed class, never a lookup key.
-    pub anonymous_class: Option<super::anonymous_types::AnonymousClass>,
-    pub local_type_ordinal: Option<u32>,
-    pub anonymous_storage: Option<BindingId>,
-    pub default_construction: super::construction::ConstructorState,
-    pub constructor: Option<super::construction::ConstructorId>,
-    pub constructor_arguments: Option<super::constructor_initialization::ConstructorArguments>,
-    pub constructor_exceptions: super::construction::ConstructorExceptionSource,
-    pub member_initializer: Option<crate::syntax::ast::Initializer>,
-    pub initialized_members: usize,
-    pub variable: Option<VariableProperties>,
-    pub variable_definition: Option<crate::syntax::ast::DeclaratorId>,
-    pub reference_temporary: Option<super::static_initialization::ReferenceTemporary>,
-    pub static_initializer: Option<super::static_initialization::Value>,
-    pub template_parameter: Option<super::templates::ParameterInfo>,
-    pub template_head: Option<super::templates::HeadId>,
 }
+impl Entity {
+    pub(super) fn new(ty: Option<TypeId>, name: Option<NameId>, key: Keyword) -> Self {
+        Self {
+            inline: super::specifiers::InlinePreference::Unspecified,
+            ty,
+            home: None,
+            name,
+            key,
+            defined: false,
+            availability: FunctionAvailability::Callable,
+            complete: false,
+            member_access: Access::Public,
+            mutability: Mutability::Ordinary,
+            constexpr: false,
+        }
+    }
+}
+
+const _: () = assert!(std::mem::size_of::<Entity>() <= 32);
 #[derive(Clone, Copy)]
 enum BindingOrigin {
     Declaration(std::num::NonZeroUsize),
@@ -317,6 +265,8 @@ pub(crate) struct Graph {
     pub(super) function_templates: super::function_templates::FunctionTemplates,
     scopes: Vec<Scope>,
     entities: Vec<Entity>,
+    entity_roles: Vec<super::entity_records::Roles>,
+    entity_records: Box<super::entity_records::Records>,
     bindings: Vec<Binding>,
     binding_origins: Vec<BindingOrigin>,
     redeclarations: Vec<bool>,
@@ -411,7 +361,7 @@ impl Graph {
         self.entity_mut(placeholder).ty = Some(auto);
         self.auto_placeholder = Some(auto);
         let global = self.add_entity(None, None, Keyword::Namespace)?;
-        self.entity_mut(global).scope = Some(self.global);
+        self.entity_mut(global).context_mut().scope = Some(self.global);
         self.scope_mut(self.global).owner = Some(global);
         Ok(())
     }
@@ -435,7 +385,15 @@ impl Graph {
             names,
             lookups,
             member_cache,
-            arena_bytes: type_bytes
+            arena_bytes: self
+                .entity_records
+                .storage_bytes()
+                .saturating_add(
+                    self.entity_roles
+                        .capacity()
+                        .saturating_mul(std::mem::size_of::<super::entity_records::Roles>()),
+                )
+                .saturating_add(type_bytes)
                 .saturating_add(self.specifications.storage_bytes())
                 .saturating_add(
                     self.scopes
@@ -473,7 +431,7 @@ impl Graph {
             return None;
         }
         let enumeration = self.scope(scope).owner?;
-        let owner = self.entity(enumeration).enumeration?.owner;
+        let owner = self.entity(enumeration).enumerated().enumeration?.owner;
         let binding = self.scope(owner).index.get(&name.identifier()?)?.value?;
         if self.binding(binding).kind != BindingKind::Enumerator {
             return None;
@@ -489,8 +447,9 @@ impl Graph {
         entity: EntityId,
         requested: FunctionEffect,
     ) -> Result<(), Error> {
-        let properties = self
-            .entity_mut(entity)
+        let mut record = self.entity_mut(entity);
+        let properties = record
+            .callable_mut()
             .function
             .as_mut()
             .ok_or(Error::Invariant("function effect owner without function"))?;
@@ -506,6 +465,7 @@ impl Graph {
         requested: bool,
     ) -> Result<(), Error> {
         self.entity_mut(entity)
+            .callable_mut()
             .function
             .as_mut()
             .ok_or(Error::Invariant("function policy owner without function"))?
@@ -618,7 +578,7 @@ impl Graph {
     }
     pub(super) fn integral_kind(&self, ty: TypeId) -> Option<super::integral::IntegralKind> {
         let ty = if let super::types::TypeKind::Enum(entity) = self.types.get(ty).kind {
-            self.entity(entity).enumeration?.underlying?
+            self.entity(entity).enumerated().enumeration?.underlying?
         } else {
             ty
         };
@@ -681,6 +641,8 @@ impl Graph {
                 written_name: None,
             }],
             entities: Vec::new(),
+            entity_roles: Vec::new(),
+            entity_records: Box::default(),
             local_classes: super::local_classes::LocalClasses::default(),
             bit_fields: super::bit_fields::BitFields::default(),
             bindings: Vec::new(),
@@ -760,11 +722,133 @@ impl Graph {
     pub(super) fn scope_mut(&mut self, id: ScopeId) -> &mut Scope {
         &mut self.scopes[id.0 as usize]
     }
-    pub(super) fn entity(&self, id: EntityId) -> &Entity {
+    #[inline]
+    pub(super) fn entity(&self, id: EntityId) -> super::entity_records::EntityRef<'_> {
+        super::entity_records::EntityRef::new(self, id)
+    }
+    #[inline]
+    pub(super) fn entity_mut(&mut self, id: EntityId) -> super::entity_records::EntityMut<'_> {
+        super::entity_records::EntityMut::new(self, id)
+    }
+    #[inline]
+    pub(super) fn entity_header(&self, id: EntityId) -> &Entity {
         &self.entities[id.0 as usize]
     }
-    pub(super) fn entity_mut(&mut self, id: EntityId) -> &mut Entity {
+    #[inline]
+    pub(super) fn entity_header_mut(&mut self, id: EntityId) -> &mut Entity {
         &mut self.entities[id.0 as usize]
+    }
+    #[inline]
+    pub(super) fn entity_context(&self, id: EntityId) -> &super::entity_records::ContextFacts {
+        self.entity_records
+            .context(&self.entity_roles[id.0 as usize])
+    }
+    #[inline]
+    pub(super) fn entity_context_mut(
+        &mut self,
+        id: EntityId,
+    ) -> &mut super::entity_records::ContextFacts {
+        self.entity_records
+            .context_mut(&mut self.entity_roles[id.0 as usize])
+    }
+    #[inline]
+    pub(super) fn entity_enumerated(
+        &self,
+        id: EntityId,
+    ) -> &super::entity_records::EnumerationFacts {
+        self.entity_records
+            .enumerated(&self.entity_roles[id.0 as usize])
+    }
+    #[inline]
+    pub(super) fn entity_enumerated_mut(
+        &mut self,
+        id: EntityId,
+    ) -> &mut super::entity_records::EnumerationFacts {
+        self.entity_records
+            .enumerated_mut(&mut self.entity_roles[id.0 as usize])
+    }
+    #[inline]
+    pub(super) fn entity_class(&self, id: EntityId) -> &super::entity_records::ClassFacts {
+        self.entity_records.class(&self.entity_roles[id.0 as usize])
+    }
+    #[inline]
+    pub(super) fn entity_class_mut(
+        &mut self,
+        id: EntityId,
+    ) -> &mut super::entity_records::ClassFacts {
+        self.entity_records
+            .class_mut(&mut self.entity_roles[id.0 as usize])
+    }
+    #[inline]
+    pub(super) fn entity_special(&self, id: EntityId) -> &super::entity_records::SpecialFacts {
+        self.entity_records
+            .special(&self.entity_roles[id.0 as usize])
+    }
+    #[inline]
+    pub(super) fn entity_special_mut(
+        &mut self,
+        id: EntityId,
+    ) -> &mut super::entity_records::SpecialFacts {
+        self.entity_records
+            .special_mut(&mut self.entity_roles[id.0 as usize])
+    }
+    #[inline]
+    pub(super) fn entity_callable(&self, id: EntityId) -> &super::entity_records::CallableFacts {
+        self.entity_records
+            .callable(&self.entity_roles[id.0 as usize])
+    }
+    #[inline]
+    pub(super) fn entity_callable_mut(
+        &mut self,
+        id: EntityId,
+    ) -> &mut super::entity_records::CallableFacts {
+        self.entity_records
+            .callable_mut(&mut self.entity_roles[id.0 as usize])
+    }
+    #[inline]
+    pub(super) fn entity_object(&self, id: EntityId) -> &super::entity_records::ObjectFacts {
+        self.entity_records
+            .object(&self.entity_roles[id.0 as usize])
+    }
+    #[inline]
+    pub(super) fn entity_object_mut(
+        &mut self,
+        id: EntityId,
+    ) -> &mut super::entity_records::ObjectFacts {
+        self.entity_records
+            .object_mut(&mut self.entity_roles[id.0 as usize])
+    }
+    #[inline]
+    pub(super) fn entity_initialization(
+        &self,
+        id: EntityId,
+    ) -> &super::entity_records::InitializationFacts {
+        self.entity_records
+            .initialization(&self.entity_roles[id.0 as usize])
+    }
+    #[inline]
+    pub(super) fn entity_initialization_mut(
+        &mut self,
+        id: EntityId,
+    ) -> &mut super::entity_records::InitializationFacts {
+        self.entity_records
+            .initialization_mut(&mut self.entity_roles[id.0 as usize])
+    }
+    #[inline]
+    pub(super) fn entity_attributes(
+        &self,
+        id: EntityId,
+    ) -> &super::entity_records::AttributesFacts {
+        self.entity_records
+            .attributes(&self.entity_roles[id.0 as usize])
+    }
+    #[inline]
+    pub(super) fn entity_attributes_mut(
+        &mut self,
+        id: EntityId,
+    ) -> &mut super::entity_records::AttributesFacts {
+        self.entity_records
+            .attributes_mut(&mut self.entity_roles[id.0 as usize])
     }
     pub(super) fn enum_declaration(&self, id: BindingId) -> Option<BindingId> {
         self.enum_declarations.get(id.0 as usize).copied().flatten()
@@ -846,91 +930,14 @@ impl Graph {
     ) -> Result<EntityId, Error> {
         let id = EntityId(
             u32::try_from(self.entities.len())
-                .map_err(|_| Error::Limit("semantic entity limit"))?,
+                .ok()
+                .and_then(|n| n.checked_add(1))
+                .ok_or(Error::Limit("semantic entity limit"))?
+                - 1,
         );
-        self.entities.push(Entity {
-            inline: super::specifiers::InlinePreference::Unspecified,
-            ty,
-            scope: None,
-            home: None,
-            name,
-            key,
-            defined: false,
-            availability: FunctionAvailability::Callable,
-            defaults: Vec::new(),
-            complete: false,
-            representation: ClassRepresentation::Program,
-            enumeration: None,
-            constant: super::constants::ConstantState::None,
-            implicit_default: None,
-            user_constructor: None,
-            declared_constructors: Vec::new(),
-            declared_destructor: None,
-            implicit_destructor: None,
-            destruction: None,
-            destruction_preparation: super::destruction::Preparation::Pending,
-            declared_conversions: Vec::new(),
-            special_definition: None,
-            destructor_specification: super::exceptions::DestructorSpecification::Explicit,
-            data_member: None,
-            array_member: super::aggregate_initialization::ArrayMemberKind::Ordinary,
-            member_access: Access::Public,
-            mutability: Mutability::Ordinary,
-            exceptions: super::exceptions::ExceptionState::Absent,
-            exception_origin: super::exceptions::SpecificationOrigin::Omitted,
-            exception_omission: super::exceptions::OmittedSpecification::Compare,
-            target_unwind: super::exceptions::TargetUnwind::MayThrow,
-            constexpr: false,
-            explicitness: super::specifiers::Explicitness::Converting,
-            implicit_copies: None,
-            copy_preparation: super::copy_properties::Preparation::default(),
-            copy_properties: None,
-            copy_origin: super::copy_construction::Origin::Declared,
-            copy_kind: None,
-            assignment_kind: None,
-            assignment: None,
-            assignment_origin: super::assignment::Origin::Declared,
-            assignment_exceptions: super::assignment::ExceptionSource::Explicit,
-            function: None,
-            builtin: None,
-            definition_emission: super::function_demands::DefinitionEmission::Always,
-            function_definition: None,
-            analyzed_body: None,
-            parameter_entities: Vec::new(),
-            function_parameters: None,
-            demands: super::function_demands::DemandList::default(),
-            member_function: None,
-            special_name: None,
-            members: Vec::new(),
-            polymorphism: super::virtual_members::Polymorphism::Static,
-            literal: super::literal_types::LiteralState::NotStarted,
-            aggregation: super::aggregate_initialization::Aggregation::Eligible,
-            emptiness: None,
-            bases: Vec::new(),
-            base_dependency: crate::syntax::ast::BaseDependency::Fixed,
-            derivation: super::inheritance::Derivation::Allowed,
-            layout: super::layout::LayoutState::NotStarted,
-            storage_attributes: super::layout_attributes::StorageAttributes::default(),
-            class_packing: 0,
-            layout_category: super::layout::LayoutCategory::Pod,
-            member_offset: None,
-            bit_field: None,
-            anonymous_class: None,
-            local_type_ordinal: None,
-            anonymous_storage: None,
-            default_construction: super::construction::ConstructorState::NotStarted,
-            constructor: None,
-            constructor_arguments: None,
-            constructor_exceptions: super::construction::ConstructorExceptionSource::Declared,
-            member_initializer: None,
-            initialized_members: 0,
-            variable: None,
-            variable_definition: None,
-            static_initializer: None,
-            reference_temporary: None,
-            template_parameter: None,
-            template_head: None,
-        });
+        self.entity_roles
+            .push(super::entity_records::Roles::default());
+        self.entities.push(Entity::new(ty, name, key));
         Ok(id)
     }
     pub(super) fn add_binding(
@@ -1019,6 +1026,7 @@ impl Graph {
             .filter(|&id| self.binding(id).entity == binding.entity)
             .or_else(|| {
                 self.entity(binding.entity)
+                    .callable()
                     .member_function
                     .and_then(|key| self.member_function(key))
             })
@@ -1030,11 +1038,14 @@ impl Graph {
                     .name
                     .map(super::function_names::ValueKey::Identifier)
                     .or_else(|| {
-                        self.entity(binding.entity).function.and_then(|properties| {
-                            properties
-                                .special
-                                .map(super::function_names::ValueKey::Special)
-                        })
+                        self.entity(binding.entity)
+                            .callable()
+                            .function
+                            .and_then(|properties| {
+                                properties
+                                    .special
+                                    .map(super::function_names::ValueKey::Special)
+                            })
                     })?;
                 self.function_positions
                     .get(&(scope, key, binding.entity))
@@ -1048,7 +1059,11 @@ impl Graph {
         // Imported templates join the overload list anew on each using,
         // unlike redeclarations indexed in their own namespace.
         let imported_template = binding.kind == BindingKind::Function
-            && self.entity(binding.entity).template_head.is_some()
+            && self
+                .entity(binding.entity)
+                .context()
+                .template_head
+                .is_some()
             && self
                 .entity(binding.entity)
                 .home
@@ -1157,6 +1172,7 @@ impl Graph {
         if self.scope(scope).kind != ScopeKind::TemplateParameters
             || self
                 .entity(self.binding(id).entity)
+                .context()
                 .template_parameter
                 .is_none()
         {
@@ -1226,8 +1242,8 @@ impl Graph {
     ) -> Result<(), Error> {
         let entity = self.binding(binding).entity;
         let position_key = (scope, key, entity);
-        let imported_template =
-            self.entity(entity).template_head.is_some() && self.entity(entity).home != Some(scope);
+        let imported_template = self.entity(entity).context().template_head.is_some()
+            && self.entity(entity).home != Some(scope);
         let previous = self
             .function_positions
             .get(&position_key)
@@ -1254,12 +1270,14 @@ impl Graph {
         }
         self.function_positions
             .insert(position_key, FunctionPosition { declared, visible });
-        if self.entity(entity).template_head.is_none() || self.entity(entity).home == Some(scope) {
+        if self.entity(entity).context().template_head.is_none()
+            || self.entity(entity).home == Some(scope)
+        {
             let ty = self
                 .binding(binding)
                 .ty
                 .ok_or(Error::Invariant("function index without type"))?;
-            let head = self.entity(entity).template_head;
+            let head = self.entity(entity).context().template_head;
             let signature_key = self.function_signature(scope, key, ty, head)?;
             if self
                 .function_signatures
@@ -1438,6 +1456,7 @@ impl Graph {
         index: usize,
     ) -> Option<crate::syntax::ast::ExprId> {
         self.entity(entity)
+            .callable()
             .defaults
             .get(index)
             .copied()
@@ -1552,21 +1571,23 @@ impl Graph {
     ) -> Result<EntityId, Error> {
         let home = self
             .entity(class)
+            .context()
             .scope
             .ok_or(Error::Invariant("implicit constructor class scope"))?;
         let function = self.add_entity(Some(signature), None, Keyword::Int)?;
-        let entity = self.entity_mut(function);
+        let mut entity = self.entity_mut(function);
         entity.home = Some(home);
         entity.defined = true;
         entity.inline = super::specifiers::InlinePreference::Inline;
-        entity.definition_emission = super::function_demands::DefinitionEmission::Demanded;
-        entity.member_function = Some(MemberKey {
+        entity.callable_mut().definition_emission =
+            super::function_demands::DefinitionEmission::Demanded;
+        entity.callable_mut().member_function = Some(MemberKey {
             class,
             kind: MemberKind::Constructor,
             signature,
             shape: None,
         });
-        entity.function = Some(FunctionProperties {
+        entity.callable_mut().function = Some(FunctionProperties {
             effects: FunctionEffect::Default,
             no_inline: false,
             returns: FunctionReturn::MayReturn,
@@ -1613,30 +1634,33 @@ impl Graph {
     ) -> Result<BindingId, Error> {
         let home = self
             .entity(class)
+            .context()
             .scope
             .ok_or(Error::Invariant("assignment class scope"))?;
         let function = self.add_entity(Some(signature), None, Keyword::Int)?;
         let special = super::assignment::key()?
             .special()
             .ok_or(Error::Invariant("assignment key"))?;
-        let entity = self.entity_mut(function);
+        let mut entity = self.entity_mut(function);
         entity.defined = true;
         entity.inline = super::specifiers::InlinePreference::Inline;
-        entity.definition_emission = super::function_demands::DefinitionEmission::Demanded;
-        entity.assignment_kind = Some(kind);
-        entity.assignment_origin = super::assignment::Origin::Implicit;
+        entity.callable_mut().definition_emission =
+            super::function_demands::DefinitionEmission::Demanded;
+        entity.callable_mut().assignment_kind = Some(kind);
+        entity.callable_mut().assignment_origin = super::assignment::Origin::Implicit;
         entity.availability = if properties.deleted {
             FunctionAvailability::Deleted
         } else {
             FunctionAvailability::Callable
         };
-        entity.exceptions = super::exceptions::ExceptionState::Value(if properties.nothrow {
-            super::exceptions::ExceptionSet::None
-        } else {
-            super::exceptions::ExceptionSet::All
-        });
-        entity.assignment = Some(properties);
-        entity.function = Some(FunctionProperties {
+        entity.callable_mut().exceptions =
+            super::exceptions::ExceptionState::Value(if properties.nothrow {
+                super::exceptions::ExceptionSet::None
+            } else {
+                super::exceptions::ExceptionSet::All
+            });
+        entity.callable_mut().assignment = Some(properties);
+        entity.callable_mut().function = Some(FunctionProperties {
             effects: super::graph::FunctionEffect::Default,
             no_inline: false,
             returns: super::graph::FunctionReturn::MayReturn,
@@ -1669,28 +1693,32 @@ impl Graph {
     ) -> Result<EntityId, Error> {
         let scope = self
             .entity(class)
+            .context()
             .scope
             .ok_or(Error::Invariant("implicit destructor without class scope"))?;
         let function = self.add_entity(Some(signature), None, Keyword::Int)?;
-        let entity = self.entity_mut(function);
+        let mut entity = self.entity_mut(function);
         entity.home = Some(scope);
-        entity.destructor_specification = super::exceptions::DestructorSpecification::Implicit;
+        entity.special_mut().destructor_specification =
+            super::exceptions::DestructorSpecification::Implicit;
         entity.defined = true;
         entity.inline = super::specifiers::InlinePreference::Inline;
-        entity.special_definition = Some(super::special_members::SpecialDefinition::Defaulted {
-            first: true,
-            body: None,
-        });
-        entity.definition_emission = super::function_demands::DefinitionEmission::Demanded;
-        entity.exceptions =
+        entity.callable_mut().special_definition =
+            Some(super::special_members::SpecialDefinition::Defaulted {
+                first: true,
+                body: None,
+            });
+        entity.callable_mut().definition_emission =
+            super::function_demands::DefinitionEmission::Demanded;
+        entity.callable_mut().exceptions =
             super::exceptions::ExceptionState::Value(super::exceptions::ExceptionSet::None);
-        entity.member_function = Some(MemberKey {
+        entity.callable_mut().member_function = Some(MemberKey {
             class,
             kind: MemberKind::Destructor,
             signature,
             shape: None,
         });
-        entity.function = Some(FunctionProperties {
+        entity.callable_mut().function = Some(FunctionProperties {
             effects: super::graph::FunctionEffect::Default,
             no_inline: false,
             returns: super::graph::FunctionReturn::MayReturn,
@@ -1708,7 +1736,7 @@ impl Graph {
         class: EntityId,
         function: EntityId,
     ) -> Result<BindingId, Error> {
-        if let Some(binding) = self.entity(class).implicit_destructor {
+        if let Some(binding) = self.entity(class).class().implicit_destructor {
             return if self.binding(binding).entity == function {
                 Ok(binding)
             } else {
@@ -1717,6 +1745,7 @@ impl Graph {
         }
         let scope = self
             .entity(class)
+            .context()
             .scope
             .ok_or(Error::Invariant("implicit destructor without class scope"))?;
         let signature = self
@@ -1724,7 +1753,7 @@ impl Graph {
             .ty
             .ok_or(Error::Invariant("implicit destructor without type"))?;
         let binding = self.callable_binding(scope, function, signature)?;
-        self.entity_mut(class).implicit_destructor = Some(binding);
+        self.entity_mut(class).class_mut().implicit_destructor = Some(binding);
         Ok(binding)
     }
     pub(super) fn binding_access(&self, id: BindingId) -> Access {
@@ -1759,10 +1788,12 @@ impl Graph {
         let entity = self.binding(target).entity;
         let earlier = self
             .entity(class)
+            .class()
             .declared_conversions
             .iter()
             .position(|&id| self.binding(id).entity == entity);
-        let conversions = &mut self.entity_mut(class).declared_conversions;
+        let mut record = self.entity_mut(class);
+        let conversions = &mut record.class_mut().declared_conversions;
         if let Some(index) = earlier {
             conversions[index] = binding;
         } else {
@@ -1773,14 +1804,21 @@ impl Graph {
     pub(super) fn hide_imported_conversions(&mut self, key: MemberKey) -> Result<(), Error> {
         let scope = self
             .entity(key.class)
+            .context()
             .scope
             .ok_or(Error::Invariant("conversion class without scope"))?;
         let mut index = 0;
-        while let Some(&binding) = self.entity(key.class).declared_conversions.get(index) {
+        while let Some(&binding) = self
+            .entity(key.class)
+            .class()
+            .declared_conversions
+            .get(index)
+        {
             let entity = self.binding(binding).entity;
             let old = self.entity(entity);
             if old.home != Some(scope)
                 && old
+                    .callable()
                     .member_function
                     .is_some_and(|old| old.signature == key.signature && old.shape == key.shape)
             {
@@ -1792,6 +1830,7 @@ impl Graph {
                     entity,
                 )?;
                 self.entity_mut(key.class)
+                    .class_mut()
                     .declared_conversions
                     .remove(index);
             } else {
@@ -1829,6 +1868,7 @@ impl Graph {
             .map(super::function_names::ValueKey::Identifier)
             .or_else(|| {
                 self.entity(binding.entity)
+                    .callable()
                     .function?
                     .special
                     .map(super::function_names::ValueKey::Special)
@@ -1872,15 +1912,18 @@ impl Graph {
     ) -> Result<(), Error> {
         self.member_functions.insert(key, binding);
         self.entity_mut(self.binding(binding).entity)
+            .callable_mut()
             .member_function = Some(key);
         if key.kind == MemberKind::Constructor {
             let entity = self.binding(binding).entity;
             let earlier = self
                 .entity(key.class)
+                .class()
                 .declared_constructors
                 .iter()
                 .position(|&id| self.binding(id).entity == entity);
-            let constructors = &mut self.entity_mut(key.class).declared_constructors;
+            let mut record = self.entity_mut(key.class);
+            let constructors = &mut record.class_mut().declared_constructors;
             if let Some(index) = earlier {
                 constructors[index] = binding;
             } else {
@@ -1890,10 +1933,12 @@ impl Graph {
             let entity = self.binding(binding).entity;
             let earlier = self
                 .entity(key.class)
+                .class()
                 .declared_conversions
                 .iter()
                 .position(|&id| self.binding(id).entity == entity);
-            let conversions = &mut self.entity_mut(key.class).declared_conversions;
+            let mut record = self.entity_mut(key.class);
+            let conversions = &mut record.class_mut().declared_conversions;
             if let Some(index) = earlier {
                 conversions[index] = binding;
             } else {
@@ -1907,6 +1952,7 @@ impl Graph {
         };
         let home = self
             .entity(key.class)
+            .context()
             .scope
             .ok_or(Error::Invariant("member function class without scope"))?;
         self.record_special_value(home, name, binding)

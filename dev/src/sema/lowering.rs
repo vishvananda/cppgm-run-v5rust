@@ -345,9 +345,13 @@ impl Graph {
         let plan = self.constructors.get(constructor);
         plan.binding.is_some_and(|binding| {
             self.entity(self.binding(binding).entity)
+                .callable()
                 .copy_kind
                 .is_some()
-        }) && self.entity(self.binding(step.binding).entity).explicitness
+        }) && self
+            .entity(self.binding(step.binding).entity)
+            .callable()
+            .explicitness
             != super::specifiers::Explicitness::Explicit
             && step.category == super::expression_facts::ValueCategory::Prvalue
             && self.class_of(step.result) == Some(plan.class)
@@ -420,7 +424,7 @@ impl Graph {
         index: usize,
         base_entry: bool,
     ) -> Result<(u64, bool, u64), Error> {
-        let edge = &self.entity(class).bases[index];
+        let edge = &self.entity(class).class().bases[index];
         let offset = edge
             .offset
             .ok_or(Error::Invariant("base construction without layout"))?;
@@ -429,14 +433,14 @@ impl Graph {
             non_virtual_size,
             empty,
             ..
-        } = self.entity(edge.class).layout
+        } = self.entity(edge.class).class().layout
         else {
             return Err(Error::Invariant("base construction without size"));
         };
         let super::layout::LayoutState::Value {
             non_virtual_size: limit,
             ..
-        } = self.entity(class).layout
+        } = self.entity(class).class().layout
         else {
             return Err(Error::Invariant("constructor owner without size"));
         };
@@ -452,7 +456,7 @@ impl Graph {
             || !edge.is_virtual && end > if base_entry { limit } else { complete_limit };
         // Earlier initialized bases can occupy a later base's tail padding.
         // Source order and layout order need not agree (primary/empty bases).
-        for prior in &self.entity(class).bases[..index] {
+        for prior in &self.entity(class).class().bases[..index] {
             let from = prior
                 .offset
                 .ok_or(Error::Invariant("prior base without layout"))?;
@@ -473,7 +477,9 @@ impl Graph {
         let offset = self
             .lower_virtual_base_offset(class, base)
             .ok_or(Error::Invariant("indirect constructor base without layout"))?;
-        let super::layout::LayoutState::Value { size, empty, .. } = self.entity(base).layout else {
+        let super::layout::LayoutState::Value { size, empty, .. } =
+            self.entity(base).class().layout
+        else {
             return Err(Error::Invariant("indirect constructor base without size"));
         };
         Ok((offset, empty, size))
@@ -481,7 +487,7 @@ impl Graph {
     pub(crate) fn lower_nonvirtual_bytes(&self, class: EntityId) -> Result<u64, Error> {
         if let super::layout::LayoutState::Value {
             non_virtual_size, ..
-        } = self.entity(class).layout
+        } = self.entity(class).class().layout
         {
             Ok(non_virtual_size)
         } else {
@@ -492,7 +498,7 @@ impl Graph {
         let super::layout::LayoutState::Value {
             non_virtual_alignment,
             ..
-        } = self.entity(class).layout
+        } = self.entity(class).class().layout
         else {
             return Err(Error::Invariant(
                 "subobject alignment without completed layout",
@@ -502,11 +508,12 @@ impl Graph {
             .map_err(|_| Error::Limit("subobject alignment"))
     }
     pub(crate) fn lower_implicit_copy(&self, entity: EntityId) -> bool {
-        self.entity(entity).copy_origin == super::copy_construction::Origin::Implicit
+        self.entity(entity).callable().copy_origin == super::copy_construction::Origin::Implicit
     }
     pub(crate) fn lower_user_provided_constructor(&self, id: ConstructorId) -> bool {
         self.constructors.get(id).binding.is_some_and(|binding| {
             self.entity(self.binding(binding).entity)
+                .callable()
                 .special_definition
                 .is_some_and(|definition| {
                     matches!(
@@ -538,16 +545,16 @@ impl Graph {
         let entity = self.entity(function);
         let synthesized = plan.binding.is_none()
             || self.inherited_constructors.source(function).is_some()
-            || entity.copy_origin == super::copy_construction::Origin::Implicit
+            || entity.callable().copy_origin == super::copy_construction::Origin::Implicit
             || matches!(
-                entity.special_definition,
+                entity.callable().special_definition,
                 Some(super::special_members::SpecialDefinition::Defaulted { first: true, .. })
             )
             || matches!(
-                entity.special_definition,
+                entity.callable().special_definition,
                 Some(super::special_members::SpecialDefinition::Defaulted { .. })
             ) && entity.inline == super::specifiers::InlinePreference::Inline;
-        synthesized && (entity.copy_kind.is_some() || plan.nontrivial())
+        synthesized && (entity.callable().copy_kind.is_some() || plan.nontrivial())
     }
     pub(crate) fn lower_constructor_definition_available(&self, id: ConstructorId) -> bool {
         let Some(function) = self.constructors.get(id).declaration else {
@@ -557,7 +564,10 @@ impl Graph {
         entity.defined
             && self.lower_function_body(function).is_some()
             && (entity.inline == super::specifiers::InlinePreference::Inline
-                || entity.function.is_some_and(|facts| facts.internal_linkage)
+                || entity
+                    .callable()
+                    .function
+                    .is_some_and(|facts| facts.internal_linkage)
                     && (self.lower_reserved_body(function) || self.lower_always_inline(function)))
     }
     pub(crate) fn lower_constructor_trivial(&self, id: ConstructorId) -> bool {
@@ -572,7 +582,7 @@ impl Graph {
                 let function = self.binding(binding).entity;
                 self.inherited_constructors.source(function).is_some()
                     || matches!(
-                        self.entity(function).special_definition,
+                        self.entity(function).callable().special_definition,
                         Some(super::special_members::SpecialDefinition::Defaulted {
                             first: true,
                             ..
@@ -593,10 +603,10 @@ impl Graph {
         &self,
         entity: EntityId,
     ) -> Option<ConstructorArguments> {
-        self.entity(entity).constructor_arguments
+        self.entity(entity).initialization().constructor_arguments
     }
     pub(crate) fn lower_construction(&self, entity: EntityId) -> Option<ConstructorId> {
-        self.entity(entity).constructor
+        self.entity(entity).initialization().constructor
     }
     pub(crate) fn lower_constructor_entity(&self, id: ConstructorId) -> Option<EntityId> {
         self.constructors.get(id).declaration
@@ -644,7 +654,9 @@ impl Graph {
             let id = match *demand {
                 super::function_demands::Demand::Constructor(id) => id,
                 super::function_demands::Demand::Function { binding, .. } => {
-                    self.entity(self.binding(binding).entity).constructor?
+                    self.entity(self.binding(binding).entity)
+                        .initialization()
+                        .constructor?
                 }
             };
             self.constructors.get(id).delegation.map(|_| id)
@@ -673,6 +685,7 @@ impl Graph {
             name: FunctionName::Constructor(self.lower_class_spelling(plan.class)?),
             label: None,
             home: class
+                .context()
                 .scope
                 .ok_or(Error::Invariant("constructor without class scope"))?,
             ty: plan
@@ -701,25 +714,27 @@ impl Graph {
         class: EntityId,
     ) -> impl Iterator<Item = EntityId> + '_ {
         self.entity(class)
+            .class()
             .declared_conversions
             .iter()
             .map(|&binding| self.binding(binding).entity)
-            .filter(move |&entity| self.entity(entity).home == self.entity(class).scope)
+            .filter(move |&entity| self.entity(entity).home == self.entity(class).context().scope)
     }
     pub(crate) fn lower_constructor_overloads(
         &self,
         class: EntityId,
     ) -> impl Iterator<Item = EntityId> + '_ {
         self.entity(class)
+            .class()
             .declared_constructors
             .iter()
             .map(|&binding| self.binding(binding).entity)
-            .filter(move |&entity| self.entity(entity).home == self.entity(class).scope)
+            .filter(move |&entity| self.entity(entity).home == self.entity(class).context().scope)
     }
     pub(crate) fn lower_function_defined(&self, entity: EntityId) -> bool {
         self.entity(entity).defined
             && (!self.function_templates.specializations.contains(entity)
-                || self.entity(entity).function_definition.is_some())
+                || self.entity(entity).callable().function_definition.is_some())
     }
     pub(crate) fn lower_explicit_functions(&self) -> impl Iterator<Item = EntityId> + '_ {
         self.function_templates
@@ -730,7 +745,7 @@ impl Graph {
             .filter(|&entity| {
                 self.entity(entity).availability != super::graph::FunctionAvailability::Deleted
                     || matches!(
-                        self.entity(entity).special_definition,
+                        self.entity(entity).callable().special_definition,
                         Some(super::special_members::SpecialDefinition::Defaulted {
                             first: true,
                             ..
@@ -755,20 +770,24 @@ impl Graph {
     /// The declaration's ABI can be used without reaching a definition's
     /// cleanup bodies. Match `program_lowering.cpp::demand_entry`'s boundary.
     pub(crate) fn lower_has_available_body(&self, id: EntityId) -> bool {
-        self.entity(id).function_definition.is_some()
+        self.entity(id).callable().function_definition.is_some()
             || self.lower_function_body(id).is_some()
             || self.lower_has_synthesized_body(id)
     }
     pub(crate) fn lower_has_synthesized_body(&self, id: EntityId) -> bool {
         self.lower_implicit_destructor(id)
-            || self.entity(id).assignment.is_some()
-            || self.entity(id).member_function.is_some_and(|member| {
-                member.kind == super::graph::MemberKind::Destructor
-                    && matches!(
-                        self.entity(id).special_definition,
-                        Some(super::special_members::SpecialDefinition::Defaulted { .. })
-                    )
-            })
+            || self.entity(id).callable().assignment.is_some()
+            || self
+                .entity(id)
+                .callable()
+                .member_function
+                .is_some_and(|member| {
+                    member.kind == super::graph::MemberKind::Destructor
+                        && matches!(
+                            self.entity(id).callable().special_definition,
+                            Some(super::special_members::SpecialDefinition::Defaulted { .. })
+                        )
+                })
     }
     pub(crate) fn lower_template_operand(
         &self,
@@ -862,10 +881,10 @@ impl Graph {
         self.class_templates.aliases.aliased(entity)
     }
     pub(crate) fn lower_templated_class(&self, class: EntityId) -> bool {
-        self.entity(class).template_head.is_some()
+        self.entity(class).context().template_head.is_some()
     }
     pub(crate) fn lower_operand_function(&self, entity: EntityId) -> bool {
-        self.entity(entity).function.is_some()
+        self.entity(entity).callable().function.is_some()
     }
     pub(crate) fn lower_operand_type_name(&self, entity: EntityId) -> Option<TypeId> {
         let node = self.entity(entity);
@@ -874,7 +893,7 @@ impl Graph {
             Keyword::Typedef | Keyword::Class | Keyword::Struct | Keyword::Union
         )
         .then_some(node.ty)
-        .or_else(|| node.enumeration.is_some().then_some(node.ty))
+        .or_else(|| node.enumerated().enumeration.is_some().then_some(node.ty))
         .flatten()
     }
     pub(crate) fn lower_operand_expression_type(&self, entity: EntityId) -> Option<TypeId> {
@@ -883,7 +902,7 @@ impl Graph {
     }
     pub(crate) fn lower_operand_constant(&self, entity: EntityId) -> Option<(TypeId, u64)> {
         let node = self.entity(entity);
-        let super::constants::ConstantState::Value(value) = node.constant else {
+        let super::constants::ConstantState::Value(value) = node.object().constant else {
             return None;
         };
         Some((node.ty.unwrap_or(value.ty), value.bits))
@@ -922,6 +941,7 @@ impl Graph {
         } = self.types.get(name).kind
             && let Some(head) = self
                 .entity(entity)
+                .context()
                 .template_parameter
                 .and_then(|info| info.inner)
         {
@@ -930,6 +950,7 @@ impl Graph {
                 .iter()
                 .position(|&parameter| {
                     self.entity(parameter)
+                        .context()
                         .template_parameter
                         .is_some_and(super::templates::ParameterInfo::is_pack)
                 })
@@ -952,7 +973,7 @@ impl Graph {
         let TypeKind::TemplateParameter { entity, .. } = self.types.get(ty).kind else {
             return None;
         };
-        let info = self.entity(entity).template_parameter?;
+        let info = self.entity(entity).context().template_parameter?;
         Some(info.abi_index())
     }
     pub(crate) fn lower_value_argument(&self, ty: TypeId) -> bool {
@@ -960,6 +981,7 @@ impl Graph {
             return false;
         };
         self.entity(entity)
+            .context()
             .template_parameter
             .is_some_and(|info| info.value_type.is_some())
             || self
@@ -986,7 +1008,7 @@ impl Graph {
             } => (parameter, Some(depth)),
             _ => return None,
         };
-        let info = self.entity(entity).template_parameter?;
+        let info = self.entity(entity).context().template_parameter?;
         Some(TemplateParameterView {
             index: info.abi_index(),
             level: level.unwrap_or_else(|| info.depth()),
@@ -1041,7 +1063,10 @@ impl Graph {
         index: usize,
     ) -> Option<EntityId> {
         let primary = self.function_templates.primary(instance)?;
-        let head = self.entity(self.binding(primary).entity).template_head?;
+        let head = self
+            .entity(self.binding(primary).entity)
+            .context()
+            .template_head?;
         self.templates.parameters(head).get(index).copied()
     }
     pub(crate) fn lower_template_declaration(
@@ -1050,6 +1075,7 @@ impl Graph {
     ) -> Result<(TemplateDeclaration, bool, u32), Error> {
         let info = self
             .entity(parameter)
+            .context()
             .template_parameter
             .ok_or(Error::Invariant(
                 "ABI declaration without template parameter",
@@ -1067,7 +1093,12 @@ impl Graph {
         match self.types.get(ty).kind {
             TypeKind::Template(entity) => Some(entity),
             TypeKind::TemplateParameter { entity, .. }
-                if self.entity(entity).template_parameter?.inner.is_some() =>
+                if self
+                    .entity(entity)
+                    .context()
+                    .template_parameter?
+                    .inner
+                    .is_some() =>
             {
                 Some(entity)
             }
@@ -1077,9 +1108,10 @@ impl Graph {
     pub(crate) fn lower_template_head_parameters(&self, entity: EntityId) -> Option<&[EntityId]> {
         let entity = self.entity(entity);
         let head = entity
+            .context()
             .template_parameter
             .and_then(|info| info.inner)
-            .or(entity.template_head)?;
+            .or(entity.context().template_head)?;
         Some(self.templates.parameters(head))
     }
     pub(crate) fn lower_instance_levels(&self, scope: ScopeId) -> Result<u32, Error> {
@@ -1113,7 +1145,7 @@ impl Graph {
         {
             self.entity(entity).inline == super::specifiers::InlinePreference::Inline
         } else {
-            self.entity(entity).definition_emission
+            self.entity(entity).callable().definition_emission
                 == super::function_demands::DefinitionEmission::Demanded
                 || self.entity(entity).inline == super::specifiers::InlinePreference::Inline
         }
@@ -1125,9 +1157,9 @@ impl Graph {
         if let Some(body) = self.function_templates.bodies.body(id) {
             return Some(body);
         }
-        match self.entity(id).special_definition {
+        match self.entity(id).callable().special_definition {
             Some(super::special_members::SpecialDefinition::Body(body)) => Some(body),
-            _ => self.entity(id).analyzed_body,
+            _ => self.entity(id).callable().analyzed_body,
         }
     }
 
@@ -1163,7 +1195,7 @@ impl Graph {
             .get(path)
             .iter()
             .try_fold(0u64, |sum, &(class, index)| {
-                let edge = &self.entity(class).bases[index];
+                let edge = &self.entity(class).class().bases[index];
                 // This API denotes a fixed adjustment. A virtual edge needs
                 // either a proven complete-object projection or a vbase row;
                 // its offset in this intermediate class is neither of those.
@@ -1482,14 +1514,18 @@ impl Graph {
         &self,
         entity: EntityId,
     ) -> Result<bool, Error> {
-        let id = self.entity(entity).constructor.ok_or(Error::Invariant(
-            "default class object without construction facts",
-        ))?;
+        let id = self
+            .entity(entity)
+            .initialization()
+            .constructor
+            .ok_or(Error::Invariant(
+                "default class object without construction facts",
+            ))?;
         Ok(!self.constructors.get(id).nontrivial())
     }
     pub(crate) fn lower_empty_initialization_step(&self, entity: EntityId) -> Result<bool, Error> {
         let node = self.entity(entity);
-        if node.constructor.is_none() {
+        if node.initialization().constructor.is_none() {
             return Ok(false);
         }
         let mut ty = self.lower_entity_type(entity)?;
@@ -1503,11 +1539,15 @@ impl Graph {
             .entity(class)
             .home
             .ok_or(Error::Invariant("class without owner"))?;
-        Ok(!self.lower_anonymous_namespace(owner) && !self.entity(class).members.is_empty())
+        Ok(
+            !self.lower_anonymous_namespace(owner)
+                && !self.entity(class).class().members.is_empty(),
+        )
     }
     /// The semantic alias is recorded once; lowering never repeats name lookup.
     pub(crate) fn lower_function_entity(&self, id: EntityId) -> EntityId {
         self.entity(id)
+            .callable()
             .function
             .and_then(|function| function.denotes)
             .unwrap_or(id)
@@ -1530,7 +1570,7 @@ impl Graph {
         self.entity(id).constexpr
     }
     pub(crate) fn lower_requested_alignment(&self, id: EntityId) -> u32 {
-        self.entity(id).storage_attributes.alignment
+        self.entity(id).attributes().storage_attributes.alignment
     }
     pub(crate) fn lower_initializer_constructors(&self, entity: EntityId) -> &[ConstructorId] {
         self.initializer_constructors.get(entity)
@@ -1550,7 +1590,7 @@ impl Graph {
     ) -> Result<ConstructorId, Error> {
         let (super::construction::ConstructorState::Ready(id)
         | super::construction::ConstructorState::Published(id)) =
-            self.entity(class).default_construction
+            self.entity(class).special().default_construction
         else {
             return Err(Error::Invariant(
                 "lowering default construction without plan",
@@ -1559,7 +1599,7 @@ impl Graph {
         Ok(id)
     }
     pub(crate) fn lower_ready_default_constructor(&self, class: EntityId) -> Option<ConstructorId> {
-        match self.entity(class).default_construction {
+        match self.entity(class).special().default_construction {
             super::construction::ConstructorState::Ready(id)
             | super::construction::ConstructorState::Published(id) => Some(id),
             _ => None,
@@ -1595,7 +1635,7 @@ impl Graph {
             .map(|binding| self.binding(binding).entity);
         if let Some(id) = function {
             let entity = self.entity(id);
-            let trivial_destructor = if let Some(member) = entity.member_function
+            let trivial_destructor = if let Some(member) = entity.callable().member_function
                 && member.kind == super::graph::MemberKind::Destructor
             {
                 self.destructor_trivial(member.class)?
@@ -1604,13 +1644,16 @@ impl Graph {
             };
             if trivial_destructor
                 || entity
+                    .callable()
                     .assignment
                     .as_ref()
                     .is_some_and(|properties| properties.trivial)
                 || entity
+                    .special()
                     .copy_properties
                     .is_some_and(|id| self.copy_properties.get(id).trivial)
                 || entity
+                    .initialization()
                     .constructor
                     .is_some_and(|id| self.lower_constructor_trivial(id))
             {
@@ -1659,6 +1702,7 @@ impl Graph {
     pub(crate) fn lower_variable(&self, id: EntityId) -> Result<VariableFacts, Error> {
         let entity = self.entity(id);
         let variable = entity
+            .object()
             .variable
             .ok_or(Error::Invariant("lowering non-variable"))?;
         Ok(VariableFacts {
@@ -1688,15 +1732,15 @@ impl Graph {
             },
             c_linkage: variable.language == super::linkage::Language::C,
             thread_local: variable.thread_storage == super::specifiers::ThreadStorage::ThreadLocal,
-            initializer: entity.static_initializer,
-            in_class_initializer: entity.member_initializer,
-            reference_temporary: entity.reference_temporary,
+            initializer: entity.initialization().static_initializer,
+            in_class_initializer: entity.initialization().member_initializer,
+            reference_temporary: entity.initialization().reference_temporary,
             definition: if self.variable_instances.instance(id)
                 && self.class_instantiation_suppressed(id)
             {
                 None
             } else {
-                entity.variable_definition
+                entity.object().variable_definition
             },
             emission: if self.variable_instances.instance(id)
                 || entity.inline == super::specifiers::InlinePreference::Inline
@@ -1712,7 +1756,7 @@ impl Graph {
     }
     pub(crate) fn lower_value_only_variable_root(&self, entity: EntityId) -> bool {
         let node = self.entity(entity);
-        let super::constants::ConstantState::Value(value) = node.constant else {
+        let super::constants::ConstantState::Value(value) = node.object().constant else {
             return false;
         };
         // C++ ConstantState::Value excludes references and full-width values
@@ -1736,13 +1780,14 @@ impl Graph {
             // member still defines zero storage on use; a template instance
             // instead performs default initialization in instantiate_variable.
             || self.ordinary_inline_member(entity)
-                && self.entity(entity).member_initializer.is_none()
+                && self.entity(entity).initialization().member_initializer.is_none()
     }
     pub(super) fn ordinary_inline_member(&self, entity: EntityId) -> bool {
         !self.variable_instances.instance(entity)
             && self.entity(entity).defined
             && self.entity(entity).inline == super::specifiers::InlinePreference::Inline
-            && self.entity(entity).data_member == Some(super::graph::DataMemberKind::Static)
+            && self.entity(entity).object().data_member
+                == Some(super::graph::DataMemberKind::Static)
     }
     pub(crate) fn lower_demanded_initializer(
         &self,
@@ -1773,6 +1818,7 @@ impl Graph {
         self.lower_static_member(id)
             || self
                 .entity(id)
+                .object()
                 .variable
                 .is_some_and(|variable| variable.is_extern)
             || self
@@ -1782,12 +1828,13 @@ impl Graph {
     }
     pub(crate) fn lower_automatic(&self, id: EntityId) -> bool {
         self.entity(id)
+            .object()
             .variable
             .is_some_and(|properties| properties.automatic)
     }
     pub(crate) fn lower_block_static(&self, id: EntityId) -> bool {
         let entity = self.entity(id);
-        entity.variable.is_some_and(|variable| {
+        entity.object().variable.is_some_and(|variable| {
             variable.static_specifier == super::specifiers::StaticSpecifier::Present
         }) && entity.home.is_some_and(|home| {
             matches!(
@@ -1804,7 +1851,7 @@ impl Graph {
     ) -> bool {
         use super::graph::ScopeKind;
         let entity = self.entity(id);
-        let Some(properties) = entity.variable else {
+        let Some(properties) = entity.object().variable else {
             return false;
         };
         let Some(ty) = entity.ty else {
@@ -1823,7 +1870,7 @@ impl Graph {
             return false;
         }
         loop {
-            if Some(home) == self.entity(function).scope {
+            if Some(home) == self.entity(function).context().scope {
                 return true;
             }
             let Some(parent) = self.scope(home).parent else {
@@ -1833,12 +1880,12 @@ impl Graph {
         }
     }
     pub(crate) fn lower_explicit_static(&self, id: EntityId) -> bool {
-        self.entity(id).variable.is_some_and(|variable| {
+        self.entity(id).object().variable.is_some_and(|variable| {
             variable.static_specifier == super::specifiers::StaticSpecifier::Present
         })
     }
     pub(crate) fn lower_is_variable(&self, id: EntityId) -> bool {
-        self.entity(id).variable.is_some()
+        self.entity(id).object().variable.is_some()
     }
     pub(crate) fn lower_local_name(&self, id: EntityId) -> Option<NameId> {
         self.entity(id).name
@@ -1864,7 +1911,7 @@ impl Graph {
         let entity = self.entity(id);
         if self.function_templates.primary(id).is_some()
             && matches!(
-                entity.exceptions,
+                entity.callable().exceptions,
                 super::exceptions::ExceptionState::Template(_)
             )
         {
@@ -1873,6 +1920,7 @@ impl Graph {
             ));
         }
         let function = entity
+            .callable()
             .function
             .ok_or(Error::Invariant("lowering non-function"))?;
         let object = entity
@@ -1908,11 +1956,13 @@ impl Graph {
                     return Err(Error::Missing("member function names"));
                 }
                 None if entity
+                    .callable()
                     .member_function
                     .is_some_and(|key| key.kind == super::graph::MemberKind::Destructor) =>
                 {
                     FunctionName::Destructor(
                         self.entity(object.ok_or(Error::Invariant("destructor without class"))?)
+                            .special()
                             .destruction
                             .ok_or(Error::Invariant("destructor without completed facts"))?
                             .declared_name
@@ -1924,6 +1974,7 @@ impl Graph {
                     )
                 }
                 None if entity
+                    .callable()
                     .member_function
                     .is_some_and(|key| key.kind == super::graph::MemberKind::Constructor) =>
                 {
@@ -1932,6 +1983,7 @@ impl Graph {
                     )?)
                 }
                 None if entity
+                    .callable()
                     .member_function
                     .is_some_and(|key| key.kind == super::graph::MemberKind::Conversion) =>
                 {
@@ -1949,14 +2001,14 @@ impl Graph {
                         .ok_or(Error::Missing("lowering special member names"))?,
                 ),
             },
-            label: entity.special_name,
+            label: entity.callable().special_name,
             home: self.lower_linkage_scope(
                 entity
                     .home
                     .ok_or(Error::Invariant("function without home"))?,
             )?,
             ty: entity.ty.ok_or(Error::Invariant("function without type"))?,
-            scope: entity.scope,
+            scope: entity.context().scope,
             internal: self.lower_function_local_in_mode(id, object_mode)?,
             declared_linkage: if function.internal_linkage {
                 DeclaredLinkage::Internal
@@ -1964,7 +2016,7 @@ impl Graph {
                 DeclaredLinkage::External
             },
             c_linkage: function.language == super::linkage::Language::C,
-            emission: if entity.definition_emission
+            emission: if entity.callable().definition_emission
                 == super::function_demands::DefinitionEmission::Demanded
                 || entity.inline == super::specifiers::InlinePreference::Inline
                 || function.internal_linkage && self.lower_always_inline(id)
@@ -1985,18 +2037,19 @@ impl Graph {
             | super::construction::ConstructorExceptionSource::InheritedPlan {
                 constructor,
                 ..
-            } = entity.constructor_exceptions
+            } = entity.callable().constructor_exceptions
             {
                 self.constructors.get(constructor).nothrow
-            } else if entity.constructor_exceptions
+            } else if entity.callable().constructor_exceptions
                 == super::construction::ConstructorExceptionSource::SubobjectPlan
             {
                 entity
+                    .initialization()
                     .constructor
                     .is_some_and(|id| self.constructors.get(id).nothrow)
             } else {
                 matches!(
-                    &entity.exceptions,
+                    &entity.callable().exceptions,
                     super::exceptions::ExceptionState::Value(super::exceptions::ExceptionSet::None)
                 )
             },
@@ -2019,8 +2072,8 @@ impl Graph {
             } else {
                 None
             },
-            definition: entity.function_definition,
-            builtin: entity.builtin,
+            definition: entity.callable().function_definition,
+            builtin: entity.callable().builtin,
         })
     }
     pub(crate) fn lower_scope_class(&self, scope: ScopeId) -> Option<EntityId> {
@@ -2052,7 +2105,7 @@ impl Graph {
         };
         let member = self.entity(self.binding(member).entity);
         Ok(
-            member.data_member == Some(super::graph::DataMemberKind::Instance)
+            member.object().data_member == Some(super::graph::DataMemberKind::Instance)
                 && member
                     .home
                     .and_then(|scope| self.scope(scope).owner)
@@ -2078,7 +2131,11 @@ impl Graph {
         let home = entity
             .home
             .ok_or(Error::Invariant("function without home"))?;
-        let name = if let Some(special) = entity.function.and_then(|function| function.special) {
+        let name = if let Some(special) = entity
+            .callable()
+            .function
+            .and_then(|function| function.special)
+        {
             super::function_names::ValueKey::Special(special)
         } else {
             entity
@@ -2148,6 +2205,7 @@ impl Graph {
             },
             TypeKind::Enum(entity) => TypeView::Enum(
                 self.entity(*entity)
+                    .enumerated()
                     .enumeration
                     .and_then(|info| info.underlying)
                     .ok_or(Error::Invariant("enum without underlying type"))?,
@@ -2258,6 +2316,7 @@ impl Graph {
     }
     pub(crate) fn lower_no_inline(&self, entity: EntityId) -> bool {
         self.entity(self.lower_function_entity(entity))
+            .callable()
             .function
             .is_some_and(|properties| properties.no_inline)
     }
@@ -2266,11 +2325,13 @@ impl Graph {
     }
     pub(crate) fn lower_no_return(&self, entity: EntityId) -> bool {
         self.entity(self.lower_function_entity(entity))
+            .callable()
             .function
             .is_some_and(|properties| properties.returns == super::graph::FunctionReturn::NoReturn)
     }
     pub(crate) fn lower_effects(&self, entity: EntityId) -> FunctionEffect {
         self.entity(self.lower_function_entity(entity))
+            .callable()
             .function
             .map_or(FunctionEffect::Default, |properties| properties.effects)
     }
@@ -2303,12 +2364,17 @@ impl Graph {
             && !self.function_instantiation_suppressed(entity)
             && self.lower_function_body(entity).is_some()
             && self.lower_virtual_slot(entity).is_none()
-            && !self.entity(entity).member_function.is_some_and(|member| {
-                matches!(
-                    member.kind,
-                    super::graph::MemberKind::Constructor | super::graph::MemberKind::Destructor
-                )
-            })
+            && !self
+                .entity(entity)
+                .callable()
+                .member_function
+                .is_some_and(|member| {
+                    matches!(
+                        member.kind,
+                        super::graph::MemberKind::Constructor
+                            | super::graph::MemberKind::Destructor
+                    )
+                })
     }
     pub(crate) fn lower_atomic_intrinsic(
         &self,
@@ -2391,7 +2457,8 @@ impl Graph {
             }
             Some(super::function_resolution::CallTarget::Indirect(ty, entity)) => {
                 let nothrow = entity.is_some_and(|entity| {
-                    self.entity(entity).target_unwind == super::exceptions::TargetUnwind::NoThrow
+                    self.entity(entity).callable().target_unwind
+                        == super::exceptions::TargetUnwind::NoThrow
                 });
                 Ok(CallTarget::Indirect(ty, nothrow))
             }
@@ -2409,6 +2476,7 @@ impl Graph {
                 Some(super::expression_facts::DestructorTarget::Class(binding)) => {
                     let key = self
                         .entity(self.binding(binding).entity)
+                        .callable()
                         .member_function
                         .ok_or(Error::Invariant("destructor without member key"))?;
                     self.destructor_trivial(key.class)?
@@ -2424,6 +2492,7 @@ impl Graph {
     ) -> Result<bool, Error> {
         let Some(member) = self
             .entity(entity)
+            .callable()
             .member_function
             .filter(|key| key.kind == super::graph::MemberKind::Destructor)
         else {
@@ -2441,7 +2510,7 @@ impl Graph {
         }
         let Some(body) = self.lower_function_body(entity) else {
             return Ok(matches!(
-                self.entity(entity).special_definition,
+                self.entity(entity).callable().special_definition,
                 Some(super::special_members::SpecialDefinition::Defaulted { .. })
             ));
         };
@@ -2455,7 +2524,7 @@ impl Graph {
         if let Some(instance) = self.class_templates.instance(entity) {
             Some(instance.arguments.clone())
         } else {
-            self.entity(entity).template_head.map(|head| {
+            self.entity(entity).context().template_head.map(|head| {
                 self.templates
                     .parameters(head)
                     .iter()
@@ -2563,7 +2632,7 @@ impl Graph {
     }
     pub(crate) fn lower_overlapping_empty_member(&self, member: EntityId) -> Result<bool, Error> {
         let node = self.entity(member);
-        if !node.storage_attributes.overlapping {
+        if !node.attributes().storage_attributes.overlapping {
             return Ok(false);
         }
         let ty = node
@@ -2576,7 +2645,7 @@ impl Graph {
         }
     }
     pub(crate) fn lower_class_empty(&self, class: EntityId) -> Result<bool, Error> {
-        if let super::layout::LayoutState::Value { empty, .. } = self.entity(class).layout {
+        if let super::layout::LayoutState::Value { empty, .. } = self.entity(class).class().layout {
             Ok(empty)
         } else {
             Err(Error::Invariant("class parameter without layout"))
@@ -2585,7 +2654,7 @@ impl Graph {
     pub(crate) fn lower_class_layout(&self, entity: EntityId) -> Result<(u64, u8), Error> {
         let super::layout::LayoutState::Value {
             size, alignment, ..
-        } = self.entity(entity).layout
+        } = self.entity(entity).class().layout
         else {
             return Err(Error::Invariant("class lowering without completed layout"));
         };
@@ -2637,7 +2706,7 @@ impl Graph {
         let node = self.entity(entity);
         Ok((
             entity,
-            if node.data_member == Some(super::graph::DataMemberKind::Instance) {
+            if node.object().data_member == Some(super::graph::DataMemberKind::Instance) {
                 Some(
                     self.lower_member_offset(entity)?
                         .wrapping_add(self.lower_anonymous_field_offset(expr)?),
@@ -2674,21 +2743,22 @@ impl Graph {
             return Err(Error::Missing("nonaggregate class lowering"));
         }
         Ok((
-            &self.entity(entity).members,
+            &self.entity(entity).class().members,
             self.entity(entity).key == crate::lex::vocabulary::Keyword::Union,
         ))
     }
     pub(crate) fn lower_member_offset(&self, entity: EntityId) -> Result<u64, Error> {
-        if let Some(id) = self.entity(entity).bit_field {
+        if let Some(id) = self.entity(entity).object().bit_field {
             self.bit_fields.storage(id)?;
             return Err(Error::Missing("bit-field storage access lowering"));
         }
         self.entity(entity)
+            .object()
             .member_offset
             .ok_or(Error::Invariant("aggregate member without layout"))
     }
     pub(crate) fn lower_bit_field(&self, entity: EntityId) -> Result<Option<BitField>, Error> {
-        let Some(id) = self.entity(entity).bit_field else {
+        let Some(id) = self.entity(entity).object().bit_field else {
             return Ok(None);
         };
         let (operation, signed) = self.bit_fields.semantics(id)?;
@@ -2762,41 +2832,49 @@ impl Graph {
         self.unnamed_bit_field(entity)
     }
     pub(crate) fn lower_class_member_entities(&self, entity: EntityId) -> &[EntityId] {
-        &self.entity(entity).members
+        &self.entity(entity).class().members
     }
     pub(crate) fn lower_class_bases(
         &self,
         entity: EntityId,
     ) -> impl Iterator<Item = EntityId> + '_ {
-        self.entity(entity).bases.iter().map(|base| base.class)
+        self.entity(entity)
+            .class()
+            .bases
+            .iter()
+            .map(|base| base.class)
     }
     pub(crate) fn lower_mutable_member(&self, entity: EntityId) -> bool {
         self.entity(entity).mutability == super::graph::Mutability::Mutable
     }
     pub(crate) fn lower_static_member(&self, entity: EntityId) -> bool {
-        self.entity(entity).data_member == Some(super::graph::DataMemberKind::Static)
+        self.entity(entity).object().data_member == Some(super::graph::DataMemberKind::Static)
     }
     pub(crate) fn lower_instance_member(&self, entity: EntityId) -> bool {
-        self.entity(entity).data_member == Some(super::graph::DataMemberKind::Instance)
+        self.entity(entity).object().data_member == Some(super::graph::DataMemberKind::Instance)
     }
     pub(crate) fn lower_nontrivial_destructor(&self, entity: EntityId) -> Result<bool, Error> {
         Ok(!self.destructor_trivial(entity)?)
     }
     pub(crate) fn lower_implicit_union_destructor(&self, class: EntityId) -> bool {
-        self.lower_union_class(class) && self.entity(class).declared_destructor.is_none()
+        self.lower_union_class(class) && self.entity(class).class().declared_destructor.is_none()
     }
     pub(crate) fn lower_destructor_entity(&self, class: EntityId) -> Option<EntityId> {
         self.destructor_binding(class)
             .map(|binding| self.binding(binding).entity)
     }
     pub(crate) fn lower_implicit_destructor(&self, entity: EntityId) -> bool {
-        self.entity(entity).member_function.is_some_and(|key| {
-            key.kind == super::graph::MemberKind::Destructor
-                && self
-                    .entity(key.class)
-                    .implicit_destructor
-                    .is_some_and(|binding| self.binding(binding).entity == entity)
-        })
+        self.entity(entity)
+            .callable()
+            .member_function
+            .is_some_and(|key| {
+                key.kind == super::graph::MemberKind::Destructor
+                    && self
+                        .entity(key.class)
+                        .class()
+                        .implicit_destructor
+                        .is_some_and(|binding| self.binding(binding).entity == entity)
+            })
     }
 }
 
@@ -2806,7 +2884,7 @@ impl Graph {
         class: EntityId,
     ) -> impl DoubleEndedIterator<Item = Result<(EntityId, u64), Error>> + ExactSizeIterator + '_
     {
-        self.entity(class).bases.iter().map(|base| {
+        self.entity(class).class().bases.iter().map(|base| {
             Ok((
                 base.class,
                 base.offset

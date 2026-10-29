@@ -39,11 +39,12 @@ impl Graph {
         }
         if let Some(closure) = self.lower_closure(class) {
             write!(output, "__lambda{}", closure.ordinal)?;
-        } else if let Some(ordinal) = entity.local_type_ordinal {
+        } else if let Some(ordinal) = entity.class().local_type_ordinal {
             write!(output, "__local_type{ordinal}")?;
         } else if let Some(name) = entity.name {
             write_name(cursor, name, output)?;
         } else if let Some(tokens) = entity
+            .class()
             .anonymous_class
             .and_then(super::anonymous_types::AnonymousClass::label)
         {
@@ -65,6 +66,7 @@ impl Graph {
         };
         let tokens = self
             .entity(class)
+            .class()
             .anonymous_class
             .and_then(super::anonymous_types::AnonymousClass::label)
             .ok_or_else(|| io::Error::other("anonymous storage without provenance"))?;
@@ -96,7 +98,7 @@ impl Graph {
             write!(output, "scope {kind}")?;
             if let Some(super::function_names::SpecialName::Operator { token, array }) = scope
                 .owner
-                .and_then(|id| self.entity(id).function)
+                .and_then(|id| self.entity(id).callable().function)
                 .filter(|props| props.allocation.is_some())
                 .and_then(|props| props.special)
             {
@@ -106,7 +108,10 @@ impl Graph {
                     token.spelling(),
                     if array { "[]" } else { "" }
                 )?;
-            } else if let Some(name) = scope.owner.and_then(|id| self.entity(id).special_name) {
+            } else if let Some(name) = scope
+                .owner
+                .and_then(|id| self.entity(id).callable().special_name)
+            {
                 output.write_all(b" ")?;
                 crate::syntax::write_member_label(tree, cursor, name, output)?;
             } else if let Some(name) = scope.written_name {
@@ -121,7 +126,7 @@ impl Graph {
                 write_name(cursor, name, output)?;
             } else if let Some(anonymous) = scope
                 .owner
-                .and_then(|owner| self.entity(owner).anonymous_class)
+                .and_then(|owner| self.entity(owner).class().anonymous_class)
             {
                 output.write_all(b" ")?;
                 if let Some(tokens) = anonymous.label() {
@@ -142,8 +147,16 @@ impl Graph {
                     continue;
                 }
                 if binding.kind == BindingKind::Type
-                    && (self.entity(binding.entity).enumeration.is_some()
-                        || self.entity(binding.entity).anonymous_class.is_some())
+                    && (self
+                        .entity(binding.entity)
+                        .enumerated()
+                        .enumeration
+                        .is_some()
+                        || self
+                            .entity(binding.entity)
+                            .class()
+                            .anonymous_class
+                            .is_some())
                     && self.entity(binding.entity).name.is_none()
                 {
                     continue;
@@ -168,6 +181,7 @@ impl Graph {
                     write_name(cursor, name, output)?;
                 } else if let Some(super::function_names::SpecialName::Operator { token, array }) =
                     self.entity(binding.entity)
+                        .callable()
                         .function
                         .filter(|props| props.allocation.is_some())
                         .and_then(|props| props.special)
@@ -180,6 +194,7 @@ impl Graph {
                     )?;
                 } else if let Some(ordinal) = self
                     .entity(binding.entity)
+                    .enumerated()
                     .enumeration
                     .and_then(|info| info.anonymous_ordinal)
                 {
@@ -187,7 +202,12 @@ impl Graph {
                 }
                 output.write_all(b" ")?;
                 if binding.kind == BindingKind::Type {
-                    if self.entity(binding.entity).template_parameter.is_some() {
+                    if self
+                        .entity(binding.entity)
+                        .context()
+                        .template_parameter
+                        .is_some()
+                    {
                         self.write_type(
                             binding
                                 .ty
@@ -204,7 +224,7 @@ impl Graph {
                         .ok_or_else(|| io::Error::other("enumerator without declaration"))?;
                     self.write_declared_type(declaration, tree, cursor, output)?;
                     let super::constants::ConstantState::Value(value) =
-                        self.entity(binding.entity).constant
+                        self.entity(binding.entity).object().constant
                     else {
                         return Err(io::Error::other("enumerator without value"));
                     };
@@ -244,6 +264,7 @@ impl Graph {
             output.write_all(
                 if self
                     .entity(binding.entity)
+                    .enumerated()
                     .enumeration
                     .is_some_and(|info| info.scoped)
                 {
@@ -261,6 +282,7 @@ impl Graph {
             write_name(cursor, name, output)?;
         } else if let Some(ordinal) = self
             .entity(binding.entity)
+            .enumerated()
             .enumeration
             .and_then(|info| info.anonymous_ordinal)
         {
@@ -299,8 +321,9 @@ impl Graph {
             let node = self.scope(scope);
             if let Some(closure) = node.owner.and_then(|id| self.lower_closure(id)) {
                 write!(output, "__lambda{}", closure.ordinal)?;
-            } else if let Some(ordinal) =
-                node.owner.and_then(|id| self.entity(id).local_type_ordinal)
+            } else if let Some(ordinal) = node
+                .owner
+                .and_then(|id| self.entity(id).class().local_type_ordinal)
             {
                 write!(output, "__local_type{ordinal}")?;
             } else if let Some(name) = node.name {
@@ -312,7 +335,7 @@ impl Graph {
                 output.write_all(b"_GLOBAL__N_1")?;
             } else if let Some(tokens) = node
                 .owner
-                .and_then(|id| self.entity(id).anonymous_class)
+                .and_then(|id| self.entity(id).class().anonymous_class)
                 .and_then(super::anonymous_types::AnonymousClass::label)
             {
                 write_anonymous_class(tokens, output)?;
@@ -417,15 +440,23 @@ impl Graph {
                 }
                 TypeKind::Enum(entity) => {
                     let entity = self.entity(*entity);
-                    output.write_all(if entity.enumeration.is_some_and(|info| info.scoped) {
-                        b"enum class "
-                    } else {
-                        b"enum "
-                    })?;
+                    output.write_all(
+                        if entity
+                            .enumerated()
+                            .enumeration
+                            .is_some_and(|info| info.scoped)
+                        {
+                            b"enum class "
+                        } else {
+                            b"enum "
+                        },
+                    )?;
                     if let Some(name) = entity.name {
                         write_name(cursor, name, output)?;
-                    } else if let Some(ordinal) =
-                        entity.enumeration.and_then(|info| info.anonymous_ordinal)
+                    } else if let Some(ordinal) = entity
+                        .enumerated()
+                        .enumeration
+                        .and_then(|info| info.anonymous_ordinal)
                     {
                         write!(output, "__anonymous_enum{ordinal}")?;
                     }

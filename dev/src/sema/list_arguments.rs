@@ -138,7 +138,9 @@ impl Analyzer<'_> {
                 sequence.result = target;
             }
             TypeKind::Class(class) => {
-                if !self.complete_class(class)? || self.graph.entity(class).scope.is_none() {
+                if !self.complete_class(class)?
+                    || self.graph.entity(class).context().scope.is_none()
+                {
                     return Ok(None);
                 }
                 sequence.rank = ConversionRank::UserDefined;
@@ -213,11 +215,11 @@ impl Analyzer<'_> {
         selection: Option<EntityId>,
     ) -> Result<bool, Error> {
         self.check_stack()?;
-        for index in 0..self.graph.entity(class).members.len() {
+        for index in 0..self.graph.entity(class).class().members.len() {
             if *next == self.tree.expr_lists.get(elements).len() {
                 break;
             }
-            let member = self.graph.entity(class).members[index];
+            let member = self.graph.entity(class).class().members[index];
             if self.graph.unnamed_bit_field(member)
                 || self
                     .graph
@@ -416,20 +418,26 @@ mod tests {
                 .constructor(&analyzer.graph.expression_facts)
                 .is_none()
         );
-        for &binding in &analyzer.graph.entity(class).declared_constructors {
+        for &binding in &analyzer.graph.entity(class).class().declared_constructors {
             assert!(
                 analyzer
                     .graph
                     .entity(analyzer.graph.binding(binding).entity)
+                    .initialization()
                     .constructor
                     .is_none()
             );
         }
-        let constructors = analyzer.graph.entity(class).declared_constructors.clone();
+        let constructors = analyzer
+            .graph
+            .entity(class)
+            .class()
+            .declared_constructors
+            .clone();
         let expressions = analyzer.tree.expressions.mark();
         analyzer.list_sequence(list, target).unwrap().unwrap();
         assert_eq!(
-            analyzer.graph.entity(class).declared_constructors,
+            analyzer.graph.entity(class).class().declared_constructors,
             constructors
         );
         assert_eq!(analyzer.tree.expressions.mark(), expressions);
@@ -497,7 +505,7 @@ mod tests {
         let class_ty = analyzer.graph.entity(constructed).ty.unwrap();
         let declared = analyzer.list_sequence(lists[0], class_ty).unwrap().unwrap();
         assert!(
-            matches!(declared.user_conversion, Some(UserConversion::Constructor(binding)) if binding == analyzer.graph.entity(constructed).declared_constructors[0])
+            matches!(declared.user_conversion, Some(UserConversion::Constructor(binding)) if binding == analyzer.graph.entity(constructed).class().declared_constructors[0])
         );
         let implicit_ty = analyzer.graph.entity(implicit).ty.unwrap();
         let default = analyzer
@@ -568,17 +576,27 @@ mod tests {
                 .is_none()
         );
         assert_eq!(analyzer.graph.root_demands.as_slice().len(), demands);
-        for &binding in &analyzer.graph.entity(constructed).declared_constructors {
+        for &binding in &analyzer
+            .graph
+            .entity(constructed)
+            .class()
+            .declared_constructors
+        {
             assert!(
                 analyzer
                     .graph
                     .entity(analyzer.graph.binding(binding).entity)
+                    .initialization()
                     .constructor
                     .is_none()
             );
         }
         assert!(matches!(
-            analyzer.graph.entity(implicit).default_construction,
+            analyzer
+                .graph
+                .entity(implicit)
+                .special()
+                .default_construction,
             ConstructorState::Ready(_)
         ));
         let reference = analyzer
@@ -606,13 +624,24 @@ mod tests {
             .unwrap();
         assert_eq!(
             analyzer.graph.constructors.get(constructor).binding,
-            Some(analyzer.graph.entity(constructed).declared_constructors[0]),
+            Some(
+                analyzer
+                    .graph
+                    .entity(constructed)
+                    .class()
+                    .declared_constructors[0]
+            ),
         );
-        let losing = analyzer.graph.entity(constructed).declared_constructors[1];
+        let losing = analyzer
+            .graph
+            .entity(constructed)
+            .class()
+            .declared_constructors[1];
         assert!(
             analyzer
                 .graph
                 .entity(analyzer.graph.binding(losing).entity)
+                .initialization()
                 .constructor
                 .is_none()
         );

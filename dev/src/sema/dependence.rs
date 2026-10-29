@@ -96,7 +96,7 @@ impl Analyzer<'_> {
         let resolved = if sole
             && !implicit_object
             && component.arguments.is_none()
-            && self.graph.entity(entity).template_head.is_none()
+            && self.graph.entity(entity).context().template_head.is_none()
             && (!dependent || class_member)
         {
             Some(entity)
@@ -295,9 +295,9 @@ impl Analyzer<'_> {
         loop {
             let node = self.graph.scope(scope);
             if node.kind == ScopeKind::Class
-                && node
-                    .owner
-                    .is_some_and(|entity| self.graph.entity(entity).template_head.is_some())
+                && node.owner.is_some_and(|entity| {
+                    self.graph.entity(entity).context().template_head.is_some()
+                })
             {
                 return true;
             }
@@ -504,6 +504,7 @@ impl super::graph::Graph {
     fn type_has_template_owner(&self, entity: super::graph::EntityId) -> bool {
         let node = self.entity(entity);
         let mut scope = node
+            .enumerated()
             .enumeration
             .map(|enumeration| enumeration.owner)
             .or(node.home);
@@ -514,7 +515,7 @@ impl super::graph::Graph {
             }
             if node
                 .owner
-                .is_some_and(|owner| self.entity(owner).template_head.is_some())
+                .is_some_and(|owner| self.entity(owner).context().template_head.is_some())
             {
                 return true;
             }
@@ -536,7 +537,7 @@ impl super::graph::Graph {
                 | TypeKind::BoundPack { .. } => return true,
                 TypeKind::Pack(elements) => work.extend(elements.iter().copied()),
                 TypeKind::Class(entity)
-                    if self.entity(*entity).template_head.is_some()
+                    if self.entity(*entity).context().template_head.is_some()
                         || self.type_has_template_owner(*entity)
                         || self
                             .class_templates
@@ -585,7 +586,7 @@ impl super::graph::Graph {
                 return node.kind != ScopeKind::Namespace;
             }
             if node.owner.is_none_or(|class| {
-                self.entity(class).template_head.is_some()
+                self.entity(class).context().template_head.is_some()
                     || self.class_templates.instance(class).is_some()
                     || self.class_templates.definitions.source(class).is_some()
             }) {

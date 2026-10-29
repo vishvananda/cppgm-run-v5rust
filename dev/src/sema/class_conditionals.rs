@@ -372,7 +372,11 @@ mod tests {
         };
         for (name, converted) in [(b"value".as_slice(), false), (b"reference", true)] {
             let function = entity(name, Filter::Ordinary);
-            let definition = graph.entity(function).function_definition.unwrap();
+            let definition = graph
+                .entity(function)
+                .callable()
+                .function_definition
+                .unwrap();
             let DeclKind::Function { body, .. } = tree.declarations.get(definition).kind else {
                 panic!("function");
             };
@@ -418,10 +422,13 @@ mod tests {
                         .is_none()
                 );
                 let class = entity(b"R", Filter::Prefix);
-                assert_eq!(step.binding, graph.entity(class).declared_conversions[0]);
+                assert_eq!(
+                    step.binding,
+                    graph.entity(class).class().declared_conversions[0]
+                );
                 assert!(!graph.root_demands.as_slice().iter().any(|d| matches!(d,
                     crate::sema::function_demands::Demand::Function {binding,..}
-                    if *binding == graph.entity(class).declared_conversions[1])));
+                    if *binding == graph.entity(class).class().declared_conversions[1])));
             } else {
                 let (constructor, arguments) =
                     graph.expression_facts.class_conversion(then_expr).unwrap();
@@ -431,7 +438,7 @@ mod tests {
                 let class = entity(b"B", Filter::Prefix);
                 assert_eq!(
                     graph.constructors.get(constructor).binding,
-                    Some(graph.entity(class).declared_constructors[0])
+                    Some(graph.entity(class).class().declared_constructors[0])
                 );
                 assert!(matches!(
                     graph.types.get(left.conversion.unwrap().target).kind,
@@ -441,9 +448,10 @@ mod tests {
                     graph
                         .entity(
                             graph
-                                .binding(graph.entity(class).declared_constructors[1])
+                                .binding(graph.entity(class).class().declared_constructors[1])
                                 .entity
                         )
+                        .initialization()
                         .constructor
                         .is_none()
                 );
@@ -452,10 +460,10 @@ mod tests {
         }
         let unused = entity(b"Unused", Filter::Prefix);
         assert!(matches!(
-            graph.entity(unused).layout,
+            graph.entity(unused).class().layout,
             crate::sema::layout::LayoutState::NotStarted
         ));
-        assert!(graph.entity(unused).implicit_copies.is_none());
+        assert!(graph.entity(unused).special().implicit_copies.is_none());
     }
 
     #[test]
@@ -553,7 +561,7 @@ mod tests {
                     .unwrap(),
             )
             .entity;
-        assert!(graph.entity(unused).implicit_copies.is_none());
+        assert!(graph.entity(unused).special().implicit_copies.is_none());
     }
 
     #[test]

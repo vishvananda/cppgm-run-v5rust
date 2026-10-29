@@ -83,7 +83,7 @@ impl Analyzer<'_> {
         }
         ty = self.bare_type(ty)?;
         if let TypeKind::Class(class) = self.graph.types.get(ty).kind {
-            if !self.complete_class(class)? || self.graph.entity(class).scope.is_none() {
+            if !self.complete_class(class)? || self.graph.entity(class).context().scope.is_none() {
                 return Err(Error::at(
                     location,
                     "a throw operand of incomplete class type (15.1p3)",
@@ -283,7 +283,10 @@ impl Analyzer<'_> {
             }
             if let Some(class) = class.filter(|_| !reference) {
                 let constructor = self.handler_copy(class, object, block, location)?;
-                self.graph.entity_mut(entity).constructor = Some(constructor);
+                self.graph
+                    .entity_mut(entity)
+                    .initialization_mut()
+                    .constructor = Some(constructor);
                 self.class_parameter_destruction(object, block, location)?;
             }
             binding = Some(declared);
@@ -477,6 +480,7 @@ mod tests {
                 analyzer
                     .graph
                     .entity(analyzer.graph.binding(binding).entity)
+                    .callable()
                     .copy_kind
                     .unwrap()
             })
@@ -507,7 +511,12 @@ mod tests {
             let home = analyzer.graph.entity(entity).home.unwrap();
             assert!(analyzer.graph.scope(home).entry == super::super::graph::ScopeEntry::Exception);
             assert_eq!(
-                analyzer.graph.entity(entity).constructor.is_some(),
+                analyzer
+                    .graph
+                    .entity(entity)
+                    .initialization()
+                    .constructor
+                    .is_some(),
                 !matches!(
                     analyzer.graph.types.get(ty).kind,
                     TypeKind::Reference { .. }

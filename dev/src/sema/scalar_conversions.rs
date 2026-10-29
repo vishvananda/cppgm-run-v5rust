@@ -146,7 +146,7 @@ impl Analyzer<'_> {
             && source != goal
             && (self.promoted_field_type(facts, source)? == goal
                 || matches!(self.graph.types.get(source).kind, TypeKind::Enum(entity)
-                    if self.graph.entity(entity).enumeration.is_some_and(|info|
+                    if self.graph.entity(entity).enumerated().enumeration.is_some_and(|info|
                         info.fixed && info.underlying == Some(goal))));
         let sk = &self.graph.types.get(source).kind;
         let gk = &self.graph.types.get(goal).kind;

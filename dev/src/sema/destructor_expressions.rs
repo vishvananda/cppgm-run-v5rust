@@ -38,7 +38,7 @@ impl Analyzer<'_> {
             self.complete_class(class)?;
         }
         let complete = object_class.filter(|&class| {
-            self.graph.entity(class).complete && self.graph.entity(class).scope.is_some()
+            self.graph.entity(class).complete && self.graph.entity(class).context().scope.is_some()
         });
         if qualified && complete.is_none() {
             return Err(Error::at(
@@ -55,7 +55,7 @@ impl Analyzer<'_> {
         self.lookup_location = location;
         let found = if let Some(home) = complete
             .and(naming)
-            .and_then(|class| self.graph.entity(class).scope)
+            .and_then(|class| self.graph.entity(class).context().scope)
         {
             self.qualified_declaration_result(home, key.into(), Filter::Elaborated)?
                 .binding
@@ -178,15 +178,18 @@ impl Analyzer<'_> {
         class: super::graph::EntityId,
     ) -> Result<super::graph::BindingId, Error> {
         self.prepare_destruction(class)?;
-        if let Some(binding) = self
-            .destructor_callable(class)?
-            .or(self.graph.entity(class).implicit_destructor)
+        if let Some(binding) = self.destructor_callable(class)?.or(self
+            .graph
+            .entity(class)
+            .class()
+            .implicit_destructor)
         {
             return Ok(binding);
         }
         let declaration = self
             .graph
             .entity(class)
+            .special()
             .destruction
             .ok_or(Error::Invariant(
                 "explicit destructor without completed declaration",
@@ -236,6 +239,104 @@ mod tests {
     };
 
     #[test]
+    fn destructor_calls_keep_source_objects_and_separate_implicit_members() {
+        use crate::sema::{
+            expression_facts::{DestructorTarget, ObjectSource},
+            types::Cv,
+        };
+        use crate::syntax::ast::{Body, DeclKind, ExprKind, StmtKind};
+        let source = SourceBuffer::new(b"using I=int;struct A{~A(){}};struct B{int n;};void f(volatile I*p,const A*q,B*r){p->~I();q->~A();r->~B();}".to_vec()).unwrap();
+        let input = Preprocessor::with_name(&source, b"destructor-ownership").unwrap();
+        let mut unit = SyntaxUnit::new(input);
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let syntax_count = tree.expressions.mark();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        assert_eq!(syntax_count, tree.expressions.mark());
+        let function = *tree.decl_lists.get(declarations).last().unwrap();
+        let DeclKind::Function { body, .. } = tree.declarations.get(function).kind else {
+            panic!("function");
+        };
+        let Body::Parsed(body) = tree.bodies.get(body) else {
+            panic!("parsed body");
+        };
+        let StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+            panic!("compound");
+        };
+        for (index, &statement) in tree.stmt_lists.get(statements).iter().enumerate() {
+            let StmtKind::Expression(Some(call)) = tree.statements.get(statement).kind else {
+                panic!("call statement");
+            };
+            let ExprKind::Call { callee, .. } = tree.expressions.get(call).kind else {
+                panic!("call");
+            };
+            let facts = graph.expression_facts.get(call).unwrap();
+            let designation = graph.expression_facts.get(callee).unwrap();
+            let object = designation.object(&graph.expression_facts).unwrap();
+            let ObjectSource::Explicit { expression, arrow } = object.source else {
+                panic!("explicit object");
+            };
+            assert!(arrow);
+            assert!(matches!(
+                tree.expressions.get(expression).kind,
+                ExprKind::Id(_)
+            ));
+            assert!(designation.conversion.is_none());
+            if index == 0 {
+                assert!(matches!(
+                    facts.destructor(&graph.expression_facts),
+                    Some(DestructorTarget::Scalar)
+                ));
+                assert!(facts.call(&graph.expression_facts).is_none());
+                assert_eq!(graph.types.get(object.ty).cv, Cv(2));
+            } else {
+                let Some(DestructorTarget::Class(binding)) =
+                    facts.destructor(&graph.expression_facts)
+                else {
+                    panic!("class target");
+                };
+                let class = graph.class_of(object.ty).unwrap();
+                assert_eq!(
+                    graph
+                        .entity(graph.binding(binding).entity)
+                        .callable()
+                        .member_function
+                        .unwrap()
+                        .class,
+                    class
+                );
+                assert!(facts.call(&graph.expression_facts).is_some());
+                if index == 1 {
+                    assert_eq!(graph.types.get(object.ty).cv, Cv::CONST);
+                    assert_eq!(
+                        graph.entity(class).class().declared_destructor,
+                        Some(binding)
+                    );
+                } else {
+                    assert_eq!(
+                        graph.entity(class).class().implicit_destructor,
+                        Some(binding)
+                    );
+                    assert!(graph.entity(class).class().declared_destructor.is_none());
+                    assert!(
+                        graph
+                            .member_function(
+                                graph
+                                    .entity(graph.binding(binding).entity)
+                                    .callable()
+                                    .member_function
+                                    .unwrap()
+                            )
+                            .is_none()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn destructor_designators_complete_one_class_and_reuse_its_selected_member() {
         let source = SourceBuffer::new(b"template<class T>struct A{T n;~A(){}void unused(){typename T::missing x;}};void f(const A<int>*p){p->~A<int>();p->~A();}".to_vec()).unwrap();
         let mut unit =
@@ -275,7 +376,10 @@ mod tests {
             let class = graph.class_of(object.ty).unwrap();
             assert!(graph.entity(class).complete);
             assert_eq!(graph.types.get(object.ty).cv, super::Cv::CONST);
-            assert_eq!(graph.entity(class).declared_destructor, Some(binding));
+            assert_eq!(
+                graph.entity(class).class().declared_destructor,
+                Some(binding)
+            );
             assert_eq!(graph.call_binding(call).unwrap(), binding);
             assert_eq!(facts.member_naming(&graph.expression_facts), Some(class));
             if let Some(previous) = selected {
@@ -286,7 +390,11 @@ mod tests {
             let unused = graph
                 .binding(
                     graph
-                        .own(graph.entity(class).scope.unwrap(), unused, Filter::Ordinary)
+                        .own(
+                            graph.entity(class).context().scope.unwrap(),
+                            unused,
+                            Filter::Ordinary,
+                        )
                         .unwrap(),
                 )
                 .entity;

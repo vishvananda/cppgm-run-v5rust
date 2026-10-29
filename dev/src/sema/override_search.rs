@@ -19,7 +19,7 @@ impl OverrideSearch {
     pub(super) fn descend(&mut self, graph: &Graph, class: EntityId, primary: Option<EntityId>) {
         let mark = self.pending.len();
         let mut met = false;
-        for edge in &graph.entity(class).bases {
+        for edge in &graph.entity(class).class().bases {
             let on_path = Some(edge.class) == primary;
             met |= on_path;
             self.pending.push((edge.class, on_path));

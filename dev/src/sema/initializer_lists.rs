@@ -153,12 +153,13 @@ impl Analyzer<'_> {
             self.graph.entity(class).name,
         )?;
         self.graph.scope_mut(scope).owner = Some(class);
-        let entity = self.graph.entity_mut(class);
-        entity.scope = Some(scope);
+        let mut entity = self.graph.entity_mut(class);
+        entity.context_mut().scope = Some(scope);
         entity.complete = true;
-        entity.representation = crate::sema::graph::ClassRepresentation::BuiltinInitializerList;
+        entity.class_mut().representation =
+            crate::sema::graph::ClassRepresentation::BuiltinInitializerList;
         entity.defined = true;
-        entity.aggregation = super::aggregate_initialization::Aggregation::Ineligible;
+        entity.class_mut().aggregation = super::aggregate_initialization::Aggregation::Ineligible;
         let element = self.graph.types.qualify(element, Cv::CONST)?;
         let pointer = self.graph.types.pointer(element)?;
         let size = self.graph.types.scalar(super::types::Scalar::Basic(
@@ -177,10 +178,14 @@ impl Analyzer<'_> {
                 Some(name),
                 crate::lex::vocabulary::Keyword::Int,
             )?;
-            let entity = self.graph.entity_mut(member);
+            let mut entity = self.graph.entity_mut(member);
             entity.home = Some(scope);
-            entity.data_member = Some(DataMemberKind::Instance);
-            self.graph.entity_mut(class).members.push(member);
+            entity.object_mut().data_member = Some(DataMemberKind::Instance);
+            self.graph
+                .entity_mut(class)
+                .class_mut()
+                .members
+                .push(member);
             self.graph.add_binding(
                 scope,
                 Some(scope),
@@ -307,7 +312,7 @@ impl Analyzer<'_> {
                 bound.kind,
                 BindingKind::Namespace | BindingKind::NamespaceAlias
             )
-            .then(|| self.graph.entity(bound.entity).scope)
+            .then(|| self.graph.entity(bound.entity).context().scope)
             .flatten()
         });
         if let Some(scope) = scope {
@@ -579,10 +584,10 @@ mod tests {
         let object = analyzer.tree.decl_lists.get(declarations)[2];
         analyzer.declaration(object, global).unwrap();
         assert!(
-            analyzer.graph.entity(class).representation
+            analyzer.graph.entity(class).class().representation
                 == crate::sema::graph::ClassRepresentation::BuiltinInitializerList
         );
-        let members = analyzer.graph.entity(class).members.clone();
+        let members = analyzer.graph.entity(class).class().members.clone();
         assert_eq!(members.len(), 2);
         let ast::DeclKind::Simple { declarators, .. } = analyzer.tree.declarations.get(object).kind
         else {
@@ -606,7 +611,7 @@ mod tests {
         assert_eq!(analyzer.type_cv(element), Cv::CONST);
         let demands = analyzer.graph.root_demands.as_slice().len();
         assert!(analyzer.complete_class(class).unwrap());
-        assert_eq!(analyzer.graph.entity(class).members, members);
+        assert_eq!(analyzer.graph.entity(class).class().members, members);
         assert_eq!(analyzer.graph.root_demands.as_slice().len(), demands);
         assert_eq!(analyzer.tree.expressions.mark(), expressions);
         assert_eq!(analyzer.tree.bodies.mark(), bodies);
@@ -675,7 +680,7 @@ mod tests {
                 panic!("deduced list specialization");
             };
             assert!(!analyzer.graph.entity(shell).complete);
-            assert!(analyzer.graph.entity(shell).scope.is_none());
+            assert!(analyzer.graph.entity(shell).context().scope.is_none());
             let instance = analyzer.graph.class_templates.instance(shell).unwrap();
             assert!(!instance.dependent);
             assert_eq!(instance.arguments.len(), 1);

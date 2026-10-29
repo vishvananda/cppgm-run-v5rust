@@ -41,6 +41,7 @@ impl Graph {
             }
             work.extend(
                 self.entity(class)
+                    .class()
                     .bases
                     .iter()
                     .rev()
@@ -52,7 +53,7 @@ impl Graph {
     /// Shared bases not named by a direct virtual edge. Available while the
     /// class completes, before its own virtual/layout facts are published.
     pub(super) fn indirect_virtual_bases(&self, class: EntityId) -> Vec<EntityId> {
-        let bases = &self.entity(class).bases;
+        let bases = &self.entity(class).class().bases;
         if !bases.iter().any(|edge| {
             edge.is_virtual
                 || self
@@ -75,6 +76,7 @@ impl Graph {
     }
     pub(super) fn nonvirtual_primary(&self, class: EntityId) -> Option<usize> {
         self.entity(class)
+            .class()
             .bases
             .iter()
             .position(|edge| !edge.is_virtual && self.layout_dynamic(edge.class))
@@ -86,7 +88,7 @@ impl Graph {
         let mut bases = Vec::new();
         let mut shared = HashSet::default();
         let mut indirect = HashSet::default();
-        for edge in &self.entity(class).bases {
+        for edge in &self.entity(class).class().bases {
             if edge.is_virtual && shared.insert(edge.class) {
                 bases.push(edge.class);
             }
@@ -106,7 +108,7 @@ impl Graph {
             for &base in &bases {
                 let LayoutState::Value {
                     non_virtual_size, ..
-                } = self.entity(base).layout
+                } = self.entity(base).class().layout
                 else {
                     return Err(Error::Invariant("virtual primary before base layout"));
                 };
@@ -182,7 +184,7 @@ impl Claims {
         let mut frames = Vec::<ClaimFrame>::new();
         let mut virtual_nodes = HashSet::default();
         let mut claimants = HashMap::<EntityId, ClaimNodeId>::default();
-        for direct in 0..graph.entity(root).bases.len() {
+        for direct in 0..graph.entity(root).class().bases.len() {
             Self::enter(
                 graph,
                 root,
@@ -195,7 +197,7 @@ impl Claims {
             )?;
             while let Some(frame) = frames.last_mut() {
                 let class = nodes[frame.node.0 as usize].class;
-                if frame.next < graph.entity(class).bases.len() {
+                if frame.next < graph.entity(class).class().bases.len() {
                     let index = frame.next;
                     frame.next += 1;
                     let parent = frame.node;
@@ -239,7 +241,7 @@ impl Claims {
             let mut resolver = None;
             for _ in 0..=nodes.len() {
                 let item = &nodes[node.0 as usize];
-                let edge = graph.entity(item.owner).bases[item.edge];
+                let edge = graph.entity(item.owner).class().bases[item.edge];
                 if !edge.is_virtual {
                     // The root's direct edge has not been placed yet. Its
                     // relative offset is zero; internal edges are completed facts.
@@ -294,7 +296,7 @@ impl Claims {
         virtual_nodes: &mut HashSet<EntityId>,
         claimants: &mut HashMap<EntityId, ClaimNodeId>,
     ) -> Result<(), Error> {
-        let edge = graph.entity(owner).bases[edge_index];
+        let edge = graph.entity(owner).class().bases[edge_index];
         if edge.is_virtual && !virtual_nodes.insert(edge.class) {
             return Ok(());
         }
@@ -465,20 +467,20 @@ mod tests {
                 non_virtual_size,
                 non_virtual_alignment,
                 ..
-            } = analyzer.graph.entity(class).layout
+            } = analyzer.graph.entity(class).class().layout
             else {
                 panic!("layout");
             };
             assert_eq!((non_virtual_size, non_virtual_alignment), (nvsize, nvalign));
         }
         let x = classes[2];
-        assert_eq!(analyzer.graph.entity(x).bases[2].offset, Some(16));
+        assert_eq!(analyzer.graph.entity(x).class().bases[2].offset, Some(16));
         let layout = &analyzer.graph.virtuals.storage_layouts[&x];
         assert_eq!(layout.bases[0].1, 16);
         let holder = &analyzer.graph.virtuals.storage_layouts[&classes[3]];
         assert_eq!(holder.bases[0].1, 13);
         assert!(matches!(
-            analyzer.graph.entity(classes[7]).layout,
+            analyzer.graph.entity(classes[7]).class().layout,
             LayoutState::NotStarted
         ));
         assert!(analyzer.graph.root_demands.as_slice().is_empty());

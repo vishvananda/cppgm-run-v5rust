@@ -394,6 +394,7 @@ impl Analyzer<'_> {
                     && self
                         .graph
                         .entity(self.graph.binding(binding).entity)
+                        .context()
                         .template_head
                         .is_none()
                     && !self.graph.binding(binding).ty.is_some_and(|ty| {
@@ -522,7 +523,13 @@ impl Analyzer<'_> {
             .ty
             .ok_or(Error::Invariant("value binding without type"))?;
         if binding.kind == BindingKind::Variable {
-            if self.graph.entity(binding.entity).template_head.is_some() {
+            if self
+                .graph
+                .entity(binding.entity)
+                .context()
+                .template_head
+                .is_some()
+            {
                 return Err(Error::at(
                     self.tree.expressions.get(id).location,
                     "a variable template named without template arguments",
@@ -575,7 +582,7 @@ impl Analyzer<'_> {
         if facts
             .anonymous_member(&self.graph.expression_facts)
             .is_none()
-            && self.graph.entity(binding.entity).data_member
+            && self.graph.entity(binding.entity).object().data_member
                 == Some(super::graph::DataMemberKind::Instance)
         {
             let selected = found
@@ -589,7 +596,7 @@ impl Analyzer<'_> {
                 .is_some()
         {
             facts.set_field_identity(
-                self.graph.entity(binding.entity).bit_field,
+                self.graph.entity(binding.entity).object().bit_field,
                 &mut self.graph.expression_facts,
             )?;
             facts.set_bit_field(facts.field_identity(&self.graph.expression_facts).is_some());
@@ -597,7 +604,7 @@ impl Analyzer<'_> {
         if let Some(alias) = self.graph.lower_binding_alias(binding.entity)
             && let super::bindings::BindingTarget::Member { member, .. } = alias.target
         {
-            let bit_field = self.graph.entity(member).bit_field.is_some();
+            let bit_field = self.graph.entity(member).object().bit_field.is_some();
             facts.set_bit_field(bit_field);
             if bit_field {
                 facts.set_member(found.binding, &mut self.graph.expression_facts)?;
@@ -608,15 +615,23 @@ impl Analyzer<'_> {
             binding.kind,
             BindingKind::Enumerator | BindingKind::TemplateValue
         ) {
-            let super::constants::ConstantState::Value(value) =
-                self.graph.entity(binding.entity).constant
-            else {
-                return Err(Error::Invariant("enumerator without value"));
-            };
-            facts.ty = value.ty;
-            facts.set_folded(self.held_integral_constant(value).then_some(value.bits));
+            self.named_enumerator_facts(binding.entity, &mut facts)?;
         }
         Ok(facts)
+    }
+    fn named_enumerator_facts(
+        &self,
+        entity: super::graph::EntityId,
+        facts: &mut ExprFacts,
+    ) -> Result<(), Error> {
+        let super::constants::ConstantState::Value(value) =
+            self.graph.entity(entity).object().constant
+        else {
+            return Err(Error::Invariant("enumerator without value"));
+        };
+        facts.ty = value.ty;
+        facts.set_folded(self.held_integral_constant(value).then_some(value.bits));
+        Ok(())
     }
     pub(super) fn new_expression_facts(
         &mut self,

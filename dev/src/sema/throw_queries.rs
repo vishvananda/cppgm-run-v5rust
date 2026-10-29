@@ -92,6 +92,7 @@ impl Analyzer<'_> {
             for default in self
                 .graph
                 .entity(entity)
+                .callable()
                 .defaults
                 .iter()
                 .skip(written)
@@ -154,12 +155,16 @@ impl Analyzer<'_> {
         class: super::graph::EntityId,
     ) -> Result<bool, Error> {
         let entity = self.graph.entity(class);
-        if let Some(destructor) = entity.declared_destructor.or(entity.implicit_destructor) {
+        if let Some(destructor) = entity
+            .class()
+            .declared_destructor
+            .or(entity.class().implicit_destructor)
+        {
             return self
                 .function_may_throw(self.graph.binding(destructor).entity)
                 .map(|throws| !throws);
         }
-        match entity.destruction.map(|facts| facts.unwind) {
+        match entity.special().destruction.map(|facts| facts.unwind) {
             Some(super::destruction::DestructorUnwind::Implicit { nothrow }) => Ok(nothrow),
             Some(super::destruction::DestructorUnwind::Declared(function)) => {
                 self.function_may_throw(function).map(|throws| !throws)
@@ -178,14 +183,21 @@ impl Analyzer<'_> {
             if !seen.insert(class) {
                 continue;
             }
-            if let Some(binding) = self.graph.entity(class).declared_destructor {
+            if let Some(binding) = self.graph.entity(class).class().declared_destructor {
                 if self.function_may_throw(self.graph.binding(binding).entity)? {
                     return Ok(true);
                 }
                 continue;
             }
-            work.extend(self.graph.entity(class).bases.iter().map(|base| base.class));
-            for &member in &self.graph.entity(class).members {
+            work.extend(
+                self.graph
+                    .entity(class)
+                    .class()
+                    .bases
+                    .iter()
+                    .map(|base| base.class),
+            );
+            for &member in &self.graph.entity(class).class().members {
                 let mut ty = self
                     .graph
                     .entity(member)
@@ -270,7 +282,7 @@ impl Analyzer<'_> {
                 if self.function_may_throw(entity)? {
                     return Ok(true);
                 }
-                let defaults = &self.graph.entity(entity).defaults;
+                let defaults = &self.graph.entity(entity).callable().defaults;
                 let count = self.tree.expr_lists.get(arguments).len();
                 for default in defaults.iter().skip(count).rev().flatten() {
                     self.throw_work.push((default.expression, next));
@@ -278,7 +290,7 @@ impl Analyzer<'_> {
             }
             CallTarget::Indirect(_, entity) => {
                 if !entity.is_some_and(|entity| {
-                    self.graph.entity(entity).target_unwind == TargetUnwind::NoThrow
+                    self.graph.entity(entity).callable().target_unwind == TargetUnwind::NoThrow
                 }) {
                     return Ok(true);
                 }
@@ -630,7 +642,7 @@ mod tests {
                 panic!("missing class result");
             };
             assert!(matches!(
-                graph.entity(class).layout,
+                graph.entity(class).class().layout,
                 super::super::layout::LayoutState::NotStarted
             ));
             assert!(super::super::function_demands::trailing(&graph).is_empty());

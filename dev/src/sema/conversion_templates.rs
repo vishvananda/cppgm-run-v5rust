@@ -307,7 +307,7 @@ mod tests {
         analyzer.declarations(declarations, global).unwrap();
         let class = analyzer.graph.own(global, a, Filter::Ordinary).unwrap();
         let class = analyzer.graph.binding(class).entity;
-        let primary = analyzer.graph.entity(class).declared_conversions[0];
+        let primary = analyzer.graph.entity(class).class().declared_conversions[0];
         let signature = analyzer.graph.binding(primary).ty;
         let helper = analyzer
             .graph
@@ -383,9 +383,9 @@ mod tests {
                     .unwrap(),
             )
             .entity;
-        let pointer_primary = analyzer.graph.entity(a).declared_conversions[0];
-        let value_primary = analyzer.graph.entity(a).declared_conversions[1];
-        let reference_primary = analyzer.graph.entity(r).declared_conversions[0];
+        let pointer_primary = analyzer.graph.entity(a).class().declared_conversions[0];
+        let value_primary = analyzer.graph.entity(a).class().declared_conversions[1];
+        let reference_primary = analyzer.graph.entity(r).class().declared_conversions[0];
         let published = analyzer.graph.binding(pointer_primary).ty;
         let int = analyzer
             .graph

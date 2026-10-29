@@ -72,7 +72,7 @@ impl Analyzer<'_> {
             return Ok(());
         }
         let mut any = false;
-        let templated = self.graph.entity(entity).template_head.is_some();
+        let templated = self.graph.entity(entity).context().template_head.is_some();
         for (index, parameter) in parameters.iter().enumerate() {
             let Some(initializer) = parameter.default else {
                 continue;
@@ -86,12 +86,16 @@ impl Analyzer<'_> {
             if !templated {
                 continue;
             }
-            if self.graph.entity(entity).defaults.is_empty() {
-                self.graph.entity_mut(entity).defaults.resize(count, None);
-            } else if self.graph.entity(entity).defaults[index].is_some() {
+            if self.graph.entity(entity).callable().defaults.is_empty() {
+                self.graph
+                    .entity_mut(entity)
+                    .callable_mut()
+                    .defaults
+                    .resize(count, None);
+            } else if self.graph.entity(entity).callable().defaults[index].is_some() {
                 return Err(Error::at(parameter.location, "default argument redefined"));
             }
-            self.graph.entity_mut(entity).defaults[index] = Some(DefaultArgument {
+            self.graph.entity_mut(entity).callable_mut().defaults[index] = Some(DefaultArgument {
                 expression,
                 template: Some(super::template_defaults::Pattern {
                     head: self
@@ -101,6 +105,7 @@ impl Analyzer<'_> {
                     limit: self.graph.templates.definition_limit(
                         self.graph
                             .entity(entity)
+                            .context()
                             .template_head
                             .ok_or(Error::Invariant("template default without primary head"))?,
                     ),
@@ -146,17 +151,21 @@ impl Analyzer<'_> {
         let any = parameters
             .iter()
             .any(|parameter| parameter.default.is_some());
-        if !any && self.graph.entity(entity).defaults.is_empty() {
+        if !any && self.graph.entity(entity).callable().defaults.is_empty() {
             return Ok(());
         }
-        if self.graph.entity(entity).defaults.is_empty() {
-            self.graph.entity_mut(entity).defaults.resize(count, None);
+        if self.graph.entity(entity).callable().defaults.is_empty() {
+            self.graph
+                .entity_mut(entity)
+                .callable_mut()
+                .defaults
+                .resize(count, None);
         }
         for (index, parameter) in parameters.iter().enumerate() {
             let Some(initializer) = parameter.default else {
                 continue;
             };
-            if self.graph.entity(entity).defaults[index].is_some() {
+            if self.graph.entity(entity).callable().defaults[index].is_some() {
                 return Err(Error::at(parameter.location, "default argument redefined"));
             }
             let (ast::InitializerKind::Assign(expression)
@@ -180,7 +189,7 @@ impl Analyzer<'_> {
                         .ok_or(Error::Invariant("default argument without declaration"))?,
                 )
             };
-            self.graph.entity_mut(entity).defaults[index] = Some(DefaultArgument {
+            self.graph.entity_mut(entity).callable_mut().defaults[index] = Some(DefaultArgument {
                 expression,
                 added_at,
                 template: None,
@@ -213,7 +222,7 @@ impl Analyzer<'_> {
             result?;
         }
         let mut seen = false;
-        for default in &self.graph.entity(entity).defaults {
+        for default in &self.graph.entity(entity).callable().defaults {
             if default.is_some() {
                 seen = true;
             } else if seen {
@@ -342,6 +351,7 @@ mod tests {
             let owner = analyzer
                 .graph
                 .entity(analyzer.graph.binding(class).entity)
+                .context()
                 .scope
                 .unwrap();
             let members = analyzer.graph.scope(owner).bindings.len();
@@ -357,7 +367,7 @@ mod tests {
                 })
                 .unwrap();
             let entity = analyzer.graph.binding(function).entity;
-            let parameters = analyzer.graph.entity(entity).function_parameters;
+            let parameters = analyzer.graph.entity(entity).callable().function_parameters;
             let error = analyzer.declaration(second, global).unwrap_err();
             assert!(matches!(
                 error,
@@ -369,10 +379,13 @@ mod tests {
             assert_eq!(analyzer.graph.scope(owner).bindings.len(), members);
             let function = analyzer.graph.entity(entity);
             assert!(!function.defined);
-            assert!(function.function_definition.is_none());
-            assert!(function.defaults.is_empty());
+            assert!(function.callable().function_definition.is_none());
+            assert!(function.callable().defaults.is_empty());
             assert_eq!(
-                function.function_parameters.map(|clause| clause.location),
+                function
+                    .callable()
+                    .function_parameters
+                    .map(|clause| clause.location),
                 parameters.map(|clause| clause.location)
             );
             assert_eq!(analyzer.template_depth, 0);

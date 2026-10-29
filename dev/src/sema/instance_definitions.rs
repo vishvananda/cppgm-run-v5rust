@@ -141,7 +141,7 @@ impl Analyzer<'_> {
                 }
                 return (source != requested).then_some(source);
             }
-            self.graph.entity(owner).template_head?;
+            self.graph.entity(owner).context().template_head?;
             nested.push(name);
             entity = owner;
         }
@@ -152,13 +152,18 @@ impl Analyzer<'_> {
         source: EntityId,
         name: crate::lex::identifiers::NameId,
     ) -> Option<EntityId> {
-        let scope = self.graph.entity(source).scope?;
+        let scope = self.graph.entity(source).context().scope?;
         let found = self
             .graph
             .own(scope, name, super::lookup::Filter::Elaborated)?;
         let binding = self.graph.binding(found);
         (binding.kind == super::graph::BindingKind::Type
-            && self.graph.entity(binding.entity).enumeration.is_none())
+            && self
+                .graph
+                .entity(binding.entity)
+                .enumerated()
+                .enumeration
+                .is_none())
         .then_some(binding.entity)
     }
 
@@ -180,7 +185,7 @@ impl Analyzer<'_> {
         parent: ScopeId,
     ) {
         if self.template_depth != 0 {
-            let head = if self.graph.entity(entity).template_head.is_some()
+            let head = if self.graph.entity(entity).context().template_head.is_some()
                 || self.graph.scope(parent).kind == ScopeKind::TemplateParameters
             {
                 self.template_head
@@ -240,7 +245,8 @@ impl Analyzer<'_> {
                     .get(&owner)
                     .copied()
             });
-        let Some(scope) = source.and_then(|source| self.graph.entity(source).scope) else {
+        let Some(scope) = source.and_then(|source| self.graph.entity(source).context().scope)
+        else {
             return;
         };
         if let Some(binding) = self
@@ -570,6 +576,7 @@ impl Analyzer<'_> {
             let Some(position) = self
                 .graph
                 .entity(binding.entity)
+                .context()
                 .template_parameter
                 .and_then(|info| info.index(depth))
             else {
@@ -705,7 +712,7 @@ mod tests {
             .collect();
         assert!(analyzer.graph.entity(classes[0]).complete);
         assert!(!analyzer.graph.entity(classes[1]).complete);
-        assert!(analyzer.graph.entity(classes[1]).scope.is_none());
+        assert!(analyzer.graph.entity(classes[1]).context().scope.is_none());
         assert!(analyzer.graph.entity(classes[2]).complete);
         let definitions = &analyzer.graph.class_templates.definitions;
         let origin = definitions.origins[&classes[0]];
@@ -783,7 +790,7 @@ mod tests {
                     .selected(class)
                     .is_none()
             );
-            assert!(analyzer.graph.entity(class).scope.is_none());
+            assert!(analyzer.graph.entity(class).context().scope.is_none());
         }
     }
 
@@ -829,14 +836,14 @@ mod tests {
             })
             .collect();
         assert_eq!(analyzer.graph.class_templates.definitions.states.len(), 2);
-        assert!(analyzer.graph.entity(classes[2]).scope.is_none());
+        assert!(analyzer.graph.entity(classes[2]).context().scope.is_none());
         let mut scopes = crate::support::hash::HashSet::default();
         let mut fields = crate::support::hash::HashSet::default();
         for &class in &classes[..2] {
             assert!(analyzer.graph.entity(class).complete);
-            let scope = analyzer.graph.entity(class).scope.unwrap();
+            let scope = analyzer.graph.entity(class).context().scope.unwrap();
             assert!(scopes.insert(scope));
-            let field = analyzer.graph.entity(class).members[0];
+            let field = analyzer.graph.entity(class).class().members[0];
             assert!(fields.insert(field));
             assert!(
                 !analyzer
@@ -848,7 +855,7 @@ mod tests {
                 .own(scope, names[3], Filter::Ordinary)
                 .unwrap();
             let nested = analyzer.graph.binding(binding).entity;
-            assert!(analyzer.graph.entity(nested).scope.is_none());
+            assert!(analyzer.graph.entity(nested).context().scope.is_none());
             assert!(
                 analyzer
                     .graph
@@ -877,7 +884,7 @@ mod tests {
                 analyzer.tree.types.mark()
             )
         );
-        assert!(analyzer.graph.entity(classes[2]).scope.is_none());
+        assert!(analyzer.graph.entity(classes[2]).context().scope.is_none());
         assert!(analyzer.deferred.is_empty());
     }
 

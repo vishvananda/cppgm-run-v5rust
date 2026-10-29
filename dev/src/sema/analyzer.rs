@@ -504,9 +504,9 @@ impl<'tree> Analyzer<'tree> {
         {
             // Types-only queries still need the physical dynamic-class fact;
             // virtual declaration diagnostics and slot completion are semantic work.
-            self.graph.entity_mut(owner).polymorphism =
+            self.graph.entity_mut(owner).class_mut().polymorphism =
                 super::virtual_members::Polymorphism::Dynamic;
-            self.graph.entity_mut(owner).aggregation =
+            self.graph.entity_mut(owner).class_mut().aggregation =
                 super::aggregate_initialization::Aggregation::Ineligible;
         }
         match declaration.kind {
@@ -796,7 +796,10 @@ impl<'tree> Analyzer<'tree> {
             binding,
         );
         let entity = self.graph.binding(binding).entity;
-        self.graph.entity_mut(entity).function_definition = Some(declaration);
+        self.graph
+            .entity_mut(entity)
+            .callable_mut()
+            .function_definition = Some(declaration);
         // The frozen definition owner evaluates only leading layout attributes
         // here; unlike a simple declaration it does not reject alignas.
         let attributes = self.layout_attributes(
@@ -820,7 +823,10 @@ impl<'tree> Analyzer<'tree> {
             self.tree.declarations.get(declaration).attributes,
         )?;
         self.note_instantiation_policy(entity, declarator, attributes.instantiation);
-        self.graph.entity_mut(entity).definition_emission = if self.class_depth != 0
+        self.graph
+            .entity_mut(entity)
+            .callable_mut()
+            .definition_emission = if self.class_depth != 0
             || specs.constexpr
             || self
                 .graph
@@ -837,7 +843,7 @@ impl<'tree> Analyzer<'tree> {
         if self.class_depth != 0 || specs.constexpr {
             self.graph.entity_mut(entity).inline = super::specifiers::InlinePreference::Inline;
         }
-        if self.graph.entity(entity).template_head.is_none()
+        if self.graph.entity(entity).context().template_head.is_none()
             && !self.class_template_member_redeclaration(&info)
             && !checked_specialization
         {
@@ -873,7 +879,7 @@ impl<'tree> Analyzer<'tree> {
     pub(super) fn defer_function_body(&mut self, body: DeferredBody) {
         self.graph.note_deferred_member_body(body.entity);
         if self.shared_instance_body(body)
-            && let Some(head) = self.graph.entity(body.entity).template_head
+            && let Some(head) = self.graph.entity(body.entity).context().template_head
         {
             // The copied member template is a definition pattern even while
             // its enclosing instance is still declaring later members.
@@ -894,7 +900,14 @@ impl<'tree> Analyzer<'tree> {
     }
     fn function_body_inner(&mut self, body: DeferredBody) -> Result<(), Error> {
         self.deferred_constexpr.remove(&body.entity);
-        if body.template_depth != 0 && self.graph.entity(body.entity).template_head.is_none() {
+        if body.template_depth != 0
+            && self
+                .graph
+                .entity(body.entity)
+                .context()
+                .template_head
+                .is_none()
+        {
             self.graph
                 .function_templates
                 .bodies
@@ -905,13 +918,24 @@ impl<'tree> Analyzer<'tree> {
         }
         if self.lowering()
             && body.template_depth == 0
-            && self.graph.entity(body.entity).definition_emission
+            && self
+                .graph
+                .entity(body.entity)
+                .callable()
+                .definition_emission
                 == super::function_demands::DefinitionEmission::Always
             && self.graph.entity(body.entity).inline != super::specifiers::InlinePreference::Inline
         {
             self.graph.boundary_roots.push(body.entity);
         }
-        if body.template_depth != 0 && self.graph.entity(body.entity).template_head.is_some() {
+        if body.template_depth != 0
+            && self
+                .graph
+                .entity(body.entity)
+                .context()
+                .template_head
+                .is_some()
+        {
             self.graph.function_templates.record_pattern(
                 body,
                 body.definition_head
@@ -936,7 +960,11 @@ impl<'tree> Analyzer<'tree> {
             let mut context =
                 super::procedural_statements::BodyContext::new(result, Some(body.entity));
             if body.template_depth == 0
-                && (self.graph.entity(body.entity).definition_emission
+                && (self
+                    .graph
+                    .entity(body.entity)
+                    .callable()
+                    .definition_emission
                     == super::function_demands::DefinitionEmission::Demanded
                     || self.lowering()
                         && self.graph.entity(body.entity).inline
@@ -1021,10 +1049,14 @@ impl<'tree> Analyzer<'tree> {
             body.name,
         )?;
         self.graph.scope_mut(scope).owner = Some(body.entity);
-        self.graph.entity_mut(body.entity).scope = Some(scope);
-        self.graph.entity_mut(body.entity).analyzed_body = Some(body.body);
+        self.graph.entity_mut(body.entity).context_mut().scope = Some(scope);
         self.graph
             .entity_mut(body.entity)
+            .callable_mut()
+            .analyzed_body = Some(body.body);
+        self.graph
+            .entity_mut(body.entity)
+            .callable_mut()
             .parameter_entities
             .clear();
         let count = self.graph.types.function_parameter_count(body.ty)?;
@@ -1058,6 +1090,7 @@ impl<'tree> Analyzer<'tree> {
             self.graph.record_parameter_object(entity, object);
             self.graph
                 .entity_mut(body.entity)
+                .callable_mut()
                 .parameter_entities
                 .push(entity);
             let binding = self.graph.add_binding(
@@ -1110,7 +1143,7 @@ impl<'tree> Analyzer<'tree> {
         }
         if self.semantic()
             && self.template_depth == 0
-            && let Some(key) = self.graph.entity(body.entity).member_function
+            && let Some(key) = self.graph.entity(body.entity).callable().member_function
             && key.kind == super::graph::MemberKind::Destructor
         {
             self.check_subobject_destruction(
@@ -1125,6 +1158,7 @@ impl<'tree> Analyzer<'tree> {
             && self
                 .graph
                 .entity(body.entity)
+                .callable()
                 .member_function
                 .is_some_and(|key| key.kind == super::graph::MemberKind::Constructor)
         {
@@ -1146,6 +1180,7 @@ impl<'tree> Analyzer<'tree> {
             let constructor = self
                 .graph
                 .entity(body.entity)
+                .callable()
                 .member_function
                 .is_some_and(|key| key.kind == super::graph::MemberKind::Constructor);
             if let Some(context) = self.body_context.as_mut() {

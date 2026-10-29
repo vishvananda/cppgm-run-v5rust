@@ -44,7 +44,7 @@ impl Analyzer<'_> {
                 .and_then(|ty| self.graph.class_of(ty))
                 .filter(|&child| self.graph.anonymous_member_storage(child).is_some());
             if let Some(child) = child {
-                let members = &self.graph.entity(child).members;
+                let members = &self.graph.entity(child).class().members;
                 if !finish {
                     work.push((current, true));
                     work.extend(members.iter().rev().map(|&member| (member, false)));
@@ -89,8 +89,8 @@ impl Analyzer<'_> {
         self.check_stack()?;
         let variant = self.graph.entity(class).key == Keyword::Union;
         let mut designated = false;
-        for index in 0..self.graph.entity(class).members.len() {
-            let member = self.graph.entity(class).members[index];
+        for index in 0..self.graph.entity(class).class().members.len() {
+            let member = self.graph.entity(class).class().members[index];
             if let Some(initializer) = self.member_designation(member, written, known) {
                 if variant && designated {
                     return Err(if self.graph.anonymous_member_storage(class).is_some() {
@@ -108,10 +108,10 @@ impl Analyzer<'_> {
                 designated = true;
             }
         }
-        let mut plans = Vec::with_capacity(self.graph.entity(class).members.len());
+        let mut plans = Vec::with_capacity(self.graph.entity(class).class().members.len());
         let mut subobjects = Vec::new();
-        for index in 0..self.graph.entity(class).members.len() {
-            let member = self.graph.entity(class).members[index];
+        for index in 0..self.graph.entity(class).class().members.len() {
+            let member = self.graph.entity(class).class().members[index];
             let ty = self
                 .graph
                 .entity(member)
@@ -146,7 +146,10 @@ impl Analyzer<'_> {
                     if variant && designated {
                         None
                     } else {
-                        self.graph.entity(member).member_initializer
+                        self.graph
+                            .entity(member)
+                            .initialization()
+                            .member_initializer
                     }
                 });
             if let Some(written) = written.get(&member) {
@@ -198,12 +201,16 @@ impl Analyzer<'_> {
             }
             if !written.contains_key(&member)
                 && source.is_some()
-                && let Some(constructor) = self.graph.entity(member).constructor
+                && let Some(constructor) = self.graph.entity(member).initialization().constructor
             {
                 subobjects.push(MemberConstruction {
                     member,
                     constructor,
-                    arguments: self.graph.entity(member).constructor_arguments,
+                    arguments: self
+                        .graph
+                        .entity(member)
+                        .initialization()
+                        .constructor_arguments,
                 });
             }
             plans.push((member, source));

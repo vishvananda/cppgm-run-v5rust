@@ -148,7 +148,7 @@ impl Analyzer<'_> {
             .as_ref()
             .and_then(|body| body.function)
             .filter(|&entity| {
-                self.graph.entity(entity).definition_emission
+                self.graph.entity(entity).callable().definition_emission
                     == super::function_demands::DefinitionEmission::Demanded
                     || self.graph.entity(entity).inline
                         == super::specifiers::InlinePreference::Inline
@@ -212,7 +212,7 @@ impl Analyzer<'_> {
         ty: super::types::TypeId,
     ) -> Result<(), Error> {
         let primary = self.graph.binding(primary).entity;
-        if self.graph.entity(primary).defaults.is_empty() {
+        if self.graph.entity(primary).callable().defaults.is_empty() {
             return Ok(());
         }
         let count = self.graph.types.function_parameter_count(ty)?;
@@ -228,7 +228,7 @@ impl Analyzer<'_> {
                 super::types::TypeKind::Expansion(_)
             )
         {
-            defaults[front] = self.graph.entity(primary).defaults[front];
+            defaults[front] = self.graph.entity(primary).callable().defaults[front];
             front += 1;
         }
         let mut back = 1;
@@ -246,10 +246,15 @@ impl Analyzer<'_> {
                 super::types::TypeKind::Expansion(_)
             )
         {
-            defaults[count - back] = self.graph.entity(primary).defaults[patterns - back];
+            defaults[count - back] =
+                self.graph.entity(primary).callable().defaults[patterns - back];
             back += 1;
         }
-        self.graph.entity_mut(entity).defaults.clone_from(&defaults);
+        self.graph
+            .entity_mut(entity)
+            .callable_mut()
+            .defaults
+            .clone_from(&defaults);
         self.graph
             .function_templates
             .argument_defaults
@@ -302,6 +307,7 @@ impl Analyzer<'_> {
     fn untyped_default_argument(&self, entity: EntityId, index: usize) -> Option<DefaultArgument> {
         self.graph
             .entity(entity)
+            .callable()
             .defaults
             .get(index)
             .copied()
@@ -329,7 +335,7 @@ impl Analyzer<'_> {
             .entity(entity)
             .ty
             .ok_or(Error::Invariant("default without function type"))?;
-        let count = self.graph.entity(entity).defaults.len();
+        let count = self.graph.entity(entity).callable().defaults.len();
         for index in supplied..end.map_or(count, |end| end.min(count)) {
             let Some(default) = self.untyped_default_argument(entity, index) else {
                 continue;
@@ -362,7 +368,7 @@ impl Analyzer<'_> {
             .entity(entity)
             .ty
             .ok_or(Error::Invariant("member default without function type"))?;
-        let count = self.graph.entity(entity).defaults.len();
+        let count = self.graph.entity(entity).callable().defaults.len();
         for index in supplied..end.map_or(count, |end| end.min(count)) {
             let Some(default) = self.untyped_default_argument(entity, index) else {
                 continue;
@@ -388,8 +394,12 @@ impl Analyzer<'_> {
         let target = self.graph.types.function_parameter(ty, index)?;
         self.form_default(copy, target, frame, pattern.limit, entity, index)?;
         let count = self.graph.types.function_parameter_count(ty)?;
-        self.graph.entity_mut(entity).defaults.resize(count, None);
-        self.graph.entity_mut(entity).defaults[index] = Some(DefaultArgument {
+        self.graph
+            .entity_mut(entity)
+            .callable_mut()
+            .defaults
+            .resize(count, None);
+        self.graph.entity_mut(entity).callable_mut().defaults[index] = Some(DefaultArgument {
             expression: copy,
             template: None,
             ..default
@@ -497,15 +507,19 @@ mod tests {
             .keys()
             .chain(defaults.members.keys())
             .flat_map(|&entity| {
-                graph.entity(entity).defaults.iter().enumerate().filter_map(
-                    move |(index, default)| {
+                graph
+                    .entity(entity)
+                    .callable()
+                    .defaults
+                    .iter()
+                    .enumerate()
+                    .filter_map(move |(index, default)| {
                         default
                             .filter(|default| {
                                 graph.expression_facts.known(default.expression).is_some()
                             })
                             .map(|_| (entity, index))
-                    },
-                )
+                    })
             })
             .collect()
     }
@@ -580,7 +594,7 @@ mod tests {
                 assert!(defaults.constructor_roots.is_empty());
                 let &(entity, index) = formed.iter().next().unwrap();
                 let pattern = defaults.pattern(entity, index).unwrap();
-                let typed = graph.entity(entity).defaults[index].unwrap();
+                let typed = graph.entity(entity).callable().defaults[index].unwrap();
                 assert_ne!(pattern.expression, typed.expression);
                 assert!(graph.expression_facts.get(pattern.expression).is_err());
                 assert!(graph.expression_facts.get(typed.expression).is_ok());
@@ -621,7 +635,7 @@ mod tests {
             let pattern = patterns[count].unwrap();
             assert!(pattern.template.is_some());
             assert!(graph.expression_facts.get(pattern.expression).is_err());
-            let copy = graph.entity(entity).defaults[count].unwrap();
+            let copy = graph.entity(entity).callable().defaults[count].unwrap();
             assert!(copy.template.is_none());
             assert!(copy.expression.index() >= original);
             assert!(copies.insert(copy.expression));
@@ -664,10 +678,10 @@ mod tests {
             assert!(
                 graph
                     .expression_facts
-                    .get(function.defaults[0].unwrap().expression)
+                    .get(function.callable().defaults[0].unwrap().expression)
                     .is_err()
             );
-            let expression = function.defaults[index].unwrap().expression;
+            let expression = function.callable().defaults[index].unwrap().expression;
             assert!(expression.index() >= original);
             assert!(expressions.insert(expression));
             assert!(graph.expression_facts.get(expression).is_ok());
@@ -676,10 +690,11 @@ mod tests {
         for &entity in defaults.members.keys() {
             let function = graph.entity(entity);
             if function
+                .callable()
                 .member_function
                 .is_some_and(|member| member.kind == super::super::graph::MemberKind::Constructor)
             {
-                for default in function.defaults.iter().flatten() {
+                for default in function.callable().defaults.iter().flatten() {
                     assert!(graph.expression_facts.get(default.expression).is_err());
                 }
             }
@@ -716,10 +731,10 @@ mod tests {
         for &(entity, index) in &formed {
             assert_eq!(index, 2);
             let function = graph.entity(entity);
-            assert!(function.defaults[0].is_none());
-            let unused = function.defaults[1].unwrap();
+            assert!(function.callable().defaults[0].is_none());
+            let unused = function.callable().defaults[1].unwrap();
             assert!(graph.expression_facts.known(unused.expression).is_none());
-            let copy = function.defaults[2].unwrap().expression;
+            let copy = function.callable().defaults[2].unwrap().expression;
             assert!(copy.index() >= original_expressions);
             assert!(copies.insert(copy));
             assert!(graph.expression_facts.get(copy).is_ok());
@@ -727,7 +742,7 @@ mod tests {
                 .binding(graph.function_templates.primary(entity).unwrap())
                 .entity;
             primaries.insert(primary);
-            for pattern in graph.entity(primary).defaults.iter().flatten() {
+            for pattern in graph.entity(primary).callable().defaults.iter().flatten() {
                 assert!(pattern.template.is_some());
                 assert!(graph.expression_facts.get(pattern.expression).is_err());
                 assert_ne!(pattern.expression, copy);

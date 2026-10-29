@@ -220,19 +220,20 @@ impl Analyzer<'_> {
         let inherited = self.graph.inherited_constructors.root(function);
         let entity = self.graph.entity(function);
         if inherited.is_none()
-            && (entity.copy_origin == super::copy_construction::Origin::Implicit
+            && (entity.callable().copy_origin == super::copy_construction::Origin::Implicit
                 || entity
+                    .initialization()
                     .constructor
                     .is_some_and(|id| self.graph.constructors.get(id).binding.is_none()))
         {
             return Ok(());
         }
-        if self.graph.entity(destination).scope.is_none() {
+        if self.graph.entity(destination).context().scope.is_none() {
             return Ok(());
         }
         let acted = object.or(self.base_object).unwrap_or(destination);
-        if entity.template_head.is_none()
-            && let Some(key) = entity.member_function
+        if entity.context().template_head.is_none()
+            && let Some(key) = entity.callable().member_function
             && key.kind == MemberKind::Constructor
             && let Some(binding) = self.graph.member_function(MemberKey {
                 class: destination,
@@ -255,8 +256,14 @@ impl Analyzer<'_> {
             .primary(function)
             .or_else(|| inherited.and_then(|root| self.graph.function_templates.primary(root)))
             .map_or(function, |binding| self.graph.binding(binding).entity);
-        for index in 0..self.graph.entity(destination).declared_constructors.len() {
-            let binding = self.graph.entity(destination).declared_constructors[index];
+        for index in 0..self
+            .graph
+            .entity(destination)
+            .class()
+            .declared_constructors
+            .len()
+        {
+            let binding = self.graph.entity(destination).class().declared_constructors[index];
             if self.graph.binding(binding).entity == primary {
                 return self.check_declaration_member_access(
                     binding,
@@ -392,7 +399,7 @@ mod tests {
                     .graph
                     .entity(analyzer.graph.binding(binding).entity);
                 assert!(class.complete);
-                assert!(matches!(class.layout, LayoutState::NotStarted));
+                assert!(matches!(class.class().layout, LayoutState::NotStarted));
             }
         }
     }
@@ -445,8 +452,8 @@ mod tests {
                 .binding(analyzer.graph.own(global, name, Filter::Prefix).unwrap())
                 .entity
         });
-        let scope = analyzer.graph.entity(derived).scope.unwrap();
-        let binding = analyzer.graph.entity(base).declared_constructors[0];
+        let scope = analyzer.graph.entity(derived).context().scope.unwrap();
+        let binding = analyzer.graph.entity(base).class().declared_constructors[0];
         let function = analyzer.graph.binding(binding).entity;
         let location = crate::support::source::SourceOffset(0);
         let demands = analyzer.graph.root_demands.as_slice().len();
@@ -472,6 +479,13 @@ mod tests {
             .unwrap();
         assert_eq!(analyzer.base_object, Some(derived));
         assert_eq!(analyzer.graph.root_demands.as_slice().len(), demands);
-        assert!(analyzer.graph.entity(function).constructor.is_none());
+        assert!(
+            analyzer
+                .graph
+                .entity(function)
+                .initialization()
+                .constructor
+                .is_none()
+        );
     }
 }

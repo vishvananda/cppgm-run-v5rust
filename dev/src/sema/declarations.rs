@@ -209,6 +209,7 @@ impl Analyzer<'_> {
             {
                 self.graph
                     .entity_mut(self.graph.binding(binding).entity)
+                    .callable_mut()
                     .function_definition = Some(id);
             }
         }
@@ -244,6 +245,7 @@ impl Analyzer<'_> {
             let target = self
                 .graph
                 .entity(binding.entity)
+                .context()
                 .scope
                 .ok_or(Error::Invariant("namespace without scope"))?;
             if inline && !self.graph.scope(target).is_inline {
@@ -288,7 +290,7 @@ impl Analyzer<'_> {
         if name.is_none() {
             self.graph.scope_mut(scope).anonymous_namespace = Some(target);
         }
-        self.graph.entity_mut(entity).scope = Some(target);
+        self.graph.entity_mut(entity).context_mut().scope = Some(target);
         self.graph.add_binding(
             scope,
             None,
@@ -317,11 +319,11 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         let target = self.lookup(target, scope, Filter::Namespace)?;
         let binding = self.graph.binding(target);
-        let target_scope = self.graph.entity(binding.entity).scope;
+        let target_scope = self.graph.entity(binding.entity).context().scope;
         if let Some(existing) = self.graph.own(scope, name, Filter::Ordinary) {
             let existing = self.graph.binding(existing);
             if existing.kind == BindingKind::NamespaceAlias
-                && self.graph.entity(existing.entity).scope == target_scope
+                && self.graph.entity(existing.entity).context().scope == target_scope
             {
                 return Ok(());
             }
@@ -333,7 +335,7 @@ impl Analyzer<'_> {
         let entity = self
             .graph
             .add_entity(None, Some(name), Keyword::Namespace)?;
-        self.graph.entity_mut(entity).scope = target_scope;
+        self.graph.entity_mut(entity).context_mut().scope = target_scope;
         self.graph.add_binding(
             scope,
             None,
@@ -365,6 +367,7 @@ impl Analyzer<'_> {
             let target = self
                 .graph
                 .entity(self.graph.binding(binding).entity)
+                .context()
                 .scope
                 .ok_or(Error::Invariant("namespace directive without scope"))?;
             self.graph.add_edge(scope, target, false)?;
@@ -559,7 +562,8 @@ impl Analyzer<'_> {
             let scope = self.graph.scope(id);
             scope.kind == ScopeKind::Class
                 && scope.owner.is_some_and(|class| {
-                    self.graph.entity(class).base_dependency == ast::BaseDependency::Dependent
+                    self.graph.entity(class).class().base_dependency
+                        == ast::BaseDependency::Dependent
                 })
         })
     }
@@ -587,7 +591,12 @@ impl Analyzer<'_> {
         let is_template = |id| {
             let binding = self.graph.binding(id);
             binding.kind == BindingKind::Type
-                && self.graph.entity(binding.entity).template_head.is_some()
+                && self
+                    .graph
+                    .entity(binding.entity)
+                    .context()
+                    .template_head
+                    .is_some()
         };
         let conflict = if matches!(binding.kind, BindingKind::Type | BindingKind::Alias) {
             is_template(target) && self.using_value_binding(scope, name.into()).is_some()
@@ -634,9 +643,14 @@ impl Analyzer<'_> {
                     binding
                         .ty
                         .ok_or(Error::Invariant("function using without type"))?,
-                    self.graph.entity(binding.entity).template_head,
+                    self.graph.entity(binding.entity).context().template_head,
                 )?
-                && (self.graph.entity(earlier.entity).template_head.is_none()
+                && (self
+                    .graph
+                    .entity(earlier.entity)
+                    .context()
+                    .template_head
+                    .is_none()
                     || self.graph.entity(earlier.entity).home == Some(scope))
             {
                 if self.graph.scope(scope).kind == ScopeKind::Class
@@ -939,15 +953,10 @@ impl Analyzer<'_> {
         }
         self.record_data_member(binding, specs, &info, init, home)?;
         if definition {
-            if self.graph.entity(entity).defined {
-                let location = self.tree.declarators.get(init.declarator).location;
-                return Err(Error::at(location, "redefinition of a variable"));
-            }
-            self.graph.entity_mut(entity).defined = true;
-            self.graph.entity_mut(entity).variable_definition = Some(init.declarator);
+            self.mark_variable_definition(entity, init.declarator)?;
         }
-        let member =
-            self.graph.entity(entity).data_member == Some(super::graph::DataMemberKind::Instance);
+        let member = self.graph.entity(entity).object().data_member
+            == Some(super::graph::DataMemberKind::Instance);
         self.graph.entity_mut(entity).constexpr |= specs.constexpr;
         if specs.mutability == super::graph::Mutability::Mutable {
             self.graph.entity_mut(entity).mutability = super::graph::Mutability::Mutable;
@@ -1001,6 +1010,22 @@ impl Analyzer<'_> {
         if storage_root {
             self.request_storage_layout(entity, location)?;
         }
+        Ok(())
+    }
+    fn mark_variable_definition(
+        &mut self,
+        entity: super::graph::EntityId,
+        declarator: ast::DeclaratorId,
+    ) -> Result<(), Error> {
+        if self.graph.entity(entity).defined {
+            let location = self.tree.declarators.get(declarator).location;
+            return Err(Error::at(location, "redefinition of a variable"));
+        }
+        self.graph.entity_mut(entity).defined = true;
+        self.graph
+            .entity_mut(entity)
+            .object_mut()
+            .variable_definition = Some(declarator);
         Ok(())
     }
     fn publish_object_declaration(
@@ -1344,7 +1369,8 @@ impl Analyzer<'_> {
         {
             self.graph.entity_mut(entity).inline = specs.inline;
         }
-        if kind == BindingKind::Function && self.graph.entity(entity).function.is_none() {
+        if kind == BindingKind::Function && self.graph.entity(entity).callable().function.is_none()
+        {
             self.initialize_linkage(
                 entity,
                 specs,
@@ -1442,6 +1468,7 @@ impl Analyzer<'_> {
                         && self
                             .graph
                             .entity(binding.entity)
+                            .context()
                             .template_head
                             .is_some_and(|old| self.same_template_shape(head, old))
                 }) && self.same_function_parameters(old, ty)?;
@@ -1472,7 +1499,10 @@ impl Analyzer<'_> {
         let old = binding
             .ty
             .ok_or(Error::Invariant("function without type"))?;
-        match (head, self.graph.entity(binding.entity).template_head) {
+        match (
+            head,
+            self.graph.entity(binding.entity).context().template_head,
+        ) {
             (Some(a), Some(b)) => Ok(self.same_template_shape(a, b)
                 && self.graph.types.declared_type(old)? == self.graph.types.declared_type(ty)?),
             (None, None) => self.same_function_parameters(old, ty),
@@ -1581,6 +1611,7 @@ impl Analyzer<'_> {
             && self
                 .graph
                 .entity(self.graph.binding(binding).entity)
+                .callable()
                 .function
                 .is_some_and(|props| props.is_static)
         {
@@ -1665,7 +1696,13 @@ impl Analyzer<'_> {
             } else {
                 "elaborated type specifier names a different kind of type"
             })
-        } else if self.graph.entity(binding.entity).enumeration.is_some() {
+        } else if self
+            .graph
+            .entity(binding.entity)
+            .enumerated()
+            .enumeration
+            .is_some()
+        {
             Some(
                 if lone && matches!(context, ElaboratedContext::Declaration) {
                     "class name redeclared as a different kind of type"
@@ -1859,7 +1896,7 @@ impl Analyzer<'_> {
         let Some(name) = node.name else {
             let entity = self.new_class(node.key, None, scope)?;
             self.class_abi_tags(entity, node.attributes, false, false, node.location)?;
-            self.graph.entity_mut(entity).anonymous_class =
+            self.graph.entity_mut(entity).class_mut().anonymous_class =
                 Some(super::anonymous_types::AnonymousClass::Pending(node.tokens));
             return self.define_class(node, entity, scope, scope);
         };
@@ -1946,7 +1983,13 @@ impl Analyzer<'_> {
                     },
                 ));
             }
-            if self.graph.entity(binding.entity).enumeration.is_some() {
+            if self
+                .graph
+                .entity(binding.entity)
+                .enumerated()
+                .enumeration
+                .is_some()
+            {
                 return Err(Error::at(
                     qualified_name.location,
                     if prefix.is_some() {
@@ -2035,12 +2078,12 @@ impl Analyzer<'_> {
         let class = self
             .graph
             .add_scope(ScopeKind::Class, parent, print, name)?;
-        self.graph.entity_mut(entity).scope = Some(class);
+        self.graph.entity_mut(entity).context_mut().scope = Some(class);
         self.graph.scope_mut(class).owner = Some(entity);
         self.class_layout_attributes(entity, node.attributes, parent, false)?;
-        self.graph.entity_mut(entity).class_packing = node.packing;
+        self.graph.entity_mut(entity).class_mut().class_packing = node.packing;
         self.graph.entity_mut(entity).defined = true;
-        self.graph.entity_mut(entity).derivation = if node.final_specifier {
+        self.graph.entity_mut(entity).class_mut().derivation = if node.final_specifier {
             super::inheritance::Derivation::Final
         } else {
             super::inheritance::Derivation::Allowed
@@ -2084,7 +2127,15 @@ impl Analyzer<'_> {
             self.complete_virtual_members(entity, node.location)?;
             self.complete_virtual_layout(entity, node.location)?;
         }
-        if self.template_depth == 0 && self.graph.entity(entity).storage_attributes.alignment != 0 {
+        if self.template_depth == 0
+            && self
+                .graph
+                .entity(entity)
+                .attributes()
+                .storage_attributes
+                .alignment
+                != 0
+        {
             self.class_layout(entity, node.location)?;
         }
         if self.class_depth == 0 {

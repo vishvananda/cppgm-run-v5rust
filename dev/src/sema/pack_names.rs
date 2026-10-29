@@ -40,7 +40,7 @@ impl Analyzer<'_> {
             let Some(id) = binding else { return Ok(true) };
             let binding = self.graph.binding(id);
             let entity = self.graph.entity(binding.entity);
-            if entity.template_parameter.is_some() {
+            if entity.context().template_parameter.is_some() {
                 return Ok(true);
             }
             let owner = self.graph.binding_scope(id);
@@ -53,7 +53,8 @@ impl Analyzer<'_> {
                 BindingKind::Variable => binding.ty.is_none_or(|ty| {
                     self.exception_dependent_type(ty)
                         || member
-                            && (entity.data_member == Some(super::graph::DataMemberKind::Instance)
+                            && (entity.object().data_member
+                                == Some(super::graph::DataMemberKind::Instance)
                                 || self.graph.types.get(ty).cv.0 & super::types::Cv::CONST.0 != 0)
                 }),
                 BindingKind::Namespace | BindingKind::NamespaceAlias => false,
@@ -163,7 +164,7 @@ impl Analyzer<'_> {
                 .binding
                 .ok_or(Error::Invariant("definition pack without binding"))?;
             let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if entity.template_parameter.is_none() {
+            if entity.context().template_parameter.is_none() {
                 return Err(Error::Invariant("definition pack without parameter"));
             }
             let ty = entity
@@ -244,6 +245,7 @@ impl PackExpander for DefinitionPacks<'_> {
             DefinitionKind::Template => self
                 .graph
                 .entity(binding.entity)
+                .context()
                 .template_parameter
                 .is_some_and(super::templates::ParameterInfo::is_pack)
                 .then_some(0),

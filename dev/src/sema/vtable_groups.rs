@@ -157,6 +157,7 @@ impl VtableGroup {
             };
             let edge = graph
                 .entity(link)
+                .class()
                 .bases
                 .iter()
                 .position(|base| !base.is_virtual && base.class == next)
@@ -200,7 +201,7 @@ impl Graph {
             return Ok(());
         }
         let primary = self.lower_virtual_class(class)?.primary;
-        let secondary = self.entity(class).bases.iter().any(|edge| {
+        let secondary = self.entity(class).class().bases.iter().any(|edge| {
             self.lower_polymorphic(edge.class)
                 && (Some(edge.class) != primary || self.virtuals.groups.contains_key(&edge.class))
         });
@@ -208,8 +209,8 @@ impl Graph {
             return Ok(());
         }
         self.demand_virtual_slots(class)?;
-        for index in 0..self.entity(class).bases.len() {
-            let base = self.entity(class).bases[index].class;
+        for index in 0..self.entity(class).class().bases.len() {
+            let base = self.entity(class).class().bases[index].class;
             if self.lower_polymorphic(base) {
                 self.demand_virtual_chain(base, Some(base) != primary)?;
             }
@@ -217,7 +218,7 @@ impl Graph {
         let mut group = VtableGroup::default();
         let root = group.push(class, SegmentId(0), None, false)?;
         group.slots(self, Some(class), class, root)?;
-        for (index, edge) in self.entity(class).bases.iter().enumerate() {
+        for (index, edge) in self.entity(class).class().bases.iter().enumerate() {
             if !self.lower_polymorphic(edge.class) {
                 continue;
             }
@@ -264,7 +265,7 @@ impl Graph {
             let (owner, index) = segment
                 .edge
                 .ok_or(Error::Invariant("segment without base edge"))?;
-            let offset = self.entity(owner).bases[index as usize]
+            let offset = self.entity(owner).class().bases[index as usize]
                 .offset
                 .ok_or(Error::Invariant("segment before layout"))?;
             offsets.push(offsets[segment.parent.index()].wrapping_add(offset));
@@ -307,7 +308,7 @@ mod tests {
             .entity;
         check(&graph, class);
         assert!(matches!(
-            graph.entity(class).layout,
+            graph.entity(class).class().layout,
             LayoutState::NotStarted
         ));
         assert!(graph.root_demands.as_slice().is_empty());
@@ -409,7 +410,7 @@ mod tests {
             let super::super::lowering::TypeView::Class(result) = graph.lower_type(result).unwrap() else {
                 panic!("covariant class");
             };
-            assert!(matches!(graph.entity(result).layout, LayoutState::NotStarted));
+            assert!(matches!(graph.entity(result).class().layout, LayoutState::NotStarted));
         });
     }
 

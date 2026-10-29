@@ -391,6 +391,7 @@ impl Analyzer<'_> {
         let variable = self
             .graph
             .entity(entity)
+            .object()
             .variable
             .ok_or(Error::Invariant("constant local without variable facts"))?;
         if variable.is_extern {
@@ -417,7 +418,7 @@ impl Analyzer<'_> {
         }
         let place = self.allocate_constant_object(ty, None, location)?;
         self.constexpr_frames.bind(entity, place)?;
-        let constructor = self.graph.entity(entity).constructor;
+        let constructor = self.graph.entity(entity).initialization().constructor;
         self.construct_constant_object(place, initializer, constructor, scope, location)?;
         Ok(())
     }

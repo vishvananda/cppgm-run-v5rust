@@ -114,8 +114,8 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         let mut tags = Vec::new();
         self.collect_abi_tags(list, on_class, &mut tags, None)?;
-        let defined = self.graph.entity(entity).enumeration.is_none()
-            && self.graph.entity(entity).scope.is_some();
+        let defined = self.graph.entity(entity).enumerated().enumeration.is_none()
+            && self.graph.entity(entity).context().scope.is_some();
         if !(tags.is_empty() || on_class && defined) {
             self.declare_abi_tags(Owner::Entity(entity), tags, redeclaration, location)?;
         }
@@ -161,7 +161,8 @@ impl Analyzer<'_> {
         }
         let location = self.tree.declarators.get(declarator).location;
         if !matches!(kind, BindingKind::Function | BindingKind::Variable)
-            || self.graph.entity(entity).data_member == Some(super::graph::DataMemberKind::Instance)
+            || self.graph.entity(entity).object().data_member
+                == Some(super::graph::DataMemberKind::Instance)
         {
             return Err(Error::at(
                 location,

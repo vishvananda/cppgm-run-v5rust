@@ -232,8 +232,8 @@ impl LookupBases {
             let Some(class) = node.owner.filter(|_| node.kind == ScopeKind::Class) else {
                 continue;
             };
-            for edge in &graph.entity(class).bases {
-                let Some(scope) = graph.entity(edge.class).scope else {
+            for edge in &graph.entity(class).class().bases {
+                let Some(scope) = graph.entity(edge.class).context().scope else {
                     continue;
                 };
                 if scope == base && (relation == BaseRelation::Derived || edge.is_virtual) {
@@ -326,7 +326,8 @@ impl<'a> DeclarationLookup<'a> {
                         && a.ty == b.ty)
                     && !(matches!(a.kind, BindingKind::Namespace | BindingKind::NamespaceAlias)
                         && matches!(b.kind, BindingKind::Namespace | BindingKind::NamespaceAlias)
-                        && self.graph.entity(a.entity).scope == self.graph.entity(b.entity).scope)
+                        && self.graph.entity(a.entity).context().scope
+                            == self.graph.entity(b.entity).context().scope)
                 {
                     first.ambiguous = true;
                     first.injected_template = false;
@@ -409,7 +410,7 @@ impl<'a> DeclarationLookup<'a> {
         let skips =
             unqualified
                 && self.graph.scope(scope).owner.is_some_and(|owner| {
-                    self.graph.entity(owner).bases.iter().any(|base| {
+                    self.graph.entity(owner).class().bases.iter().any(|base| {
                         base.dependency == crate::syntax::ast::BaseDependency::Dependent
                     })
                 });
@@ -431,7 +432,7 @@ impl<'a> DeclarationLookup<'a> {
                 .scope(*current)
                 .owner
                 .ok_or(Error::Invariant("class lookup without owner"))?;
-            if let Some(edge) = self.graph.entity(owner).bases.get(*next) {
+            if let Some(edge) = self.graph.entity(owner).class().bases.get(*next) {
                 // Only direct dependent bases of the queried class are skipped;
                 // a fixed base's members use ordinary qualified base lookup.
                 if unqualified
@@ -444,6 +445,7 @@ impl<'a> DeclarationLookup<'a> {
                 let base = self
                     .graph
                     .entity(edge.class)
+                    .context()
                     .scope
                     .ok_or(Error::Invariant("base without scope"))?;
                 let found = if let Some(&cached) = memo.get(&base) {
@@ -789,7 +791,7 @@ impl Analyzer<'_> {
             && filter != Filter::Namespace
             && let Some(class) = self.graph.scope(scope).owner
             && self.graph.scope(scope).kind == ScopeKind::Class
-            && self.graph.entity(class).base_dependency
+            && self.graph.entity(class).class().base_dependency
                 == crate::syntax::ast::BaseDependency::Dependent
             && let Some(name) = key.identifier()
         {
@@ -814,7 +816,7 @@ impl Analyzer<'_> {
             && filter != Filter::Namespace
             && self.graph.scope(scope).kind == ScopeKind::Class
             && let Some(class) = self.graph.scope(scope).owner
-            && self.graph.entity(class).base_dependency
+            && self.graph.entity(class).class().base_dependency
                 == crate::syntax::ast::BaseDependency::Dependent
             && let Some(name) = key.identifier()
         {
@@ -950,7 +952,7 @@ impl Analyzer<'_> {
                 let ty = self.decltype_type(operand, scope)?;
                 if self.graph.dependent_type(ty)
                     && !matches!(self.graph.types.get(ty).kind, TypeKind::Class(class)
-                        if self.graph.entity(class).scope.is_some())
+                        if self.graph.entity(class).context().scope.is_some())
                 {
                     prefix = Some(Prefix::Dependent(ty));
                     continue;
@@ -1066,6 +1068,7 @@ impl Analyzer<'_> {
             BindingKind::Namespace | BindingKind::NamespaceAlias => self
                 .graph
                 .entity(binding.entity)
+                .context()
                 .scope
                 .map(Prefix::Scope)
                 .ok_or(Error::Invariant("namespace qualifier without scope")),
@@ -1089,7 +1092,7 @@ impl Analyzer<'_> {
     ) -> Result<Prefix, Error> {
         match self.graph.types.get(ty).kind {
             TypeKind::Class(class) => {
-                if let Some(scope) = self.graph.entity(class).scope {
+                if let Some(scope) = self.graph.entity(class).context().scope {
                     return Ok(Prefix::Scope(scope));
                 }
                 if self.graph.dependent_type(ty) {
@@ -1104,6 +1107,7 @@ impl Analyzer<'_> {
                 }
                 self.graph
                     .entity(class)
+                    .context()
                     .scope
                     .map(Prefix::Scope)
                     .ok_or(Error::Invariant("completed qualifier without scope"))
@@ -1111,6 +1115,7 @@ impl Analyzer<'_> {
             TypeKind::Enum(enumeration) => self
                 .graph
                 .entity(enumeration)
+                .context()
                 .scope
                 .map(Prefix::Scope)
                 .ok_or(Error::Invariant("enumeration qualifier without scope")),
@@ -1327,6 +1332,7 @@ mod tests {
                 analyzer
                     .graph
                     .entity(analyzer.graph.binding(binding).entity)
+                    .context()
                     .scope
                     .unwrap(),
             );
@@ -1424,7 +1430,7 @@ mod tests {
         else {
             panic!("class object");
         };
-        let scope = analyzer.graph.entity(class).scope.unwrap();
+        let scope = analyzer.graph.entity(class).context().scope.unwrap();
         let word = analyzer.identifiers.intern(b"word").unwrap();
         let qualified = analyzer
             .class_lookup_in(scope, word.into(), Filter::Prefix, false)
@@ -1508,7 +1514,7 @@ struct Undemanded : Lazy<int> {};
                 .graph
                 .binding(analyzer.graph.own(global, name, Filter::Prefix).unwrap())
                 .entity;
-            let scope = analyzer.graph.entity(class).scope.unwrap();
+            let scope = analyzer.graph.entity(class).context().scope.unwrap();
             let result = analyzer
                 .class_lookup(scope, key.into(), Filter::Prefix)
                 .unwrap();
@@ -1516,7 +1522,7 @@ struct Undemanded : Lazy<int> {};
             assert_eq!(selected_type.get_or_insert(ty), &ty);
             assert!(result.functions.as_slice().is_empty());
             assert!(matches!(
-                analyzer.graph.entity(class).layout,
+                analyzer.graph.entity(class).class().layout,
                 LayoutState::NotStarted
             ));
         }
@@ -1526,7 +1532,7 @@ struct Undemanded : Lazy<int> {};
                 .graph
                 .binding(analyzer.graph.own(global, name, Filter::Prefix).unwrap())
                 .entity;
-            let scope = analyzer.graph.entity(class).scope.unwrap();
+            let scope = analyzer.graph.entity(class).context().scope.unwrap();
             let result = analyzer
                 .class_lookup_in(scope, key.into(), Filter::Prefix, false)
                 .unwrap();
@@ -1543,7 +1549,7 @@ struct Undemanded : Lazy<int> {};
             .graph
             .binding(analyzer.graph.own(global, name, Filter::Prefix).unwrap())
             .entity;
-        let scope = analyzer.graph.entity(class).scope.unwrap();
+        let scope = analyzer.graph.entity(class).context().scope.unwrap();
         let name = analyzer.identifiers.intern(b"f").unwrap();
         let result = analyzer
             .class_lookup(scope, name.into(), Filter::Ordinary)
@@ -1554,7 +1560,7 @@ struct Undemanded : Lazy<int> {};
             .graph
             .binding(analyzer.graph.own(global, name, Filter::Prefix).unwrap())
             .entity;
-        let scope = analyzer.graph.entity(class).scope.unwrap();
+        let scope = analyzer.graph.entity(class).context().scope.unwrap();
         let key = analyzer.identifiers.intern(b"f").unwrap();
         let imported = analyzer
             .class_lookup(scope, key.into(), Filter::Ordinary)
@@ -1565,7 +1571,7 @@ struct Undemanded : Lazy<int> {};
             .binding(analyzer.graph.own(global, name, Filter::Prefix).unwrap())
             .entity;
         let original = analyzer.own_lookup(
-            analyzer.graph.entity(class).scope.unwrap(),
+            analyzer.graph.entity(class).context().scope.unwrap(),
             key.into(),
             Filter::Ordinary,
         );
@@ -1611,7 +1617,7 @@ struct Undemanded : Lazy<int> {};
                 .graph
                 .binding(analyzer.graph.own(global, name, Filter::Prefix).unwrap())
                 .entity;
-            let scope = analyzer.graph.entity(class).scope.unwrap();
+            let scope = analyzer.graph.entity(class).context().scope.unwrap();
             let result = analyzer
                 .qualified_declaration_result(scope, key.into(), Filter::Prefix)
                 .unwrap();
@@ -1623,7 +1629,7 @@ struct Undemanded : Lazy<int> {};
                 let entity = analyzer.graph.binding(binding).entity;
                 assert_eq!(
                     analyzer.graph.binding_scope(binding),
-                    analyzer.graph.entity(entity).scope.unwrap()
+                    analyzer.graph.entity(entity).context().scope.unwrap()
                 );
                 assert_eq!(
                     analyzer
@@ -1691,7 +1697,7 @@ struct Undemanded : Lazy<int> {};
         assert!(matches!(graph.types.get(facts.ty).kind, TypeKind::Class(owner) if owner == class));
         assert!(facts.conversion.is_none());
         assert!(matches!(
-            graph.entity(class).layout,
+            graph.entity(class).class().layout,
             LayoutState::NotStarted
         ));
         let make = graph.call_binding(operand).unwrap();
@@ -1725,12 +1731,12 @@ struct Undemanded : Lazy<int> {};
                     .unwrap(),
             )
             .entity;
-        let outer = graph.entity(namespace).scope.unwrap();
+        let outer = graph.entity(namespace).context().scope.unwrap();
         let inline = cursor.intern_name(b"I").unwrap();
         let inline = graph
             .binding(graph.own(outer, inline, Filter::Namespace).unwrap())
             .entity;
-        let inner = graph.entity(inline).scope.unwrap();
+        let inner = graph.entity(inline).context().scope.unwrap();
         let class = cursor.intern_name(b"X").unwrap();
         let forward = graph.own(inner, class, Filter::Elaborated).unwrap();
         let complete = graph.own(outer, class, Filter::Elaborated).unwrap();
@@ -1738,12 +1744,14 @@ struct Undemanded : Lazy<int> {};
         assert_eq!(entity, graph.binding(complete).entity);
         assert_eq!(graph.entity(entity).home, Some(inner));
         assert_eq!(
-            graph.scope(graph.entity(entity).scope.unwrap()).parent,
+            graph
+                .scope(graph.entity(entity).context().scope.unwrap())
+                .parent,
             Some(outer)
         );
         assert!(graph.entity(entity).complete);
         assert!(matches!(
-            graph.entity(entity).layout,
+            graph.entity(entity).class().layout,
             LayoutState::NotStarted
         ));
     }
@@ -1765,14 +1773,14 @@ struct Undemanded : Lazy<int> {};
                     .unwrap(),
             )
             .entity;
-        let outer = graph.entity(namespace).scope.unwrap();
+        let outer = graph.entity(namespace).context().scope.unwrap();
         let class_name = cursor.intern_name(b"X").unwrap();
         for (name, completed) in [(b"I".as_slice(), true), (b"J".as_slice(), false)] {
             let name = cursor.intern_name(name).unwrap();
             let namespace = graph
                 .binding(graph.own(outer, name, Filter::Namespace).unwrap())
                 .entity;
-            let home = graph.entity(namespace).scope.unwrap();
+            let home = graph.entity(namespace).context().scope.unwrap();
             let class = graph
                 .binding(graph.own(home, class_name, Filter::Elaborated).unwrap())
                 .entity;

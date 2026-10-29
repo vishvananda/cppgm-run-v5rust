@@ -222,7 +222,7 @@ impl Analyzer<'_> {
         for (parameter, is_raw) in [(cooked, false), (raw, true)] {
             for &binding in found.functions.as_slice() {
                 let candidate = self.graph.entity(self.graph.binding(binding).entity);
-                if candidate.template_head.is_some() {
+                if candidate.context().template_head.is_some() {
                     continue;
                 }
                 let ty = candidate
@@ -327,6 +327,7 @@ impl Analyzer<'_> {
             let Some(head) = self
                 .graph
                 .entity(self.graph.binding(primary).entity)
+                .context()
                 .template_head
             else {
                 continue;
@@ -336,6 +337,7 @@ impl Analyzer<'_> {
                 || !self
                     .graph
                     .entity(parameters[0])
+                    .context()
                     .template_parameter
                     .is_some_and(|info| {
                         info.is_pack()

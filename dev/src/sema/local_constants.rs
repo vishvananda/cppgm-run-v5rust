@@ -42,7 +42,7 @@ impl Analyzer<'_> {
         }
         // Declaration-time evaluation already owns these completed values.
         // Publishing the local's image must not run that evaluation again.
-        let completed = match node.constant {
+        let completed = match node.object().constant {
             ConstantState::Value(value) => Some(self.static_integer_value(value)),
             ConstantState::Floating(value) => {
                 self.static_floating_constant(self.graph.floating_constants.get(value))?
@@ -53,7 +53,10 @@ impl Analyzer<'_> {
             _ => None,
         };
         if let Some(value) = completed {
-            self.graph.entity_mut(entity).static_initializer = Some(value);
+            self.graph
+                .entity_mut(entity)
+                .initialization_mut()
+                .static_initializer = Some(value);
             return Ok(());
         }
         if node.constexpr

@@ -182,7 +182,7 @@ impl Analyzer<'_> {
         scope: ScopeId,
     ) -> Result<Option<ExprFacts>, Error> {
         let entity = self.graph.binding(binding).entity;
-        if self.graph.entity(entity).data_member != Some(DataMemberKind::Instance) {
+        if self.graph.entity(entity).object().data_member != Some(DataMemberKind::Instance) {
             return Ok(None);
         }
         let location = self.tree.expressions.get(operand).location;
@@ -334,7 +334,7 @@ impl super::graph::Graph {
             TypeKind::MemberPointer { element, .. } => {
                 !matches!(self.types.get(element).kind, TypeKind::Function { .. })
             }
-            TypeKind::Class(class) => match self.entity(class).layout {
+            TypeKind::Class(class) => match self.entity(class).class().layout {
                 super::layout::LayoutState::Value {
                     contains_data_member_pointer,
                     ..
@@ -350,7 +350,7 @@ impl super::graph::Graph {
         class: super::graph::EntityId,
         extent: ObjectExtent,
     ) -> impl Iterator<Item = Result<NullSubobject, Error>> + '_ {
-        let bases = self.entity(class).bases.iter().filter_map(|edge| {
+        let bases = self.entity(class).class().bases.iter().filter_map(|edge| {
             (|| -> Result<_, Error> {
                 if edge.is_virtual {
                     return Ok(None);
@@ -373,17 +373,18 @@ impl super::graph::Graph {
         let count = if self.entity(class).key == crate::lex::vocabulary::Keyword::Union {
             1
         } else {
-            self.entity(class).members.len()
+            self.entity(class).class().members.len()
         };
         let members = self
             .entity(class)
+            .class()
             .members
             .iter()
             .take(count)
             .filter_map(|&member| {
                 (|| -> Result<_, Error> {
                     let ty = self.lower_entity_type(member)?;
-                    if self.entity(member).bit_field.is_some()
+                    if self.entity(member).object().bit_field.is_some()
                         || !self.lower_holds_data_member_pointer(ty)?
                     {
                         return Ok(None);
@@ -580,7 +581,7 @@ mod tests {
             let binding = graph.own(graph.global, name, Filter::Prefix).unwrap();
             assert_eq!(
                 matches!(
-                    graph.entity(graph.binding(binding).entity).layout,
+                    graph.entity(graph.binding(binding).entity).class().layout,
                     LayoutState::NotStarted
                 ),
                 !evaluated,

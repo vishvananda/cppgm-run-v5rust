@@ -114,17 +114,18 @@ impl Analyzer<'_> {
                 crate::lex::vocabulary::Keyword::Int,
             )?;
             self.graph.entity_mut(entity).home = Some(home);
-            self.graph.entity_mut(entity).function = Some(super::graph::FunctionProperties {
-                effects: super::graph::FunctionEffect::Default,
-                no_inline: false,
-                returns: super::graph::FunctionReturn::MayReturn,
-                internal_linkage: false,
-                language: super::linkage::Language::Cpp,
-                denotes: None,
-                is_static: false,
-                special: key.special(),
-                allocation: None,
-            });
+            self.graph.entity_mut(entity).callable_mut().function =
+                Some(super::graph::FunctionProperties {
+                    effects: super::graph::FunctionEffect::Default,
+                    no_inline: false,
+                    returns: super::graph::FunctionReturn::MayReturn,
+                    internal_linkage: false,
+                    language: super::linkage::Language::Cpp,
+                    denotes: None,
+                    is_static: false,
+                    special: key.special(),
+                    allocation: None,
+                });
             return self.graph.add_hidden_binding_in(
                 home,
                 super::graph::Binding {
@@ -427,7 +428,7 @@ impl Analyzer<'_> {
     // analyzer_access.cpp::Befriending: grants to a template name apply to
     // every specialization, while a grant to one specialization stays local.
     fn friend_entities(&self, entity: EntityId) -> [Option<EntityId>; 2] {
-        let primary = if self.graph.entity(entity).function.is_some() {
+        let primary = if self.graph.entity(entity).callable().function.is_some() {
             self.graph
                 .function_templates
                 .primary(entity)
@@ -549,7 +550,7 @@ mod tests {
         assert!(analyzer.graph.friendships.grants(owner, function));
         assert!(!analyzer.graph.friendships.grants(owner, reader));
         assert!(!analyzer.graph.friendships.grants(owner, other));
-        let owner_scope = analyzer.graph.entity(owner).scope.unwrap();
+        let owner_scope = analyzer.graph.entity(owner).context().scope.unwrap();
         assert!(
             analyzer
                 .graph
@@ -572,10 +573,10 @@ mod tests {
             [origin]
         );
         assert!(!analyzer.graph.function_templates.body_demanded(function));
-        assert!(analyzer.graph.entity(reader).scope.is_none());
-        assert!(analyzer.graph.entity(other).scope.is_none());
+        assert!(analyzer.graph.entity(reader).context().scope.is_none());
+        assert!(analyzer.graph.entity(other).context().scope.is_none());
         assert!(analyzer.complete_class(reader).unwrap());
-        let scope = analyzer.graph.entity(reader).scope.unwrap();
+        let scope = analyzer.graph.entity(reader).context().scope.unwrap();
         let expressions = analyzer.tree.expressions.mark();
         let bindings = analyzer.graph.binding_limit();
         for _ in 0..3 {
@@ -585,7 +586,7 @@ mod tests {
         assert_eq!(analyzer.tree.expressions.mark(), expressions);
         assert_eq!(analyzer.graph.binding_limit(), bindings);
         assert!(matches!(
-            analyzer.graph.entity(reader).layout,
+            analyzer.graph.entity(reader).class().layout,
             super::super::layout::LayoutState::NotStarted
         ));
         assert!(analyzer.graph.root_demands.as_slice().is_empty());
@@ -637,7 +638,7 @@ mod tests {
             assert_eq!(graph.friendships.grants(class, char_function), char_granted);
             assert!(!graph.friendships.grants(class, primary));
             assert!(graph.friendships.functions(class, f.into()).is_empty());
-            let home = graph.entity(class).scope.unwrap();
+            let home = graph.entity(class).context().scope.unwrap();
             assert!(graph.own(home, f, Filter::Ordinary).is_none());
             assert!(graph.functions_at(home, f.into()).next().is_none());
         }
@@ -648,17 +649,36 @@ mod tests {
                 Some(primaries[0])
             );
             assert!(!graph.entity(function).defined);
-            assert!(graph.entity(function).scope.is_none());
-            assert!(graph.entity(function).function_definition.is_none());
-            assert_eq!(graph.entity(function).defaults.len(), 2);
-            assert!(graph.entity(function).defaults[0].is_none());
-            assert_eq!(
-                graph.entity(function).defaults[1].unwrap().expression,
-                graph.entity(primary).defaults[1].unwrap().expression
+            assert!(graph.entity(function).context().scope.is_none());
+            assert!(
+                graph
+                    .entity(function)
+                    .callable()
+                    .function_definition
+                    .is_none()
             );
-            assert!(graph.entity(function).demands.as_slice().is_empty());
+            assert_eq!(graph.entity(function).callable().defaults.len(), 2);
+            assert!(graph.entity(function).callable().defaults[0].is_none());
+            assert_eq!(
+                graph.entity(function).callable().defaults[1]
+                    .unwrap()
+                    .expression,
+                graph.entity(primary).callable().defaults[1]
+                    .unwrap()
+                    .expression
+            );
+            assert!(
+                graph
+                    .entity(function)
+                    .callable()
+                    .demands
+                    .as_slice()
+                    .is_empty()
+            );
         }
-        let default = graph.entity(primary).defaults[1].unwrap().expression;
+        let default = graph.entity(primary).callable().defaults[1]
+            .unwrap()
+            .expression;
         assert!(graph.expression_facts.get(default).is_err());
         assert!(!graph.function_templates.body_demanded(primary));
         assert!(graph.root_demands.as_slice().is_empty());
@@ -704,7 +724,14 @@ mod tests {
                 .entity;
             for binding in analyzer.graph.functions_at(global, f.into()) {
                 let entity = analyzer.graph.binding(binding).entity;
-                assert!(analyzer.graph.entity(entity).template_head.is_some());
+                assert!(
+                    analyzer
+                        .graph
+                        .entity(entity)
+                        .context()
+                        .template_head
+                        .is_some()
+                );
                 assert!(!analyzer.graph.friendships.grants(class, entity));
             }
             assert!(analyzer.graph.friendships.edges.is_empty());
@@ -763,10 +790,10 @@ mod tests {
         let TypeKind::Function { .. } = analyzer.graph.types.get(entity.ty.unwrap()).kind else {
             panic!("expected function type");
         };
-        assert!(entity.template_head.is_none());
-        assert!(entity.scope.is_none());
-        assert!(entity.function_parameters.is_none());
-        assert!(entity.function_definition.is_none());
+        assert!(entity.context().template_head.is_none());
+        assert!(entity.context().scope.is_none());
+        assert!(entity.callable().function_parameters.is_none());
+        assert!(entity.callable().function_definition.is_none());
         assert!(
             analyzer
                 .graph

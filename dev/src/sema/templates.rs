@@ -177,7 +177,7 @@ impl super::graph::Graph {
         while self.templates.position_rows.get(&row).map_or(0, Vec::len) <= index {
             let next = self.templates.position_rows.get(&row).map_or(0, Vec::len);
             let entity = self.add_entity(None, None, key)?;
-            self.entity_mut(entity).template_parameter = Some(ParameterInfo {
+            self.entity_mut(entity).context_mut().template_parameter = Some(ParameterInfo {
                 position: Position {
                     index: u16::try_from(next)
                         .map_err(|_| Error::Limit("template parameter position limit"))?,
@@ -216,7 +216,10 @@ impl super::graph::Graph {
             let ty = entity
                 .ty
                 .ok_or(Error::Invariant("template shape without parameter type"))?;
-            let value_type = entity.template_parameter.and_then(|info| info.value_type);
+            let value_type = entity
+                .context()
+                .template_parameter
+                .and_then(|info| info.value_type);
             let mut positional = self.types.canonical_function(ty)?;
             if let Some(ty) = value_type {
                 let ty = self.types.canonical_function(ty)?;
@@ -241,7 +244,10 @@ impl Analyzer<'_> {
             let index = u16::try_from(self.graph.templates.unique_types.len() & 0xffff)
                 .map_err(|_| Error::Invariant("truncated synthesized type index"))?;
             let entity = self.graph.add_entity(None, None, Keyword::Class)?;
-            self.graph.entity_mut(entity).template_parameter = Some(ParameterInfo {
+            self.graph
+                .entity_mut(entity)
+                .context_mut()
+                .template_parameter = Some(ParameterInfo {
                 position: Position {
                     depth: 0x7fff,
                     index,
@@ -285,6 +291,7 @@ impl Analyzer<'_> {
             let info = self
                 .graph
                 .entity(parameter)
+                .context()
                 .template_parameter
                 .ok_or(Error::Invariant("ordering without parameter"))?;
             if info.inner.is_some() {
@@ -292,7 +299,10 @@ impl Analyzer<'_> {
                     let position = u16::try_from(self.graph.templates.unique_names.len() & 0xffff)
                         .map_err(|_| Error::Invariant("truncated template index"))?;
                     let entity = self.graph.add_entity(None, None, Keyword::Class)?;
-                    self.graph.entity_mut(entity).template_parameter = Some(ParameterInfo {
+                    self.graph
+                        .entity_mut(entity)
+                        .context_mut()
+                        .template_parameter = Some(ParameterInfo {
                         position: Position {
                             depth: 0x7fff,
                             index: position,
@@ -327,7 +337,10 @@ impl Analyzer<'_> {
                     u16::try_from(self.graph.templates.synthesized_values.len() & 0xffff)
                         .map_err(|_| Error::Invariant("truncated synthesized parameter index"))?;
                 let entity = self.graph.add_entity(None, None, Keyword::Int)?;
-                self.graph.entity_mut(entity).template_parameter = Some(ParameterInfo {
+                self.graph
+                    .entity_mut(entity)
+                    .context_mut()
+                    .template_parameter = Some(ParameterInfo {
                     position: Position {
                         depth: 0x7fff,
                         index,
@@ -386,6 +399,7 @@ impl Analyzer<'_> {
                             && self
                                 .graph
                                 .entity(self.graph.binding(id).entity)
+                                .context()
                                 .template_parameter
                                 .is_some()
                     })
@@ -458,7 +472,7 @@ impl Analyzer<'_> {
                 .graph
                 .scope(home)
                 .owner
-                .is_some_and(|entity| self.graph.entity(entity).template_head.is_none())
+                .is_some_and(|entity| self.graph.entity(entity).context().template_head.is_none())
             && specs.is_some_and(|specs| {
                 self.tree
                     .specs
@@ -628,7 +642,10 @@ impl Analyzer<'_> {
             };
             let entity = self.graph.add_entity(None, name, key)?;
             let canonical = self.graph.positional_template_parameter(position, key)?;
-            self.graph.entity_mut(entity).template_parameter = Some(ParameterInfo {
+            self.graph
+                .entity_mut(entity)
+                .context_mut()
+                .template_parameter = Some(ParameterInfo {
                 position,
                 inner,
                 value_type,
@@ -636,11 +653,14 @@ impl Analyzer<'_> {
             if self
                 .graph
                 .entity(canonical)
+                .context()
                 .template_parameter
                 .is_none_or(|info| info.value_type.is_none())
             {
-                self.graph.entity_mut(canonical).template_parameter =
-                    self.graph.entity(entity).template_parameter;
+                self.graph
+                    .entity_mut(canonical)
+                    .context_mut()
+                    .template_parameter = self.graph.entity(entity).context().template_parameter;
             }
             self.graph.types.record_parameter_entity(entity, canonical);
             let ty = self.graph.types.intern(
@@ -771,7 +791,7 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         let current = self.member_template_head(scope, self.graph.entity(entity).home);
-        let earlier = self.graph.entity(entity).template_head;
+        let earlier = self.graph.entity(entity).context().template_head;
         let Some(head) = current else {
             if earlier.is_some() {
                 return Err(Error::at(
@@ -807,10 +827,14 @@ impl Analyzer<'_> {
             // own positions, retaining each default's declaration context.
             let defaults = self.graph.templates.head(earlier).defaults.clone();
             self.graph.templates.head_mut(head).defaults = defaults;
-            self.graph.entity_mut(entity).template_head = Some(head);
+            self.graph.entity_mut(entity).context_mut().template_head = Some(head);
         }
         self.check_template_defaults(
-            self.graph.entity(entity).template_head.unwrap_or(head),
+            self.graph
+                .entity(entity)
+                .context()
+                .template_head
+                .unwrap_or(head),
             location,
         )
     }
@@ -843,6 +867,7 @@ impl Analyzer<'_> {
             let info = self
                 .graph
                 .entity(entity)
+                .context()
                 .template_parameter
                 .ok_or(Error::Invariant("head without parameter"))?;
             if info.position.shape.pack && index + 1 != head.parameters.len() {
@@ -877,7 +902,7 @@ impl Analyzer<'_> {
         let shape = self.graph.template_shape(head)?;
         if let Some(earlier) = self.graph.own(home, name, Filter::Ordinary) {
             let binding = self.graph.binding(earlier);
-            let previous = self.graph.entity(binding.entity).template_head;
+            let previous = self.graph.entity(binding.entity).context().template_head;
             if binding.kind == BindingKind::Alias
                 && previous.is_some()
                 && self.graph.scope(home).kind != ScopeKind::Class
@@ -905,7 +930,7 @@ impl Analyzer<'_> {
         let entity = self
             .graph
             .add_entity(Some(ty), Some(name), Keyword::Typedef)?;
-        self.graph.entity_mut(entity).template_head = Some(head);
+        self.graph.entity_mut(entity).context_mut().template_head = Some(head);
         self.record_alias_parameters(entity, head, ty);
         self.record_type_pack_element(entity, home, head);
         self.graph.add_binding(
@@ -933,7 +958,7 @@ impl Analyzer<'_> {
         head: HeadId,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        let earlier = self.graph.entity(entity).template_head;
+        let earlier = self.graph.entity(entity).context().template_head;
         if let Some(earlier) = earlier {
             let count = self.graph.templates.parameters(head).len();
             if self.graph.templates.parameters(earlier).len() != count {
@@ -946,11 +971,13 @@ impl Analyzer<'_> {
                 let old = self
                     .graph
                     .entity(self.graph.templates.parameters(earlier)[index])
+                    .context()
                     .template_parameter
                     .ok_or(Error::Invariant("head without parameter"))?;
                 let new = self
                     .graph
                     .entity(self.graph.templates.parameters(head)[index])
+                    .context()
                     .template_parameter
                     .ok_or(Error::Invariant("head without parameter"))?;
                 if old.position.shape.pack != new.position.shape.pack
@@ -992,7 +1019,7 @@ impl Analyzer<'_> {
                 }
             }
         } else {
-            self.graph.entity_mut(entity).template_head = Some(head);
+            self.graph.entity_mut(entity).context_mut().template_head = Some(head);
         }
         Ok(())
     }
@@ -1024,6 +1051,7 @@ mod position_tests {
         for entity in [first, second] {
             let info = graph
                 .entity(entity)
+                .context()
                 .template_parameter
                 .ok_or(Error::Invariant("missing test parameter"))?;
             assert_eq!(info.depth(), 0);

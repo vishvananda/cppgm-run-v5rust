@@ -26,7 +26,7 @@ impl Graph {
         &self,
         class: EntityId,
     ) -> impl Iterator<Item = Result<(EntityId, bool, bool, u64), Error>> + '_ {
-        self.entity(class).bases.iter().map(|base| {
+        self.entity(class).class().bases.iter().map(|base| {
             Ok((
                 base.class,
                 base.access == super::graph::Access::Public,
@@ -260,7 +260,7 @@ mod tests {
                 .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
                 .entity;
             assert_eq!(
-                matches!(graph.entity(class).layout, LayoutState::NotStarted),
+                matches!(graph.entity(class).class().layout, LayoutState::NotStarted),
                 !evaluated
             );
         }

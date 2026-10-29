@@ -44,7 +44,12 @@ impl Analyzer<'_> {
         &mut self,
         entity: super::graph::EntityId,
     ) -> Result<(), Error> {
-        if let Some(initializer) = self.graph.entity(entity).member_initializer {
+        if let Some(initializer) = self
+            .graph
+            .entity(entity)
+            .initialization()
+            .member_initializer
+        {
             let home = self
                 .graph
                 .entity(entity)
@@ -81,12 +86,12 @@ impl Analyzer<'_> {
         } else {
             self.graph.integral_kind(ty).is_some()
                 && self.graph.types.get(ty).cv.0 == 1
-                && matches!(variable.constant, ConstantState::None)
+                && matches!(variable.object().constant, ConstantState::None)
         };
         if self.semantic()
             && self.template_depth == 0
             && info.home.is_none()
-            && variable.data_member == Some(DataMemberKind::Static)
+            && variable.object().data_member == Some(DataMemberKind::Static)
             && !variable.constexpr
             && failed_constant
         {
@@ -108,14 +113,14 @@ impl Analyzer<'_> {
         if specialization && entity.ty.is_some_and(|ty| self.scoped_enum(ty)) {
             return;
         }
-        if (entity.data_member != Some(DataMemberKind::Static) && !specialization)
+        if (entity.object().data_member != Some(DataMemberKind::Static) && !specialization)
             || entity.ty.is_some_and(|ty| {
                 matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
             })
         {
             return;
         }
-        if let ConstantState::Value(value) = entity.constant {
+        if let ConstantState::Value(value) = entity.object().constant {
             facts.set_folded(self.held_integral_constant(value).then_some(value.bits));
             facts.set_fold_style(super::expression_facts::FoldStyle::StaticMember);
         }
@@ -147,7 +152,8 @@ impl Analyzer<'_> {
         declarator: ast::DeclaratorId,
     ) {
         if self.hosted()
-            && self.graph.entity(entity).data_member == Some(super::graph::DataMemberKind::Instance)
+            && self.graph.entity(entity).object().data_member
+                == Some(super::graph::DataMemberKind::Instance)
             && matches!(
                 self.graph.types.get(ty).kind,
                 TypeKind::Array { bound: 0, .. }
@@ -163,7 +169,7 @@ impl Analyzer<'_> {
                 }
                 declarator = node.nested;
             }
-            self.graph.entity_mut(entity).array_member =
+            self.graph.entity_mut(entity).object_mut().array_member =
                 if matches!(own, Some(ast::Suffix::Array(Some(_)))) {
                     super::aggregate_initialization::ArrayMemberKind::ZeroLength
                 } else {
@@ -182,9 +188,12 @@ impl Analyzer<'_> {
         let entity = self.graph.binding(binding).entity;
         if self.graph.scope(home).kind == ScopeKind::Class && info.home.is_none() {
             self.graph.entity_mut(entity).member_access = self.graph.binding_access(binding);
-            self.graph.entity_mut(entity).member_initializer = init.initializer;
+            self.graph
+                .entity_mut(entity)
+                .initialization_mut()
+                .member_initializer = init.initializer;
             self.graph.entity_mut(entity).mutability = specs.mutability;
-            self.graph.entity_mut(entity).data_member = Some(if specs.is_static {
+            self.graph.entity_mut(entity).object_mut().data_member = Some(if specs.is_static {
                 DataMemberKind::Static
             } else {
                 DataMemberKind::Instance
@@ -200,7 +209,11 @@ impl Analyzer<'_> {
                 .owner
                 .ok_or(Error::Invariant("class scope without owner"))?;
             self.record_zero_length_member(entity, info.ty, init.declarator);
-            self.graph.entity_mut(owner).members.push(entity);
+            self.graph
+                .entity_mut(owner)
+                .class_mut()
+                .members
+                .push(entity);
             if init.initializer.is_some()
                 || self.graph.binding_access(binding) != super::graph::Access::Public
                 || matches!(
@@ -208,13 +221,13 @@ impl Analyzer<'_> {
                     TypeKind::Reference { .. }
                 )
             {
-                self.graph.entity_mut(owner).layout_category =
+                self.graph.entity_mut(owner).class_mut().layout_category =
                     super::layout::LayoutCategory::NonPod;
             }
             if init.initializer.is_some()
                 || self.graph.binding_access(binding) != super::graph::Access::Public
             {
-                self.graph.entity_mut(owner).aggregation =
+                self.graph.entity_mut(owner).class_mut().aggregation =
                     super::aggregate_initialization::Aggregation::Ineligible;
             }
         }
@@ -262,20 +275,21 @@ impl Analyzer<'_> {
         let initialized = self
             .graph
             .entity(class)
+            .class()
             .members
             .iter()
             .filter(|&&member| {
                 let member = self.graph.entity(member);
-                member.member_initializer.is_some()
+                member.initialization().member_initializer.is_some()
                     || member.name.is_none()
                         && member.ty.is_some_and(|ty| {
                             matches!(self.graph.types.get(ty).kind, TypeKind::Class(inner)
-                        if self.graph.entity(inner).anonymous_class.is_some()
-                            && self.graph.entity(inner).initialized_members != 0)
+                        if self.graph.entity(inner).class().anonymous_class.is_some()
+                            && self.graph.entity(inner).class().initialized_members != 0)
                         })
             })
             .count();
-        self.graph.entity_mut(class).initialized_members = initialized;
+        self.graph.entity_mut(class).class_mut().initialized_members = initialized;
         if self.graph.entity(class).key == crate::lex::vocabulary::Keyword::Union && initialized > 1
         {
             return Err(Error::at(
@@ -305,6 +319,7 @@ impl Analyzer<'_> {
                 || !self
                     .graph
                     .entity(self.graph.binding(previous).entity)
+                    .object()
                     .variable
                     .is_some_and(|properties| properties.is_extern))
         {
@@ -322,7 +337,7 @@ impl Analyzer<'_> {
             if self.graph.entity(owner).name == Some(name)
                 && (info.home.is_some()
                     || specs.is_static
-                    || self.graph.entity(owner).user_constructor.is_some())
+                    || self.graph.entity(owner).class().user_constructor.is_some())
             {
                 return Err(Error::at(location, "invalid variable name"));
             }
@@ -359,14 +374,14 @@ impl Analyzer<'_> {
                 ));
             }
             let entity = self.graph.entity(binding.entity);
-            if entity.data_member == Some(DataMemberKind::Instance) {
+            if entity.object().data_member == Some(DataMemberKind::Instance) {
                 return Err(Error::at(
                     location,
                     "an out-of-class definition names a non-static data member",
                 ));
             }
-            if entity.data_member == Some(DataMemberKind::Static)
-                && (entity.constexpr || matches!(entity.constant, ConstantState::Value(_)))
+            if entity.object().data_member == Some(DataMemberKind::Static)
+                && (entity.constexpr || matches!(entity.object().constant, ConstantState::Value(_)))
                 && initializer.is_some()
             {
                 return Err(Error::at(

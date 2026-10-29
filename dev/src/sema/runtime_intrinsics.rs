@@ -259,7 +259,15 @@ mod tests {
         assert!(analyzer.graph.root_demands.as_slice().is_empty());
         for binding in analyzer.graph.functions_at(global, hidden.into()) {
             let entity = analyzer.graph.binding(binding).entity;
-            assert!(analyzer.graph.entity(entity).demands.as_slice().is_empty());
+            assert!(
+                analyzer
+                    .graph
+                    .entity(entity)
+                    .callable()
+                    .demands
+                    .as_slice()
+                    .is_empty()
+            );
         }
     }
 

@@ -50,6 +50,7 @@ impl Analyzer<'_> {
         let home = self
             .graph
             .entity(class)
+            .context()
             .scope
             .ok_or(Error::Invariant("call class without scope"))?;
         self.lookup_location = location;
@@ -150,7 +151,9 @@ impl Analyzer<'_> {
         for index in 0..count {
             let binding = visible.as_slice(&self.graph)[index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if entity.explicitness == Explicitness::Explicit || entity.template_head.is_some() {
+            if entity.callable().explicitness == Explicitness::Explicit
+                || entity.context().template_head.is_some()
+            {
                 continue;
             }
             let signature = entity
@@ -296,7 +299,11 @@ mod tests {
         let binding = graph.own(graph.global, a, Filter::Ordinary).unwrap();
         let class = graph.binding(binding).entity;
         let binding = graph
-            .own(graph.entity(class).scope.unwrap(), run, Filter::Ordinary)
+            .own(
+                graph.entity(class).context().scope.unwrap(),
+                run,
+                Filter::Ordinary,
+            )
             .unwrap();
         let definition = graph
             .lower_function(graph.binding(binding).entity)
@@ -373,7 +380,7 @@ mod tests {
                 .entity;
             assert_eq!(
                 matches!(
-                    graph.entity(class).layout,
+                    graph.entity(class).class().layout,
                     super::super::layout::LayoutState::Value { .. }
                 ),
                 needed
@@ -381,6 +388,7 @@ mod tests {
             assert_eq!(
                 graph
                     .entity(class)
+                    .special()
                     .implicit_copies
                     .and_then(|copies| copies.passing)
                     .is_some(),
@@ -446,7 +454,10 @@ mod tests {
         assert!(facts.functions(&graph.expression_facts).is_none());
         assert!(graph.expression_scopes[graph.expression_facts.root(callee).index()].is_some());
         let selected = graph.expression_facts.function_conversion(callee).unwrap();
-        assert_eq!(selected.binding, graph.entity(base).declared_conversions[0]);
+        assert_eq!(
+            selected.binding,
+            graph.entity(base).class().declared_conversions[0]
+        );
         assert!(selected.path.is_some());
         assert_ne!(callee, graph.expression_facts.root(callee));
         assert_eq!(
@@ -482,10 +493,14 @@ mod tests {
                 )
             };
         assert!(demanded(selected.binding));
-        assert!(!demanded(graph.entity(base).declared_conversions[1]));
-        assert!(!demanded(graph.entity(unused).declared_conversions[0]));
+        assert!(!demanded(
+            graph.entity(base).class().declared_conversions[1]
+        ));
+        assert!(!demanded(
+            graph.entity(unused).class().declared_conversions[0]
+        ));
         assert!(matches!(
-            graph.entity(unused).layout,
+            graph.entity(unused).class().layout,
             super::super::layout::LayoutState::NotStarted
         ));
     }

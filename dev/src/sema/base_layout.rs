@@ -43,23 +43,30 @@ impl Analyzer<'_> {
             data_size: 0,
             alignment: 1,
             empty: !dynamic
-                && self.graph.entity(class).members.iter().all(|&member| {
-                    let member = self.graph.entity(member);
-                    member.name.is_none()
-                        && member
-                            .bit_field
-                            .is_some_and(|id| self.graph.bit_fields.width(id) == 0)
-                        || member.storage_attributes.overlapping
-                            && member.bit_field.is_none()
-                            && member.ty.is_some_and(|ty| {
-                                self.graph.class_of(ty).is_some_and(|child| {
-                                    matches!(
-                                        self.graph.entity(child).layout,
-                                        LayoutState::Value { empty: true, .. }
-                                    )
+                && self
+                    .graph
+                    .entity(class)
+                    .class()
+                    .members
+                    .iter()
+                    .all(|&member| {
+                        let member = self.graph.entity(member);
+                        member.name.is_none()
+                            && member
+                                .object()
+                                .bit_field
+                                .is_some_and(|id| self.graph.bit_fields.width(id) == 0)
+                            || member.attributes().storage_attributes.overlapping
+                                && member.object().bit_field.is_none()
+                                && member.ty.is_some_and(|ty| {
+                                    self.graph.class_of(ty).is_some_and(|child| {
+                                        matches!(
+                                            self.graph.entity(child).class().layout,
+                                            LayoutState::Value { empty: true, .. }
+                                        )
+                                    })
                                 })
-                            })
-                }),
+                    }),
             contains_empty: false,
             contains_volatile_or_union: false,
             contains_data_member_pointer: false,
@@ -68,14 +75,14 @@ impl Analyzer<'_> {
             layout,
             claims,
         };
-        for edge in &self.graph.entity(class).bases {
+        for edge in &self.graph.entity(class).class().bases {
             let LayoutState::Value {
                 empty,
                 contains_empty,
                 contains_volatile_or_union,
                 contains_data_member_pointer,
                 ..
-            } = self.graph.entity(edge.class).layout
+            } = self.graph.entity(edge.class).class().layout
             else {
                 return Err(Error::Invariant("base facts before layout"));
             };
@@ -95,7 +102,7 @@ impl Analyzer<'_> {
                 non_virtual_size,
                 non_virtual_alignment,
                 ..
-            } = self.graph.entity(virtual_primary).layout
+            } = self.graph.entity(virtual_primary).class().layout
             else {
                 return Err(Error::Invariant("primary before layout"));
             };
@@ -120,11 +127,12 @@ impl Analyzer<'_> {
             state.data_size = 8;
             state.alignment = 8;
         }
-        let pack = u64::from(self.graph.entity(class).class_packing);
+        let pack = u64::from(self.graph.entity(class).class().class_packing);
         for index in primary.into_iter().chain(
-            (0..self.graph.entity(class).bases.len()).filter(|index| Some(*index) != primary),
+            (0..self.graph.entity(class).class().bases.len())
+                .filter(|index| Some(*index) != primary),
         ) {
-            let edge = self.graph.entity(class).bases[index];
+            let edge = self.graph.entity(class).class().bases[index];
             if edge.is_virtual {
                 continue;
             }
@@ -135,7 +143,7 @@ impl Analyzer<'_> {
                 pack,
                 location,
             )?;
-            self.graph.entity_mut(class).bases[index].offset = Some(offset);
+            self.graph.entity_mut(class).class_mut().bases[index].offset = Some(offset);
         }
         state.contains_empty |= state.empty;
         Ok(state)
@@ -155,7 +163,7 @@ impl Analyzer<'_> {
         }
         let virtual_offsets: crate::support::hash::HashMap<_, _> =
             state.layout.bases.iter().copied().collect();
-        for edge in &mut self.graph.entity_mut(class).bases {
+        for edge in &mut self.graph.entity_mut(class).class_mut().bases {
             if edge.is_virtual {
                 edge.offset = Some(
                     *virtual_offsets
@@ -191,7 +199,7 @@ impl BasePlacement {
             non_virtual_alignment,
             empty,
             ..
-        } = graph.entity(base).layout
+        } = graph.entity(base).class().layout
         else {
             return Err(Error::Invariant("base placement before layout"));
         };

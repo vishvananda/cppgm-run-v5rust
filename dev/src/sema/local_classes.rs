@@ -92,7 +92,7 @@ impl Graph {
     }
     pub(crate) fn lower_enclosing_static_owner(&self, function: EntityId) -> Option<EntityId> {
         let node = self.entity(function);
-        if !node.demands.names_enclosing_statics {
+        if !node.callable().demands.names_enclosing_statics {
             return None;
         }
         let mut home = node.home?;
@@ -119,7 +119,8 @@ impl Graph {
         let node = self.entity(function);
         node.inline == super::specifiers::InlinePreference::Inline
             || node.constexpr
-            || node.definition_emission == super::function_demands::DefinitionEmission::Demanded
+            || node.callable().definition_emission
+                == super::function_demands::DefinitionEmission::Demanded
                 && node
                     .home
                     .is_some_and(|home| self.scope(home).kind == ScopeKind::Class)
@@ -155,7 +156,7 @@ impl Graph {
         loop {
             let node = self.entity(class);
             if !self.type_has_source_name(class) && self.closure_call(class).is_none()
-                || node.template_head.is_some()
+                || node.context().template_head.is_some()
             {
                 return Ok(true);
             }
@@ -179,7 +180,11 @@ impl Graph {
             // A shared local has a public signature. A specialization can
             // still have a public name string despite unit-owned storage.
             let node = self.entity(function);
-            if node.function.is_none_or(|facts| facts.internal_linkage) {
+            if node
+                .callable()
+                .function
+                .is_none_or(|facts| facts.internal_linkage)
+            {
                 return Ok(true);
             }
             if let Some(arguments) = self.function_templates.arguments.get(&function)
@@ -197,6 +202,7 @@ impl Graph {
                 return Ok(true);
             }
             if node
+                .callable()
                 .function
                 .is_some_and(|facts| facts.language == super::linkage::Language::C)
             {
@@ -224,7 +230,7 @@ impl Graph {
                         || self.unnamed_local_ordinal(class).is_some()
                 });
             if !self.type_has_source_name(class) && self.closure_call(class).is_none() && !numbered
-                || node.template_head.is_some()
+                || node.context().template_head.is_some()
             {
                 return Ok(false);
             }
@@ -245,7 +251,10 @@ impl Graph {
             if !(self.lower_inline_function(function)
                 || object_mode && self.lower_function_instantiated(function))
                 || !object_mode && self.lower_function_instantiated(function)
-                || node.function.is_none_or(|facts| facts.internal_linkage)
+                || node
+                    .callable()
+                    .function
+                    .is_none_or(|facts| facts.internal_linkage)
             {
                 return Ok(false);
             }
@@ -253,6 +262,7 @@ impl Graph {
                 return Ok(false);
             }
             if node
+                .callable()
                 .function
                 .is_some_and(|facts| facts.language != super::linkage::Language::C)
                 && let Some(ty) = node.ty
@@ -290,6 +300,7 @@ impl Graph {
     ) -> Result<bool, Error> {
         let node = self.entity(function);
         let facts = node
+            .callable()
             .function
             .ok_or(Error::Invariant("function locality without function"))?;
         if facts.internal_linkage
@@ -569,7 +580,7 @@ impl Graph {
     }
     pub(crate) fn lower_local_class_definition_scope(&self, class: EntityId) -> Option<ScopeId> {
         let node = self.entity(class);
-        let scope = node.scope?;
+        let scope = node.context().scope?;
         self.scope(scope)
             .bindings
             .iter()
@@ -578,9 +589,9 @@ impl Graph {
                 let entity = self.entity(binding.entity);
                 binding.kind == super::graph::BindingKind::Function
                     && entity.home == Some(scope)
-                    && entity.function_definition.is_some()
+                    && entity.callable().function_definition.is_some()
                     && matches!(
-                        entity.special_definition,
+                        entity.callable().special_definition,
                         None | Some(super::special_members::SpecialDefinition::Body(_))
                     )
             })

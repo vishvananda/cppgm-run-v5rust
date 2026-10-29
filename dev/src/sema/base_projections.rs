@@ -259,7 +259,7 @@ impl Graph {
         let edges = self.base_paths.get(path);
         if edges
             .iter()
-            .any(|&(owner, index)| self.entity(owner).bases[index].is_virtual)
+            .any(|&(owner, index)| self.entity(owner).class().bases[index].is_virtual)
         {
             let &(from, _) = edges
                 .first()
@@ -267,7 +267,7 @@ impl Graph {
             let &(owner, index) = edges.last().ok_or(Error::Invariant("empty virtual path"))?;
             Ok(BaseProjection::Route {
                 from,
-                to: self.entity(owner).bases[index].class,
+                to: self.entity(owner).class().bases[index].class,
             })
         } else {
             let Some(&(from, _)) = edges.first() else {
@@ -276,7 +276,7 @@ impl Graph {
             let &(owner, index) = edges.last().ok_or(Error::Invariant("nonempty base path"))?;
             Ok(BaseProjection::Nonvirtual {
                 from,
-                to: self.entity(owner).bases[index].class,
+                to: self.entity(owner).class().bases[index].class,
                 offset: self.lower_path_offset(path)?,
                 reverse: false,
             })
@@ -297,7 +297,7 @@ impl Graph {
             .ok_or(Error::Invariant("empty member base path"))?;
         Ok(BaseProjection::Route {
             from,
-            to: self.entity(owner).bases[index].class,
+            to: self.entity(owner).class().bases[index].class,
         })
     }
     /// Projection queries run after their storage-layout boundary; an absent
@@ -315,6 +315,7 @@ impl Graph {
                     primary,
                     !self
                         .entity(class)
+                        .class()
                         .bases
                         .iter()
                         .any(|edge| !edge.is_virtual && edge.class == primary),
@@ -322,7 +323,7 @@ impl Graph {
             });
         }
         self.nonvirtual_primary(class)
-            .map(|index| (self.entity(class).bases[index].class, false))
+            .map(|index| (self.entity(class).class().bases[index].class, false))
             .or_else(|| {
                 self.virtuals
                     .storage_layouts
@@ -336,6 +337,7 @@ impl Graph {
         class: EntityId,
     ) -> impl DoubleEndedIterator<Item = EntityId> + '_ {
         self.entity(class)
+            .class()
             .bases
             .iter()
             .filter(|edge| !edge.is_virtual)
@@ -346,6 +348,7 @@ impl Graph {
         class: EntityId,
     ) -> impl DoubleEndedIterator<Item = (EntityId, Result<u64, Error>)> + '_ {
         self.entity(class)
+            .class()
             .bases
             .iter()
             .filter(|edge| !edge.is_virtual)
@@ -417,7 +420,7 @@ impl Graph {
         if frame.class == base {
             return Ok(OffsetStep::Found(0));
         }
-        let edges = &self.entity(frame.class).bases;
+        let edges = &self.entity(frame.class).class().bases;
         if !frame.entered {
             self.work.base_steps(1);
             frame.entered = true;
@@ -461,7 +464,8 @@ impl Graph {
         frame.next += 1;
         if edge.is_virtual
             || misses.contains(&edge.class)
-            || matches!(leaves, LeafBranches::Skip) && self.entity(edge.class).bases.is_empty()
+            || matches!(leaves, LeafBranches::Skip)
+                && self.entity(edge.class).class().bases.is_empty()
         {
             return Ok(OffsetStep::Continue);
         }
@@ -479,7 +483,7 @@ impl Graph {
                 work.pop();
                 continue;
             }
-            let edges = &self.entity(*class).bases;
+            let edges = &self.entity(*class).class().bases;
             // Both offset owners prefer a direct nonvirtual base before
             // searching the other bases of a branching class.
             if *next == 0
@@ -519,7 +523,7 @@ impl Graph {
                 }
             } else if edges.len() > 1
                 && edge.class != base
-                && self.entity(edge.class).bases.is_empty()
+                && self.entity(edge.class).class().bases.is_empty()
             {
                 *next += 1;
             } else {

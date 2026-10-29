@@ -94,10 +94,10 @@ impl Analyzer<'_> {
                 };
             }
             let (found, anonymous) = found.ok_or(Error::Invariant("designated member"))?;
-            let member = self.graph.entity(class).members[found];
+            let member = self.graph.entity(class).class().members[found];
             if !union {
                 for at in member_index..found {
-                    let omitted = self.graph.entity(class).members[at];
+                    let omitted = self.graph.entity(class).class().members[at];
                     if !self.graph.unnamed_bit_field(omitted) {
                         ordered.push(self.designated_braces(&[], &[], location)?);
                     }
@@ -191,6 +191,7 @@ impl Analyzer<'_> {
         for (index, &member) in self
             .graph
             .entity(class)
+            .class()
             .members
             .iter()
             .enumerate()
@@ -217,11 +218,13 @@ impl Analyzer<'_> {
     fn anonymous_holds(&self, class: EntityId, name: NameId) -> bool {
         self.graph
             .entity(class)
+            .context()
             .scope
             .and_then(|scope| self.graph.own(scope, name, Filter::Ordinary))
             .is_some_and(|binding| {
                 self.graph
                     .entity(self.graph.binding(binding).entity)
+                    .object()
                     .data_member
                     .is_some()
             })

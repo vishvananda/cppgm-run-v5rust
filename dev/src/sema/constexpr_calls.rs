@@ -102,7 +102,7 @@ impl Analyzer<'_> {
         if !self.semantic()
             || !function.constexpr
             || function.availability == FunctionAvailability::Deleted
-            || function.template_head.is_some()
+            || function.context().template_head.is_some()
             || self.graph.function_templates.primary(entity).is_some()
             || function.home.is_some_and(|home| {
                 self.templated_class_scope(home) || self.graph.within_class_instance(home)
@@ -111,6 +111,7 @@ impl Analyzer<'_> {
             return Ok(());
         }
         let constructor = function
+            .callable()
             .member_function
             .is_some_and(|key| key.kind == super::graph::MemberKind::Constructor);
         if let TypeKind::Function { result, .. } = self.graph.types.get(ty).kind
@@ -129,7 +130,10 @@ impl Analyzer<'_> {
         }
         if !constructor {
             let entity = self.graph.entity(entity);
-            if entity.function.is_some_and(|function| !function.is_static)
+            if entity
+                .callable()
+                .function
+                .is_some_and(|function| !function.is_static)
                 && let Some(home) = entity
                     .home
                     .filter(|&home| self.graph.scope(home).kind == super::graph::ScopeKind::Class)
@@ -560,6 +564,7 @@ impl Analyzer<'_> {
                 !self
                     .graph
                     .entity(function)
+                    .callable()
                     .function
                     .is_some_and(|f| f.is_static)
             });
@@ -592,6 +597,7 @@ impl Analyzer<'_> {
             let class = self
                 .graph
                 .entity(self.graph.binding(binding).entity)
+                .callable()
                 .member_function
                 .ok_or(Error::Invariant("constant destructor without class"))?
                 .class;
@@ -680,7 +686,7 @@ impl Analyzer<'_> {
         if entity.availability == FunctionAvailability::Deleted {
             return Err(nonconstant(location, "a call of a deleted function"));
         }
-        if entity.assignment.is_some()
+        if entity.callable().assignment.is_some()
             && let Some(object) = object
         {
             let ty = self.graph.lower_entity_type(function)?;
@@ -804,7 +810,7 @@ impl Analyzer<'_> {
             .base
             .ok_or(Error::Invariant("assignment action without subobject"))?;
         self.class_layout(class, location)?;
-        let offset = self.graph.entity(class).bases[index as usize]
+        let offset = self.graph.entity(class).class().bases[index as usize]
             .offset
             .ok_or(Error::Invariant("constant assignment base without offset"))?;
         Ok(Address {
@@ -863,6 +869,7 @@ impl Analyzer<'_> {
             let entity = self
                 .graph
                 .entity(function)
+                .callable()
                 .parameter_entities
                 .get(index)
                 .copied();
@@ -1151,6 +1158,7 @@ impl Analyzer<'_> {
         let scope = self
             .graph
             .entity(function)
+            .context()
             .scope
             .or_else(|| {
                 self.graph
@@ -1223,6 +1231,7 @@ mod tests {
                 analyzer
                     .graph
                     .entity(analyzer.graph.binding(binding).entity)
+                    .object()
                     .constant,
                 ConstantState::None
             ));
@@ -1276,7 +1285,7 @@ mod tests {
         for (name, bits) in names.into_iter().zip([53, 97]) {
             let binding = analyzer.graph.own(global, name, Filter::Ordinary).unwrap();
             assert!(
-                matches!(analyzer.graph.entity(analyzer.graph.binding(binding).entity).constant,
+                matches!(analyzer.graph.entity(analyzer.graph.binding(binding).entity).object().constant,
                 ConstantState::Value(value) if value.bits == bits)
             );
         }
@@ -1312,7 +1321,7 @@ mod tests {
         for (&name, bits) in names.iter().zip([3, 5, 6, 10, 5]) {
             let binding = analyzer.graph.own(global, name, Filter::Ordinary).unwrap();
             assert!(
-                matches!(analyzer.graph.entity(analyzer.graph.binding(binding).entity).constant, ConstantState::Value(value) if value.bits == bits)
+                matches!(analyzer.graph.entity(analyzer.graph.binding(binding).entity).object().constant, ConstantState::Value(value) if value.bits == bits)
             );
         }
         let binding = analyzer
@@ -1358,15 +1367,23 @@ mod tests {
         }
         assert_eq!(instances[0], instances[1]);
         let instance = instances[0];
-        assert_eq!(analyzer.graph.entity(instance).parameter_entities.len(), 1);
+        assert_eq!(
+            analyzer
+                .graph
+                .entity(instance)
+                .callable()
+                .parameter_entities
+                .len(),
+            1
+        );
         let instance_body = analyzer.graph.lower_function_body(instance);
         let expressions = analyzer.tree.expressions.mark();
-        let scopes = analyzer.graph.entity(function).scope;
+        let scopes = analyzer.graph.entity(function).context().scope;
         assert!(analyzer.constant_function_definition(function).unwrap());
         assert!(analyzer.constant_function_definition(instance).unwrap());
         assert_eq!(analyzer.graph.lower_function_body(instance), instance_body);
         assert_eq!(analyzer.graph.lower_function_body(function), Some(body_id));
-        assert_eq!(analyzer.graph.entity(function).scope, scopes);
+        assert_eq!(analyzer.graph.entity(function).context().scope, scopes);
         assert_eq!(analyzer.tree.expressions.mark(), expressions);
         assert!(!analyzer.constexpr_frames.active());
         assert!(analyzer.constant_evaluation.is_none());

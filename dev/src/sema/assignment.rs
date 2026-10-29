@@ -61,19 +61,20 @@ mod tests {
                 analyzer.graph.binding(binding).entity
             })
             .collect();
-        let home = analyzer.graph.entity(classes[0]).scope.unwrap();
+        let home = analyzer.graph.entity(classes[0]).context().scope.unwrap();
         let function = analyzer
             .graph
             .functions_at(home, key().unwrap())
             .map(|b| analyzer.graph.binding(b).entity)
-            .find(|&f| analyzer.graph.entity(f).assignment_kind == Some(RefKind::Lvalue))
+            .find(|&f| analyzer.graph.entity(f).callable().assignment_kind == Some(RefKind::Lvalue))
             .unwrap();
         let action = analyzer.graph.lower_assignment(function).unwrap().actions[0];
-        assert!(analyzer.graph.entity(function).scope.is_none());
+        assert!(analyzer.graph.entity(function).context().scope.is_none());
         assert!(
             analyzer
                 .graph
                 .entity(function)
+                .callable()
                 .parameter_entities
                 .is_empty()
         );
@@ -100,7 +101,7 @@ mod tests {
         assert_eq!(analyzer.graph.class_of(parameter), Some(child));
         assert!(analyzer.graph.destructor_binding(child).is_some());
         assert!(
-            analyzer.graph.entity(classes[1]).copy_preparation
+            analyzer.graph.entity(classes[1]).special().copy_preparation
                 == super::super::copy_properties::Preparation::Pending
         );
         assert_eq!(tree.expressions.mark(), expressions);
@@ -143,15 +144,15 @@ mod tests {
             .collect();
         let graph = &analyzer.graph;
         assert!(
-            graph.entity(classes[2]).copy_preparation
+            graph.entity(classes[2]).special().copy_preparation
                 == super::super::copy_properties::Preparation::Pending
         );
         for &class in &classes[..2] {
             assert!(
-                graph.entity(class).copy_preparation
+                graph.entity(class).special().copy_preparation
                     == super::super::copy_properties::Preparation::Ready
             );
-            let home = graph.entity(class).scope.unwrap();
+            let home = graph.entity(class).context().scope.unwrap();
             let bindings: Vec<_> = graph.functions_at(home, key().unwrap()).collect();
             assert_eq!(bindings.len(), 2);
             for binding in bindings {
@@ -161,7 +162,10 @@ mod tests {
                 assert_eq!(facts.actions.len(), 1);
                 if class == classes[1] {
                     let selected = facts.actions[0].function.unwrap();
-                    assert_eq!(graph.entity(selected).home, graph.entity(classes[0]).scope);
+                    assert_eq!(
+                        graph.entity(selected).home,
+                        graph.entity(classes[0]).context().scope
+                    );
                 }
             }
         }
@@ -202,12 +206,12 @@ mod tests {
                 analyzer.graph.binding(binding).entity
             })
             .collect();
-        let home = analyzer.graph.entity(classes[1]).scope.unwrap();
+        let home = analyzer.graph.entity(classes[1]).context().scope.unwrap();
         let assignment = analyzer
             .graph
             .functions_at(home, key().unwrap())
             .map(|b| analyzer.graph.binding(b).entity)
-            .find(|&f| analyzer.graph.entity(f).assignment_kind == Some(RefKind::Lvalue))
+            .find(|&f| analyzer.graph.entity(f).callable().assignment_kind == Some(RefKind::Lvalue))
             .unwrap();
         let properties = analyzer.graph.lower_assignment(assignment).unwrap();
         assert!(!properties.trivial && !properties.deleted && properties.nothrow);
@@ -256,7 +260,7 @@ mod tests {
         assert_eq!(analyzer.tree.expressions.mark(), expressions);
         assert_eq!(analyzer.tree.declarations.mark(), declarations);
         assert!(
-            analyzer.graph.entity(classes[2]).copy_preparation
+            analyzer.graph.entity(classes[2]).special().copy_preparation
                 == super::super::copy_properties::Preparation::Pending
         );
     }
@@ -299,15 +303,19 @@ pub(crate) struct Action {
 }
 impl Graph {
     pub(crate) fn lower_assignment(&self, function: EntityId) -> Option<&Properties> {
-        self.entity(function).assignment.as_ref()
+        self.entity(function).callable().assignment.as_ref()
     }
     pub(crate) fn lower_implicit_assignment(&self, function: EntityId) -> bool {
-        self.entity(function).assignment_origin == Origin::Implicit
+        self.entity(function).callable().assignment_origin == Origin::Implicit
     }
     pub(super) fn ignored_assignment(&self, function: EntityId) -> bool {
         let entity = self.entity(function);
-        entity.assignment_kind == Some(RefKind::Rvalue)
-            && entity.assignment.as_ref().is_some_and(|p| p.deleted)
+        entity.callable().assignment_kind == Some(RefKind::Rvalue)
+            && entity
+                .callable()
+                .assignment
+                .as_ref()
+                .is_some_and(|p| p.deleted)
     }
 }
 impl Analyzer<'_> {
@@ -321,6 +329,7 @@ impl Analyzer<'_> {
         let count = self
             .graph
             .entity(function)
+            .callable()
             .assignment
             .as_ref()
             .map_or(0, |p| p.actions.len());
@@ -328,6 +337,7 @@ impl Analyzer<'_> {
             let action = self
                 .graph
                 .entity(function)
+                .callable()
                 .assignment
                 .as_ref()
                 .ok_or(Error::Invariant("assignment boundary plan"))?
@@ -346,6 +356,7 @@ impl Analyzer<'_> {
                     let constructor = self.copy_constructor_plan(class, copy)?;
                     self.graph
                         .entity_mut(function)
+                        .callable_mut()
                         .assignment
                         .as_mut()
                         .ok_or(Error::Invariant("assignment boundary plan"))?
@@ -394,10 +405,10 @@ impl Analyzer<'_> {
         class: EntityId,
     ) -> Result<Option<RefKind>, Error> {
         let entity = self.graph.entity(self.graph.binding(binding).entity);
-        if entity.assignment_origin == Origin::Implicit
-            || entity.template_head.is_some()
-            || entity.function.is_some_and(|p| p.is_static)
-            || entity.home != self.graph.entity(class).scope
+        if entity.callable().assignment_origin == Origin::Implicit
+            || entity.context().template_head.is_some()
+            || entity.callable().function.is_some_and(|p| p.is_static)
+            || entity.home != self.graph.entity(class).context().scope
         {
             return Ok(None);
         }
@@ -424,6 +435,7 @@ impl Analyzer<'_> {
         let home = self
             .graph
             .entity(class)
+            .context()
             .scope
             .ok_or(Error::Invariant("assignment class scope"))?;
         let key = key()?;
@@ -435,6 +447,7 @@ impl Analyzer<'_> {
             let kind = self.assignment_kind(binding, class)?;
             self.graph
                 .entity_mut(self.graph.binding(binding).entity)
+                .callable_mut()
                 .assignment_kind = kind;
             if kind.is_some() {
                 self.prepare_default_assignment(binding)?;
@@ -445,9 +458,9 @@ impl Analyzer<'_> {
     pub(super) fn prepare_default_assignment(&mut self, binding: BindingId) -> Result<(), Error> {
         let function = self.graph.binding(binding).entity;
         let entity = self.graph.entity(function);
-        if entity.assignment.is_some()
+        if entity.callable().assignment.is_some()
             || !matches!(
-                entity.special_definition,
+                entity.callable().special_definition,
                 Some(SpecialDefinition::Defaulted { .. })
             )
         {
@@ -465,10 +478,10 @@ impl Analyzer<'_> {
             .assignment_kind(binding, class)?
             .ok_or(Error::Invariant("defaulted assignment kind"))?;
         let first = matches!(
-            entity.special_definition,
+            entity.callable().special_definition,
             Some(SpecialDefinition::Defaulted { first: true, .. })
         );
-        let infer = entity.assignment_exceptions;
+        let infer = entity.callable().assignment_exceptions;
         let signature = entity
             .ty
             .ok_or(Error::Invariant("defaulted assignment signature"))?;
@@ -480,9 +493,12 @@ impl Analyzer<'_> {
         self.prepare_copy_children(class)?;
         let mut properties = self.assignment_properties(class, kind, cv)?;
         properties.trivial &= first;
-        self.graph.entity_mut(function).assignment_kind = Some(kind);
+        self.graph
+            .entity_mut(function)
+            .callable_mut()
+            .assignment_kind = Some(kind);
         if infer == ExceptionSource::Subobjects {
-            self.graph.entity_mut(function).exceptions =
+            self.graph.entity_mut(function).callable_mut().exceptions =
                 super::exceptions::ExceptionState::Value(if properties.nothrow {
                     super::exceptions::ExceptionSet::None
                 } else {
@@ -494,11 +510,12 @@ impl Analyzer<'_> {
         if properties.deleted {
             self.graph.entity_mut(function).availability = FunctionAvailability::Deleted;
         }
-        self.graph.entity_mut(function).assignment = Some(properties);
+        self.graph.entity_mut(function).callable_mut().assignment = Some(properties);
         Ok(())
     }
     fn const_assignment_source(&self, class: EntityId) -> Result<bool, Error> {
-        let count = self.graph.entity(class).bases.len() + self.graph.entity(class).members.len();
+        let count = self.graph.entity(class).class().bases.len()
+            + self.graph.entity(class).class().members.len();
         for index in 0..count {
             let Some((child, _, _)) = self.graph.copy_child(class, index)? else {
                 continue;
@@ -506,12 +523,15 @@ impl Analyzer<'_> {
             let home = self
                 .graph
                 .entity(child)
+                .context()
                 .scope
                 .ok_or(Error::Invariant("assignment child scope"))?;
             let mut accepts = false;
             for binding in self.graph.functions_at(home, key()?) {
                 let entity = self.graph.entity(self.graph.binding(binding).entity);
-                if entity.assignment_kind != Some(RefKind::Lvalue) || entity.home != Some(home) {
+                if entity.callable().assignment_kind != Some(RefKind::Lvalue)
+                    || entity.home != Some(home)
+                {
                     continue;
                 }
                 let ty = entity
@@ -540,6 +560,7 @@ impl Analyzer<'_> {
         let home = self
             .graph
             .entity(class)
+            .context()
             .scope
             .ok_or(Error::Invariant("assignment class scope"))?;
         let mut copy = false;
@@ -612,6 +633,7 @@ impl Analyzer<'_> {
                 && !self
                     .graph
                     .entity(class)
+                    .class()
                     .bases
                     .iter()
                     .any(|edge| edge.is_virtual),
@@ -620,20 +642,21 @@ impl Analyzer<'_> {
         };
         let entity = self.graph.entity(class);
         let scope = entity
+            .context()
             .scope
             .ok_or(Error::Invariant("assignment class scope"))?;
-        let count = entity.bases.len() + entity.members.len();
+        let count = entity.class().bases.len() + entity.class().members.len();
         for index in 0..count {
-            let base_count = self.graph.entity(class).bases.len();
+            let base_count = self.graph.entity(class).class().bases.len();
             let member = index
                 .checked_sub(base_count)
-                .and_then(|index| self.graph.entity(class).members.get(index))
+                .and_then(|index| self.graph.entity(class).class().members.get(index))
                 .copied();
             let ty = if let Some(member) = member {
                 self.graph.entity(member).ty
             } else {
                 self.graph
-                    .entity(self.graph.entity(class).bases[index].class)
+                    .entity(self.graph.entity(class).class().bases[index].class)
                     .ty
             }
             .ok_or(Error::Invariant("assignment subobject type"))?;
@@ -680,7 +703,11 @@ impl Analyzer<'_> {
                     action.function = Some(function);
                     let entity = self.graph.entity(function);
                     properties.deleted |= entity.availability == FunctionAvailability::Deleted;
-                    properties.trivial &= entity.assignment.as_ref().is_some_and(|p| p.trivial);
+                    properties.trivial &= entity
+                        .callable()
+                        .assignment
+                        .as_ref()
+                        .is_some_and(|p| p.trivial);
                     properties.nothrow &= !self.function_may_throw(function)?;
                     let signature = self
                         .graph
@@ -708,6 +735,7 @@ impl Analyzer<'_> {
                         && !self
                             .graph
                             .entity(function)
+                            .callable()
                             .assignment
                             .as_ref()
                             .is_some_and(|p| p.trivial);
@@ -731,6 +759,7 @@ impl Analyzer<'_> {
         let home = self
             .graph
             .entity(class)
+            .context()
             .scope
             .ok_or(Error::Invariant("assignment child scope"))?;
         for declared in self.graph.functions_at(home, key()?) {
@@ -790,6 +819,7 @@ impl Analyzer<'_> {
         let home = self
             .graph
             .entity(class)
+            .context()
             .scope
             .ok_or(Error::Invariant("assignment child scope"))?;
         let ty = self
@@ -889,9 +919,9 @@ impl Analyzer<'_> {
             let binding = scratch.offered[index];
             let function = self.graph.binding(binding).entity;
             let entity = self.graph.entity(function);
-            if entity.function.is_some_and(|p| p.is_static)
+            if entity.callable().function.is_some_and(|p| p.is_static)
                 || self.graph.ignored_assignment(function)
-                || entity.template_head.is_some() != templated
+                || entity.context().template_head.is_some() != templated
                 || !scratch.seen.insert(function)
             {
                 continue;

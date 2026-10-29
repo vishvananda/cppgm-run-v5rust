@@ -350,6 +350,7 @@ impl Analyzer<'_> {
         if !found.functions.iter().any(|&binding| {
             self.graph
                 .entity(self.graph.binding(binding).entity)
+                .context()
                 .template_head
                 .is_some()
         }) {
@@ -379,6 +380,7 @@ impl Analyzer<'_> {
         if matches!(
             self.graph
                 .entity(self.graph.binding(binding).entity)
+                .callable()
                 .builtin,
             Some(
                 BuiltinFunction::Integer(_)
@@ -472,6 +474,7 @@ impl Analyzer<'_> {
                     .find(|&binding| {
                         self.graph
                             .entity(self.graph.binding(binding).entity)
+                            .callable()
                             .builtin
                             .is_some()
                     })
@@ -583,20 +586,21 @@ impl Analyzer<'_> {
             Cv::default(),
         )?;
         let entity = self.graph.add_entity(Some(ty), Some(key), Keyword::Int)?;
-        self.graph.entity_mut(entity).builtin = Some(builtin);
-        self.graph.entity_mut(entity).exceptions =
+        self.graph.entity_mut(entity).callable_mut().builtin = Some(builtin);
+        self.graph.entity_mut(entity).callable_mut().exceptions =
             super::exceptions::ExceptionState::Value(super::exceptions::ExceptionSet::None);
-        self.graph.entity_mut(entity).function = Some(super::graph::FunctionProperties {
-            effects: super::graph::FunctionEffect::Default,
-            no_inline: false,
-            returns: super::graph::FunctionReturn::MayReturn,
-            internal_linkage: false,
-            language: super::linkage::Language::C,
-            denotes: None,
-            is_static: false,
-            special: None,
-            allocation: None,
-        });
+        self.graph.entity_mut(entity).callable_mut().function =
+            Some(super::graph::FunctionProperties {
+                effects: super::graph::FunctionEffect::Default,
+                no_inline: false,
+                returns: super::graph::FunctionReturn::MayReturn,
+                internal_linkage: false,
+                language: super::linkage::Language::C,
+                denotes: None,
+                is_static: false,
+                special: None,
+                allocation: None,
+            });
         Ok(Some(self.graph.add_binding(
             self.graph.global,
             None,
@@ -660,6 +664,7 @@ impl Analyzer<'_> {
             if self
                 .graph
                 .entity(self.graph.binding(binding).entity)
+                .callable()
                 .builtin
                 .is_some()
                 && let Some(component) = last.filter(|last| last.arguments.is_some())
@@ -673,6 +678,7 @@ impl Analyzer<'_> {
             return match self
                 .graph
                 .entity(self.graph.binding(binding).entity)
+                .callable()
                 .builtin
             {
                 Some(BuiltinFunction::ConstantP) => {

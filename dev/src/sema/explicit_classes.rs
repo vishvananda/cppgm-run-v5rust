@@ -137,6 +137,7 @@ impl Analyzer<'_> {
         let scope = self
             .graph
             .entity(class)
+            .context()
             .scope
             .ok_or(Error::Invariant("complete class without scope"))?;
         // The binding sequence is source order, independent of the lookup index.
@@ -164,13 +165,20 @@ impl Analyzer<'_> {
                             .note_ordinary_definition(entity);
                         continue;
                     }
-                    let special = self.graph.entity(entity).special_definition.or_else(|| {
-                        self.graph
-                            .function_templates
-                            .bodies
-                            .source(entity)
-                            .and_then(|source| self.graph.entity(source).special_definition)
-                    });
+                    let special = self
+                        .graph
+                        .entity(entity)
+                        .callable()
+                        .special_definition
+                        .or_else(|| {
+                            self.graph
+                                .function_templates
+                                .bodies
+                                .source(entity)
+                                .and_then(|source| {
+                                    self.graph.entity(source).callable().special_definition
+                                })
+                        });
                     if !(self.graph.function_templates.bodies.defined_member(entity)
                         || self.graph.function_templates.bodies.member(entity)
                             && matches!(
@@ -288,13 +296,13 @@ mod tests {
         let roots: Vec<_> = graph.lower_explicit_functions().collect();
         assert_eq!(roots.len(), 1);
         let entity = graph.entity(roots[0]);
-        let properties = entity.copy_properties.unwrap();
+        let properties = entity.special().copy_properties.unwrap();
         let properties = graph.copy_properties.get(properties);
         assert!(properties.deleted);
         let super::super::construction::ConstructorState::Ready(plan) = properties.plan else {
             panic!("unpublished copy plan");
         };
-        assert_eq!(entity.constructor, Some(plan));
+        assert_eq!(entity.initialization().constructor, Some(plan));
         let plan = graph.constructors.get(plan);
         assert!(plan.deleted);
         let actions = plan.copy.as_ref().unwrap();

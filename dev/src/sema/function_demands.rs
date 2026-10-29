@@ -100,25 +100,25 @@ impl Analyzer<'_> {
         // Its own calls therefore retain their earlier semantic demand order.
         let entity = self.graph.binding(binding).entity;
         if matches!(
-            self.graph.entity(entity).constructor_exceptions,
+            self.graph.entity(entity).callable().constructor_exceptions,
             super::construction::ConstructorExceptionSource::ComputedDefault { pending: true, .. }
                 | super::construction::ConstructorExceptionSource::InheritedPlan {
                     pending: true,
                     ..
                 }
         ) || matches!(
-            self.graph.entity(entity).exceptions,
+            self.graph.entity(entity).callable().exceptions,
             super::exceptions::ExceptionState::Pending(_)
         ) || self.graph.function_templates.primary(entity).is_some()
             && matches!(
-                self.graph.entity(entity).exceptions,
+                self.graph.entity(entity).callable().exceptions,
                 super::exceptions::ExceptionState::Template(_)
             )
         {
             self.function_may_throw(entity)?;
         }
         self.demand_specialization_body(binding);
-        if let Some(constructor) = self.graph.entity(entity).constructor {
+        if let Some(constructor) = self.graph.entity(entity).initialization().constructor {
             self.note_initializer_constructor(constructor);
         }
         self.record_demand(Demand::Function { binding, call });
@@ -160,16 +160,23 @@ impl Analyzer<'_> {
         if let Some(previous) = self.graph.demand_marks.latest.get(&key).copied()
             && previous.epoch == epoch
         {
-            let list = if let Some(owner) = previous.owner {
-                &mut self.graph.entity_mut(owner).demands
+            if let Some(owner) = previous.owner {
+                self.graph
+                    .entity_mut(owner)
+                    .callable_mut()
+                    .demands
+                    .merge_call(previous.index, demand);
             } else {
-                &mut self.graph.root_demands
-            };
-            list.merge_call(previous.index, demand);
+                self.graph.root_demands.merge_call(previous.index, demand);
+            }
             return;
         }
         let index = if let Some(owner) = owner {
-            self.graph.entity_mut(owner).demands.append(demand)
+            self.graph
+                .entity_mut(owner)
+                .callable_mut()
+                .demands
+                .append(demand)
         } else {
             self.graph.root_demands.append(demand)
         };
@@ -196,51 +203,54 @@ pub(super) fn trailing(graph: &super::graph::Graph) -> Vec<Demand> {
     let mut seen_constructors = HashSet::default();
     let mut seen_members: HashSet<EntityId> = HashSet::default();
     let mut output = Vec::new();
-    let mut schedule =
-        |demands: &[Demand], constructors: &mut VecDeque<_>, members: &mut VecDeque<_>| {
-            for &demand in demands {
-                match demand {
-                    Demand::Constructor(id) => {
-                        if seen_constructors.insert(id) {
-                            constructors.push_back(demand);
-                        }
+    let mut schedule = |demands: &[Demand],
+                        constructors: &mut VecDeque<_>,
+                        members: &mut VecDeque<_>| {
+        for &demand in demands {
+            match demand {
+                Demand::Constructor(id) => {
+                    if seen_constructors.insert(id) {
+                        constructors.push_back(demand);
                     }
-                    Demand::Function { binding, call } => {
-                        let function = graph.binding(binding).entity;
-                        let entity = graph.entity(function);
-                        // C++ marks inheriting constructors implicit. Only a
-                        // parameterless implicit definition appears in this view.
-                        if graph.inherited_constructors.source(function).is_some() {
-                            if entity.ty.is_some_and(|ty| {
-                                matches!(&graph.types.get(ty).kind,
+                }
+                Demand::Function { binding, call } => {
+                    let function = graph.binding(binding).entity;
+                    let entity = graph.entity(function);
+                    // C++ marks inheriting constructors implicit. Only a
+                    // parameterless implicit definition appears in this view.
+                    if graph.inherited_constructors.source(function).is_some() {
+                        if entity.ty.is_some_and(|ty| {
+                            matches!(&graph.types.get(ty).kind,
                                     super::types::TypeKind::Function { parameters, .. }
                                         if parameters.is_empty())
-                            }) && let Some(id) = entity.constructor
-                                && seen_constructors.insert(id)
-                            {
-                                constructors.push_back(Demand::Constructor(id));
-                            }
-                            continue;
-                        }
-                        if entity.assignment_origin != super::assignment::Origin::Implicit
-                            && entity.copy_origin != super::copy_construction::Origin::Implicit
-                            && !graph.function_templates.bodies.synthesized(function)
-                            && (entity.defined
-                                && entity.definition_emission == DefinitionEmission::Demanded
-                                || graph.function_templates.primary(function).is_some()
-                                || call
-                                    && !entity.defined
-                                    && entity.home.is_some_and(|home| {
-                                        graph.scope(home).kind == ScopeKind::Class
-                                    }))
-                            && seen_members.insert(graph.binding(binding).entity)
+                        }) && let Some(id) = entity.initialization().constructor
+                            && seen_constructors.insert(id)
                         {
-                            members.push_back(demand);
+                            constructors.push_back(Demand::Constructor(id));
                         }
+                        continue;
+                    }
+                    if entity.callable().assignment_origin != super::assignment::Origin::Implicit
+                        && entity.callable().copy_origin
+                            != super::copy_construction::Origin::Implicit
+                        && !graph.function_templates.bodies.synthesized(function)
+                        && (entity.defined
+                            && entity.callable().definition_emission
+                                == DefinitionEmission::Demanded
+                            || graph.function_templates.primary(function).is_some()
+                            || call
+                                && !entity.defined
+                                && entity
+                                    .home
+                                    .is_some_and(|home| graph.scope(home).kind == ScopeKind::Class))
+                        && seen_members.insert(graph.binding(binding).entity)
+                    {
+                        members.push_back(demand);
                     }
                 }
             }
-        };
+        }
+    };
     schedule(
         graph.root_demands.as_slice(),
         &mut constructors,
@@ -256,6 +266,7 @@ pub(super) fn trailing(graph: &super::graph::Graph) -> Vec<Demand> {
                 schedule(
                     graph
                         .entity(graph.binding(binding).entity)
+                        .callable()
                         .demands
                         .as_slice(),
                     &mut constructors,

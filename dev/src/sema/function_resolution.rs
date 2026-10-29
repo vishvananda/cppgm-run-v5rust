@@ -55,7 +55,10 @@ impl Analyzer<'_> {
         let entity = self.graph.entity(self.graph.binding(binding).entity);
         let home = entity.home?;
         if self.graph.scope(home).kind != ScopeKind::Class
-            || entity.function.is_some_and(|props| props.is_static)
+            || entity
+                .callable()
+                .function
+                .is_some_and(|props| props.is_static)
         {
             return None;
         }
@@ -146,6 +149,7 @@ impl Analyzer<'_> {
             && self
                 .graph
                 .entity(self.graph.binding(binding).entity)
+                .context()
                 .template_head
                 .is_none();
         if concrete && last.arguments.is_none() {
@@ -335,6 +339,7 @@ impl Analyzer<'_> {
                 || self
                     .graph
                     .entity(self.graph.binding(bindings[0]).entity)
+                    .context()
                     .template_head
                     .is_some()
             {
@@ -375,7 +380,7 @@ impl Analyzer<'_> {
             return None;
         };
         let entity = self.graph.entity(self.graph.binding(*binding).entity);
-        (entity.template_head.is_none()
+        (entity.context().template_head.is_none()
             && !self.graph.function_templates.requires_target(*binding)
             && (self.member_function_owner(*binding).is_none()
                 || facts.member_address(&self.graph.expression_facts).is_some()))
@@ -426,7 +431,7 @@ impl Analyzer<'_> {
                 }
             }
             let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if entity.template_head.is_some()
+            if entity.context().template_head.is_some()
                 || self.graph.function_templates.requires_target(binding)
             {
                 template = true;

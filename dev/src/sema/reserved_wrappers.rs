@@ -69,7 +69,7 @@ impl Analyzer<'_> {
                     .contains(body.entity)
                 && (self.graph.function_templates.primary(body.entity).is_some()
                     || self.graph.function_templates.bodies.member(body.entity))
-            || body.template_depth != 0 && entity.member_function.is_none()
+            || body.template_depth != 0 && entity.callable().member_function.is_none()
             || self.graph.entity(body.entity).inline != super::specifiers::InlinePreference::Inline
         {
             return Ok(false);

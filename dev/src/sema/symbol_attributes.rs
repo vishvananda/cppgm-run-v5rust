@@ -148,6 +148,7 @@ impl Analyzer<'_> {
                 .kind;
             let (internal, static_storage, thread_local) = if variable {
                 let object = owner
+                    .object()
                     .variable
                     .ok_or(Error::Invariant("attributed variable without facts"))?;
                 let thread_local = object.thread_storage == ThreadStorage::ThreadLocal;
@@ -162,6 +163,7 @@ impl Analyzer<'_> {
             } else {
                 (
                     owner
+                        .callable()
                         .function
                         .ok_or(Error::Invariant("attributed function without facts"))?
                         .internal_linkage,
@@ -399,7 +401,7 @@ mod tests {
             .ty
             .unwrap();
         assert!(matches!(
-            graph.entity(graph.binding(class).entity).layout,
+            graph.entity(graph.binding(class).entity).class().layout,
             super::super::layout::LayoutState::NotStarted
         ));
     }

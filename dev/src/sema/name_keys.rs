@@ -76,6 +76,7 @@ impl Analyzer<'_> {
                             && let super::constants::ConstantState::Value(value) = self
                                 .graph
                                 .entity(self.graph.binding(binding).entity)
+                                .object()
                                 .constant
                         {
                             key.words.truncate(start);
@@ -147,7 +148,7 @@ impl Analyzer<'_> {
         let bound = self.graph.binding(binding);
         let member = match bound.kind {
             BindingKind::Variable => {
-                self.graph.entity(bound.entity).data_member
+                self.graph.entity(bound.entity).object().data_member
                     == Some(super::graph::DataMemberKind::Instance)
             }
             BindingKind::Function => {
@@ -158,7 +159,10 @@ impl Analyzer<'_> {
                 };
                 candidates.iter().any(|&binding| {
                     let entity = self.graph.entity(self.graph.binding(binding).entity);
-                    entity.function.is_some_and(|function| !function.is_static)
+                    entity
+                        .callable()
+                        .function
+                        .is_some_and(|function| !function.is_static)
                         && entity.home.is_some_and(|home| {
                             self.graph.scope(home).kind == super::graph::ScopeKind::Class
                         })
@@ -233,6 +237,7 @@ impl Analyzer<'_> {
             && self
                 .graph
                 .entity(binding.entity)
+                .context()
                 .template_parameter
                 .is_some()
         {
@@ -245,6 +250,7 @@ impl Analyzer<'_> {
         } else if self
             .graph
             .entity(binding.entity)
+            .context()
             .template_parameter
             .is_some()
         {
@@ -350,7 +356,12 @@ impl Analyzer<'_> {
                 key.words.push(KeyWord::Entity(entity));
             } else if found.functions.as_slice().len() <= 1
                 && last.arguments.is_none()
-                && self.graph.entity(binding.entity).template_head.is_none()
+                && self
+                    .graph
+                    .entity(binding.entity)
+                    .context()
+                    .template_head
+                    .is_none()
             {
                 key.words.push(KeyWord::Entity(binding.entity));
             } else {

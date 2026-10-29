@@ -38,7 +38,9 @@ impl Analyzer<'_> {
         entity: EntityId,
     ) -> Result<(), Error> {
         use super::exceptions::{ExceptionSet, ExceptionState};
-        let ExceptionState::Template(specification) = self.graph.entity(entity).exceptions else {
+        let ExceptionState::Template(specification) =
+            self.graph.entity(entity).callable().exceptions
+        else {
             return Ok(());
         };
         if !self.begin_constructor_noexcept(entity) {
@@ -46,7 +48,7 @@ impl Analyzer<'_> {
         }
         // Pending is consumed before cloning. A computed constructor retains
         // its current raw flag during recursion; ordinary pending starts false.
-        self.graph.entity_mut(entity).exceptions = ExceptionState::Entered;
+        self.graph.entity_mut(entity).callable_mut().exceptions = ExceptionState::Entered;
         let result = (|analyzer: &mut Self| {
             let prototype_type =
                 analyzer.specialization_object_signature(entity, specification.ty)?;
@@ -58,6 +60,7 @@ impl Analyzer<'_> {
             let head = analyzer
                 .graph
                 .entity(analyzer.graph.binding(primary).entity)
+                .context()
                 .template_head
                 .ok_or(Error::Invariant("exception pattern without head"))?;
             let parent = analyzer.template_body_frame(entity, head, specification.scope)?;
@@ -113,7 +116,8 @@ impl Analyzer<'_> {
             Ok(value) => {
                 self.graph
                     .publish_constructor_noexcept(entity, value == ExceptionSet::None);
-                self.graph.entity_mut(entity).exceptions = ExceptionState::Value(value);
+                self.graph.entity_mut(entity).callable_mut().exceptions =
+                    ExceptionState::Value(value);
                 Ok(())
             }
             Err(error) => {
@@ -136,7 +140,7 @@ impl Analyzer<'_> {
             if current.kind == ScopeKind::Class
                 && current
                     .owner
-                    .is_some_and(|id| self.graph.entity(id).template_head.is_some())
+                    .is_some_and(|id| self.graph.entity(id).context().template_head.is_some())
             {
                 return Ok(());
             }
@@ -475,7 +479,7 @@ mod tests {
                 MAX_INSTANTIATION_DEPTH
             );
             assert!(matches!(
-                analyzer.graph.entity(entity).exceptions,
+                analyzer.graph.entity(entity).callable().exceptions,
                 ExceptionState::Template(_)
             ));
             let limit = analyzer.graph.binding_limit();
@@ -489,7 +493,7 @@ mod tests {
                 } else if query == 0 {
                     assert!(matches!(result, Err(Error::InstantiationDiagnostic { .. })));
                     assert!(matches!(
-                        analyzer.graph.entity(entity).exceptions,
+                        analyzer.graph.entity(entity).callable().exceptions,
                         ExceptionState::Entered
                     ));
                 } else {
@@ -572,7 +576,7 @@ mod tests {
             let primary = analyzer.graph.binding(primary).entity;
             assert!(!analyzer.graph.function_templates.body_demanded(primary));
             let super::super::exceptions::ExceptionState::Template(pattern) =
-                analyzer.graph.entity(primary).exceptions
+                analyzer.graph.entity(primary).callable().exceptions
             else {
                 panic!("primary exception pattern was overwritten");
             };
@@ -584,7 +588,7 @@ mod tests {
                     .is_err()
             );
             assert!(matches!(
-                analyzer.graph.entity(instance).exceptions,
+                analyzer.graph.entity(instance).callable().exceptions,
                 super::super::exceptions::ExceptionState::Value(_)
             ));
             analyzer.resolve_specialization_exception(instance).unwrap();

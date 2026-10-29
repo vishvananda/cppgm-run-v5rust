@@ -146,7 +146,7 @@ impl Analyzer<'_> {
                     KeyWord::ResolvedFunction(entity) => functions.push(*entity),
                     KeyWord::Entity(entity) => {
                         let node = self.graph.entity(*entity);
-                        if node.function.is_some() {
+                        if node.callable().function.is_some() {
                             functions.push(*entity);
                         } else if let Some(ty) = self.graph.lower_operand_type_name(*entity) {
                             types.push(ty);
@@ -259,6 +259,7 @@ impl Analyzer<'_> {
             let head = self
                 .graph
                 .entity(instance.primary)
+                .context()
                 .template_head
                 .ok_or(Error::Invariant("qualifier specialization without head"))?;
             let arguments = instance.arguments.clone();
@@ -295,6 +296,7 @@ impl Analyzer<'_> {
             let info = self
                 .graph
                 .entity(parameter)
+                .context()
                 .template_parameter
                 .ok_or(Error::Invariant("qualifier head without parameter facts"))?;
             if info.is_pack() || info.inner.is_some() {
@@ -339,6 +341,7 @@ impl Analyzer<'_> {
                 if let Some(info) = self
                     .graph
                     .entity(self.graph.binding(binding).entity)
+                    .context()
                     .template_parameter
                 {
                     depth = info.depth();
@@ -481,7 +484,12 @@ mod tests {
         let defaults = analyzer.graph.class_templates.qualifiers.defaults.clone();
         analyzer.finish_qualifier_arguments().unwrap();
         assert_eq!(analyzer.graph.class_templates.qualifiers.defaults, defaults);
-        let head = analyzer.graph.entity(primary).template_head.unwrap();
+        let head = analyzer
+            .graph
+            .entity(primary)
+            .context()
+            .template_head
+            .unwrap();
         for index in 1..3 {
             let default = analyzer
                 .graph
@@ -495,7 +503,7 @@ mod tests {
         }
         for entity in [matching, different, pack] {
             let node = analyzer.graph.entity(entity);
-            assert!(node.scope.is_none() && !node.complete && !node.defined);
+            assert!(node.context().scope.is_none() && !node.complete && !node.defined);
         }
         assert!(analyzer.graph.root_demands.as_slice().is_empty());
     }
@@ -539,7 +547,7 @@ mod tests {
         ));
         assert!(analyzer.graph.lookup_limit.is_none());
         assert_eq!(analyzer.template_depth, 0);
-        assert!(analyzer.graph.entity(instance).scope.is_none());
+        assert!(analyzer.graph.entity(instance).context().scope.is_none());
         assert!(analyzer.graph.root_demands.as_slice().is_empty());
     }
 }

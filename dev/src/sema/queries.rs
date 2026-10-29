@@ -353,6 +353,7 @@ impl Analyzer<'_> {
             TypeKind::Enum(entity) => self
                 .graph
                 .entity(entity)
+                .enumerated()
                 .enumeration
                 .is_some_and(|info| info.underlying.is_some()),
             _ => true,
@@ -408,6 +409,7 @@ impl Analyzer<'_> {
             ty = self
                 .graph
                 .entity(entity)
+                .enumerated()
                 .enumeration
                 .and_then(|info| info.underlying)
                 .ok_or_else(|| Error::at(location, "size of an incomplete enumeration"))?;
@@ -711,6 +713,7 @@ impl Analyzer<'_> {
                     || self
                         .graph
                         .entity(binding.entity)
+                        .context()
                         .template_parameter
                         .is_some())
             {
@@ -725,7 +728,7 @@ impl Analyzer<'_> {
                         return Ok(ty);
                     }
                     let super::constants::ConstantState::Value(value) =
-                        self.graph.entity(binding.entity).constant
+                        self.graph.entity(binding.entity).object().constant
                     else {
                         return Err(Error::Invariant("enumerator without value"));
                     };

@@ -154,9 +154,14 @@ impl Analyzer<'_> {
                 "a dependent template-name names no template in its instantiated qualifier",
             );
         }
-        let scope = self.graph.entity(class).scope.ok_or(Error::Invariant(
-            "complete template qualifier without scope",
-        ))?;
+        let scope = self
+            .graph
+            .entity(class)
+            .context()
+            .scope
+            .ok_or(Error::Invariant(
+                "complete template qualifier without scope",
+            ))?;
         let found = self.qualified_declaration_result(scope, name.name.into(), Filter::Ordinary)?;
         // The source consumes the representative binding, including ambiguity.
         if let Some(binding) = found.binding
@@ -209,8 +214,15 @@ mod tests {
         let primary = *names.names.keys().next().unwrap();
         let name = names.get(primary).unwrap();
         assert!(analyzer.graph.entity(primary).home.is_none());
-        assert!(analyzer.graph.entity(primary).scope.is_none());
-        assert!(analyzer.graph.entity(primary).template_head.is_none());
+        assert!(analyzer.graph.entity(primary).context().scope.is_none());
+        assert!(
+            analyzer
+                .graph
+                .entity(primary)
+                .context()
+                .template_head
+                .is_none()
+        );
         assert!(!analyzer.graph.entity(primary).complete);
         assert!(!analyzer.complete_class(primary).unwrap());
         let binding_limit = analyzer.graph.binding_limit();
@@ -283,7 +295,7 @@ mod tests {
         assert!(!instance.dependent);
         assert_eq!(instance.arguments.len(), 2);
         assert_eq!(instance.arguments[0], instance.arguments[1]);
-        assert!(analyzer.graph.entity(entity).scope.is_none());
+        assert!(analyzer.graph.entity(entity).context().scope.is_none());
         assert!(!analyzer.graph.entity(entity).complete);
         assert_eq!(syntax_mark, analyzer.tree.expressions.mark());
         assert!(analyzer.graph.root_demands.as_slice().is_empty());

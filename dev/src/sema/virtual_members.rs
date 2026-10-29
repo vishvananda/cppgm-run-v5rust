@@ -222,11 +222,13 @@ impl Analyzer<'_> {
         let special = self
             .graph
             .entity(function)
+            .callable()
             .member_function
             .map(|key| key.kind);
         let is_static = self
             .graph
             .entity(function)
+            .callable()
             .function
             .is_some_and(|props| props.is_static);
         let mut facts = VirtualFunction {
@@ -259,7 +261,12 @@ impl Analyzer<'_> {
             self.graph.types.declaration_signature(info.ty)?
         };
         if special != Some(MemberKind::Constructor)
-            && self.graph.entity(function).template_head.is_none()
+            && self
+                .graph
+                .entity(function)
+                .context()
+                .template_head
+                .is_none()
         {
             let destructor = special == Some(MemberKind::Destructor);
             if destructor
@@ -318,7 +325,7 @@ impl Analyzer<'_> {
             return Err(Error::at(location, "a constexpr virtual function"));
         }
         if facts.is_virtual {
-            self.graph.entity_mut(class).polymorphism = Polymorphism::Dynamic;
+            self.graph.entity_mut(class).class_mut().polymorphism = Polymorphism::Dynamic;
             self.graph.virtuals.functions.insert(function, facts);
             if special == Some(MemberKind::Destructor) {
                 self.graph.virtuals.destructors.insert(class, function);
@@ -335,9 +342,10 @@ impl Analyzer<'_> {
                     .function_signatures
                     .insert(function, (key, signature));
             }
-            self.graph.entity_mut(class).aggregation =
+            self.graph.entity_mut(class).class_mut().aggregation =
                 super::aggregate_initialization::Aggregation::Ineligible;
-            self.graph.entity_mut(class).layout_category = super::layout::LayoutCategory::NonPod;
+            self.graph.entity_mut(class).class_mut().layout_category =
+                super::layout::LayoutCategory::NonPod;
         }
         self.check_abstract_function(info.ty, location)
     }
@@ -415,6 +423,7 @@ impl Analyzer<'_> {
         let scope = self
             .graph
             .entity(class)
+            .context()
             .scope
             .ok_or(Error::Invariant("assignment scope"))?;
         let key = super::assignment::key()?;
@@ -423,7 +432,8 @@ impl Analyzer<'_> {
             .functions_at(scope, key)
             .map(|binding| self.graph.binding(binding).entity)
             .filter(|&function| {
-                self.graph.entity(function).assignment_origin == super::assignment::Origin::Implicit
+                self.graph.entity(function).callable().assignment_origin
+                    == super::assignment::Origin::Implicit
             })
             .collect();
         for function in functions {
@@ -490,10 +500,17 @@ impl Analyzer<'_> {
         let primary = self
             .graph
             .entity(class)
+            .class()
             .bases
             .iter()
             .find(|edge| {
-                !edge.is_virtual && self.graph.entity(edge.class).polymorphism.is_dynamic()
+                !edge.is_virtual
+                    && self
+                        .graph
+                        .entity(edge.class)
+                        .class()
+                        .polymorphism
+                        .is_dynamic()
             })
             .map(|edge| edge.class);
         let mut pure = primary
@@ -503,6 +520,7 @@ impl Analyzer<'_> {
         let scope = self
             .graph
             .entity(class)
+            .context()
             .scope
             .ok_or(Error::Invariant("virtual class without scope"))?;
         for index in 0..self.graph.virtual_member_count(class)? {
@@ -517,6 +535,7 @@ impl Analyzer<'_> {
                 || self
                     .graph
                     .entity(function)
+                    .callable()
                     .member_function
                     .is_some_and(|key| key.kind == MemberKind::Destructor)
             {
@@ -537,6 +556,7 @@ impl Analyzer<'_> {
         let destructor_pure = |class| {
             self.graph
                 .entity(class)
+                .class()
                 .declared_destructor
                 .is_some_and(|binding| {
                     self.graph
@@ -564,7 +584,7 @@ impl Analyzer<'_> {
         class: EntityId,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        let has_virtual_bases = self.graph.entity(class).bases.iter().any(|edge| {
+        let has_virtual_bases = self.graph.entity(class).class().bases.iter().any(|edge| {
             edge.is_virtual
                 || self
                     .graph
@@ -573,7 +593,7 @@ impl Analyzer<'_> {
                     .get(&edge.class)
                     .is_some_and(|facts| facts.has_virtual_bases)
         });
-        if !self.graph.entity(class).polymorphism.is_dynamic() && !has_virtual_bases {
+        if !self.graph.entity(class).class().polymorphism.is_dynamic() && !has_virtual_bases {
             return Ok(());
         }
         let primary = self.virtual_table_primary(class, location)?;
@@ -585,6 +605,7 @@ impl Analyzer<'_> {
         let scope = self
             .graph
             .entity(class)
+            .context()
             .scope
             .ok_or(Error::Invariant("virtual class scope"))?;
         let mut entries = Vec::new();
@@ -604,6 +625,7 @@ impl Analyzer<'_> {
             let destructor = self
                 .graph
                 .entity(function)
+                .callable()
                 .member_function
                 .is_some_and(|member| member.kind == MemberKind::Destructor);
             let mut next = primary;
@@ -675,7 +697,7 @@ impl Analyzer<'_> {
             if key.is_none()
                 && !facts.pure
                 && entity.inline != super::specifiers::InlinePreference::Inline
-                && entity.special_definition.is_none()
+                && entity.callable().special_definition.is_none()
                 && entity.availability != super::graph::FunctionAvailability::Deleted
             {
                 key = Some(function);
@@ -696,12 +718,13 @@ impl Analyzer<'_> {
             !self
                 .graph
                 .entity(class)
+                .class()
                 .bases
                 .iter()
                 .any(|edge| !edge.is_virtual && edge.class == primary)
         });
         let has_virtual_primary = own_virtual_primary
-            || self.graph.entity(class).bases.iter().any(|edge| {
+            || self.graph.entity(class).class().bases.iter().any(|edge| {
                 self.graph
                     .virtuals
                     .classes
@@ -762,6 +785,7 @@ impl Analyzer<'_> {
         if self
             .graph
             .entity(function)
+            .callable()
             .function
             .is_some_and(|props| props.is_static)
         {
@@ -776,6 +800,7 @@ impl Analyzer<'_> {
         if !self
             .graph
             .entity(function)
+            .callable()
             .member_function
             .is_some_and(|key| key.kind == MemberKind::Destructor)
         {
@@ -867,6 +892,7 @@ impl Analyzer<'_> {
             path,
             self.graph
                 .entity(class)
+                .context()
                 .scope
                 .ok_or(Error::Invariant("class without scope"))?,
             location,
@@ -995,7 +1021,7 @@ impl Analyzer<'_> {
         function: EntityId,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        if let Some(member) = self.graph.entity(function).member_function
+        if let Some(member) = self.graph.entity(function).callable().member_function
             && member.kind == MemberKind::Destructor
             && self.graph.virtuals.function(function).is_virtual
             && self.graph.entity(function).availability
@@ -1023,6 +1049,7 @@ impl Analyzer<'_> {
         let scope = self
             .graph
             .entity(class)
+            .context()
             .scope
             .ok_or(Error::Invariant("virtual deallocation scope"))?;
         let key = super::allocation::key(Keyword::Delete, false);
@@ -1087,7 +1114,12 @@ impl Analyzer<'_> {
         };
         let function = self.graph.binding(binding).entity;
         self.check_function_not_deleted(function, location)?;
-        if self.graph.entity(function).member_function.is_some()
+        if self
+            .graph
+            .entity(function)
+            .callable()
+            .member_function
+            .is_some()
             && let Some(naming) = naming
             && let Some(declaration) =
                 self.selected_function_declaration(binding, found.functions.as_slice())
@@ -1102,7 +1134,12 @@ impl Analyzer<'_> {
         class: EntityId,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        let implicit = self.graph.entity(class).declared_destructor.is_none();
+        let implicit = self
+            .graph
+            .entity(class)
+            .class()
+            .declared_destructor
+            .is_none();
         if implicit {
             let primary = self.virtual_table_primary(class, location)?;
             let mut search =
@@ -1113,8 +1150,8 @@ impl Analyzer<'_> {
                 self.graph.work.totals.override_steps += 1;
             }
         }
-        for index in 0..self.graph.entity(class).bases.len() {
-            let base = self.graph.entity(class).bases[index].class;
+        for index in 0..self.graph.entity(class).class().bases.len() {
+            let base = self.graph.entity(class).class().bases[index].class;
             if let Some(found) = self.graph.virtuals.destructor(base) {
                 if implicit && self.graph.virtuals.function(found).is_final {
                     return Err(Error::at(location, "overriding a final virtual function"));
@@ -1122,6 +1159,7 @@ impl Analyzer<'_> {
                 if implicit {
                     self.graph
                         .entity_mut(class)
+                        .special_mut()
                         .destruction
                         .as_mut()
                         .ok_or(Error::Invariant("implicit virtual destructor properties"))?
@@ -1147,7 +1185,7 @@ impl Analyzer<'_> {
             let entity = self.graph.entity(destructor);
             let defaulted = implicit
                 || matches!(
-                    entity.special_definition,
+                    entity.callable().special_definition,
                     Some(super::special_members::SpecialDefinition::Defaulted { first: true, .. })
                 );
             if entity.availability != super::graph::FunctionAvailability::Deleted
@@ -1165,6 +1203,7 @@ impl Analyzer<'_> {
                         super::graph::FunctionAvailability::Deleted;
                     self.graph
                         .entity_mut(class)
+                        .special_mut()
                         .destruction
                         .as_mut()
                         .ok_or(Error::Invariant("destructor properties"))?
@@ -1173,13 +1212,14 @@ impl Analyzer<'_> {
             }
             self.graph
                 .entity_mut(class)
+                .special_mut()
                 .destruction
                 .as_mut()
                 .ok_or(Error::Invariant("virtual destructor without properties"))?
                 .trivial = false;
         }
-        for index in 0..self.graph.entity(class).bases.len() {
-            let base = self.graph.entity(class).bases[index].class;
+        for index in 0..self.graph.entity(class).class().bases.len() {
+            let base = self.graph.entity(class).class().bases[index].class;
             if self.graph.virtuals.destructor(base).is_some() {
                 self.check_completed_destructor_override(class, base, location)?;
             }
@@ -1250,6 +1290,7 @@ impl super::graph::Graph {
     ) -> Result<Option<EntityId>, Error> {
         if self
             .entity(function)
+            .callable()
             .member_function
             .is_some_and(|m| m.kind == MemberKind::Destructor)
         {
@@ -1386,6 +1427,7 @@ impl super::graph::Graph {
     pub(super) fn virtual_member_count(&self, class: EntityId) -> Result<usize, Error> {
         let scope = self
             .entity(class)
+            .context()
             .scope
             .ok_or(Error::Invariant("virtual class scope"))?;
         Ok(self.scope(scope).bindings.len()
@@ -1403,6 +1445,7 @@ impl super::graph::Graph {
     ) -> Result<Option<EntityId>, Error> {
         let scope = self
             .entity(class)
+            .context()
             .scope
             .ok_or(Error::Invariant("virtual class scope"))?;
         let declared = self.scope(scope).bindings.len();
@@ -1412,6 +1455,7 @@ impl super::graph::Graph {
         if index == declared {
             return Ok(self
                 .entity(class)
+                .class()
                 .implicit_destructor
                 .map(|binding| self.binding(binding).entity));
         }
@@ -1431,7 +1475,7 @@ impl super::graph::Graph {
         self.virtuals.deallocators.get(&class).copied()
     }
     pub(crate) fn lower_polymorphic(&self, class: EntityId) -> bool {
-        self.entity(class).polymorphism.is_dynamic()
+        self.entity(class).class().polymorphism.is_dynamic()
     }
     pub(crate) fn lower_dynamic_class(&self, class: EntityId) -> bool {
         self.lower_polymorphic(class)
@@ -1471,14 +1515,14 @@ impl super::graph::Graph {
             self.lower_entity_unit_local(class)?,
             self.scope(home).kind != ScopeKind::Namespace,
             entity.key,
-            entity.scope.unwrap_or(home),
+            entity.context().scope.unwrap_or(home),
         ))
     }
     pub(crate) fn lower_rtti_bases(
         &self,
         class: EntityId,
     ) -> impl Iterator<Item = Result<(EntityId, bool, bool, u64), Error>> + '_ {
-        self.entity(class).bases.iter().map(|base| {
+        self.entity(class).class().bases.iter().map(|base| {
             Ok((
                 base.class,
                 base.access == super::graph::Access::Public,
@@ -1494,6 +1538,7 @@ impl super::graph::Graph {
         index: usize,
     ) -> Option<(EntityId, bool, Option<u64>)> {
         self.entity(class)
+            .class()
             .bases
             .get(index)
             .map(|edge| (edge.class, edge.is_virtual, edge.offset))
@@ -1503,6 +1548,7 @@ impl super::graph::Graph {
         class: EntityId,
     ) -> impl Iterator<Item = (EntityId, bool)> + '_ {
         self.entity(class)
+            .class()
             .bases
             .iter()
             .map(|base| (base.class, base.is_virtual))
@@ -1649,6 +1695,7 @@ mod tests {
                     analyzer
                         .graph
                         .entity(class)
+                        .special()
                         .destruction
                         .as_ref()
                         .unwrap()
@@ -1685,7 +1732,7 @@ mod tests {
                         .unwrap(),
                 )
                 .entity;
-            let scope = graph.entity(class).scope.unwrap();
+            let scope = graph.entity(class).context().scope.unwrap();
             let member = graph
                 .binding(
                     graph
@@ -1736,7 +1783,7 @@ mod tests {
                 .own(graph.global, name, super::super::lookup::Filter::Prefix)
                 .unwrap();
             let class = graph.class_of(graph.binding(alias).ty.unwrap()).unwrap();
-            let scope = graph.entity(class).scope.unwrap();
+            let scope = graph.entity(class).context().scope.unwrap();
             let binding = graph
                 .functions_at(scope, super::super::allocation::key(Keyword::Delete, false))
                 .next()
@@ -1753,7 +1800,7 @@ mod tests {
             assert_eq!(graph.virtuals.layouts.contains_key(&class), index == 1);
             if index == 1 {
                 let parameters: Vec<_> = graph
-                    .lower_parameters(graph.entity(deallocator).scope)
+                    .lower_parameters(graph.entity(deallocator).context().scope)
                     .collect();
                 assert_eq!(parameters.len(), 1);
                 assert!(parameters[0].1.is_some());
@@ -1804,7 +1851,7 @@ mod tests {
             let facts = graph.lower_virtual_class(class).unwrap();
             assert_eq!(facts.key.is_none(), index < 2);
             assert_eq!(
-                graph.instance_class(graph.entity(class).scope.unwrap()),
+                graph.instance_class(graph.entity(class).context().scope.unwrap()),
                 index < 2
             );
             assert_eq!(facts.size, 1);
@@ -1865,7 +1912,7 @@ mod tests {
         assert_eq!(actions.len(), 2);
         assert!(actions[0].function.is_some());
         assert!(matches!(
-            graph.entity(*unused).copy_preparation,
+            graph.entity(*unused).special().copy_preparation,
             super::super::copy_properties::Preparation::Pending
         ));
         assert!(graph.root_demands.as_slice().is_empty());
@@ -1873,12 +1920,12 @@ mod tests {
         // offset zero (analyzer_virtual.cpp::result_needs_adjustment).
         for &class in [base, derived] {
             assert!(matches!(
-                graph.entity(class).layout,
+                graph.entity(class).class().layout,
                 super::super::layout::LayoutState::Value { .. }
             ));
         }
         assert!(matches!(
-            graph.entity(*unused).layout,
+            graph.entity(*unused).class().layout,
             super::super::layout::LayoutState::NotStarted
         ));
         assert!(graph.virtuals.layouts.is_empty());
@@ -1914,7 +1961,7 @@ mod tests {
         let b = class(names[1]);
         let unused = class(names[2]);
         let member = |class, name| {
-            let home = graph.entity(class).scope.unwrap();
+            let home = graph.entity(class).context().scope.unwrap();
             graph
                 .binding(
                     graph
@@ -1960,17 +2007,17 @@ mod tests {
                 .count(),
             2
         );
-        assert!(graph.entity(b).implicit_destructor.is_some());
+        assert!(graph.entity(b).class().implicit_destructor.is_some());
         assert!(graph.lower_virtual_deallocator(b).is_ok());
         assert!(graph.root_demands.as_slice().is_empty());
         for id in [a, b] {
             assert!(matches!(
-                graph.entity(id).layout,
+                graph.entity(id).class().layout,
                 super::super::layout::LayoutState::Value { .. }
             ));
         }
         assert!(matches!(
-            graph.entity(unused).layout,
+            graph.entity(unused).class().layout,
             super::super::layout::LayoutState::NotStarted
         ));
         assert!(graph.virtuals.layouts.is_empty());

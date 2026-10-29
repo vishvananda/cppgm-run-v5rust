@@ -98,21 +98,22 @@ impl Analyzer<'_> {
             let language = super::linkage::Language::from_c(
                 self.c_language && self.graph.scope(home).kind != ScopeKind::Class,
             );
-            self.graph.entity_mut(entity).variable = Some(super::graph::VariableProperties {
-                is_extern: specs.is_extern,
-                internal_linkage: internal,
-                language,
-                thread_storage: specs.thread_storage,
-                static_specifier: if specs.is_static {
-                    super::specifiers::StaticSpecifier::Present
-                } else {
-                    super::specifiers::StaticSpecifier::Absent
-                },
-                automatic: self.graph.scope(home).kind == ScopeKind::Block
-                    && !specs.is_static
-                    && !specs.is_extern
-                    && specs.thread_storage == super::specifiers::ThreadStorage::Ordinary,
-            });
+            self.graph.entity_mut(entity).object_mut().variable =
+                Some(super::graph::VariableProperties {
+                    is_extern: specs.is_extern,
+                    internal_linkage: internal,
+                    language,
+                    thread_storage: specs.thread_storage,
+                    static_specifier: if specs.is_static {
+                        super::specifiers::StaticSpecifier::Present
+                    } else {
+                        super::specifiers::StaticSpecifier::Absent
+                    },
+                    automatic: self.graph.scope(home).kind == ScopeKind::Block
+                        && !specs.is_static
+                        && !specs.is_extern
+                        && specs.thread_storage == super::specifiers::ThreadStorage::Ordinary,
+                });
             if let Some(name) = name.identifier() {
                 if namespace {
                     self.agree_block_linkage(home, name, kind, ty, internal, location)?;
@@ -165,23 +166,24 @@ impl Analyzer<'_> {
                         "a block-scope declaration of a function with another type",
                     ));
                 }
-                if let Some(properties) = self.graph.entity(outer).function {
+                if let Some(properties) = self.graph.entity(outer).callable().function {
                     internal = properties.internal_linkage;
                     language = properties.language;
                     denotes = Some(properties.denotes.unwrap_or(outer));
                 }
             }
-            self.graph.entity_mut(entity).function = Some(super::graph::FunctionProperties {
-                effects: super::graph::FunctionEffect::Default,
-                no_inline: false,
-                returns: super::graph::FunctionReturn::MayReturn,
-                internal_linkage: internal,
-                language,
-                denotes,
-                is_static: member && (specs.is_static || allocation),
-                special,
-                allocation: None,
-            });
+            self.graph.entity_mut(entity).callable_mut().function =
+                Some(super::graph::FunctionProperties {
+                    effects: super::graph::FunctionEffect::Default,
+                    no_inline: false,
+                    returns: super::graph::FunctionReturn::MayReturn,
+                    internal_linkage: internal,
+                    language,
+                    denotes,
+                    is_static: member && (specs.is_static || allocation),
+                    special,
+                    allocation: None,
+                });
             if !templated && let Some(name) = name.identifier() {
                 if self.graph.scope(home).kind == ScopeKind::Namespace {
                     self.agree_block_linkage(home, name, kind, ty, internal, location)?;
@@ -236,6 +238,7 @@ impl Analyzer<'_> {
         let properties = self
             .graph
             .entity(entity)
+            .object()
             .variable
             .ok_or(Error::Invariant("variable without storage facts"))?;
         if specs.is_static && !properties.internal_linkage {
@@ -292,7 +295,7 @@ impl Analyzer<'_> {
             let mut next = 0;
             while let Some(binding) = self.graph.next_function(space, name.into(), &mut next) {
                 let entity = self.graph.entity(self.graph.binding(binding).entity);
-                if entity.template_head.is_none()
+                if entity.context().template_head.is_none()
                     && self.same_function_parameters(
                         entity
                             .ty
@@ -317,9 +320,12 @@ impl Analyzer<'_> {
         }
         let entity = self.graph.entity(binding.entity);
         let internal = if kind == BindingKind::Function {
-            entity.function.is_some_and(|p| p.internal_linkage)
+            entity
+                .callable()
+                .function
+                .is_some_and(|p| p.internal_linkage)
         } else {
-            entity.variable.is_some_and(|p| p.internal_linkage)
+            entity.object().variable.is_some_and(|p| p.internal_linkage)
         };
         Ok((!internal || !self.hidden_below_namespace(scope, name)).then_some(binding.entity))
     }

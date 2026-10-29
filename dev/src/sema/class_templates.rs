@@ -62,7 +62,7 @@ impl super::graph::Graph {
                 return None;
             }
             let class = self.entity(binding.entity);
-            if class.scope != Some(self.binding_scope(id)) {
+            if class.context().scope != Some(self.binding_scope(id)) {
                 return None;
             }
             self.class_templates
@@ -138,6 +138,7 @@ impl Analyzer<'_> {
         let parameter = self
             .graph
             .entity(binding.entity)
+            .context()
             .template_parameter
             .is_some_and(|info| info.inner.is_some());
         let Some(name) = self.template_name_type(found, true)? else {
@@ -154,6 +155,7 @@ impl Analyzer<'_> {
         let head = self
             .graph
             .entity(primary)
+            .context()
             .template_head
             .ok_or(Error::Invariant("class template without head"))?;
         let arguments = self.form_template_arguments(component, scope, Some(head))?;
@@ -184,17 +186,21 @@ impl Analyzer<'_> {
     }
 
     fn current_class_instantiation(&self, primary: EntityId, scope: ScopeId) -> bool {
-        self.graph.entity(primary).scope.is_some_and(|class| {
-            self.graph.encloses(class, scope)
-                || self.template_owner.is_some_and(|owner| {
-                    owner == primary
-                        || self
-                            .graph
-                            .entity(owner)
-                            .home
-                            .is_some_and(|home| self.graph.encloses(class, home))
-                })
-        })
+        self.graph
+            .entity(primary)
+            .context()
+            .scope
+            .is_some_and(|class| {
+                self.graph.encloses(class, scope)
+                    || self.template_owner.is_some_and(|owner| {
+                        owner == primary
+                            || self
+                                .graph
+                                .entity(owner)
+                                .home
+                                .is_some_and(|home| self.graph.encloses(class, home))
+                    })
+            })
     }
 
     pub(super) fn class_template_primary(&self, found: BindingId) -> Option<EntityId> {
@@ -209,8 +215,9 @@ impl Analyzer<'_> {
         } else {
             binding.entity
         };
-        (binding.kind == BindingKind::Type && self.graph.entity(primary).template_head.is_some())
-            .then_some(primary)
+        (binding.kind == BindingKind::Type
+            && self.graph.entity(primary).context().template_head.is_some())
+        .then_some(primary)
     }
 
     pub(super) fn class_template_with_defaults(
@@ -222,6 +229,7 @@ impl Analyzer<'_> {
         let head = self
             .graph
             .entity(primary)
+            .context()
             .template_head
             .ok_or(Error::Invariant("specialization without template head"))?;
         let count = self.graph.templates.parameters(head).len();
@@ -482,6 +490,7 @@ impl Analyzer<'_> {
             let Some(position) = self
                 .graph
                 .entity(binding.entity)
+                .context()
                 .template_parameter
                 .and_then(|info| info.index(depth))
             else {
@@ -504,6 +513,7 @@ impl Analyzer<'_> {
         let head = self
             .graph
             .entity(primary)
+            .context()
             .template_head
             .ok_or(Error::Invariant("substituted template without head"))?;
         let filled = self.fill_template_arguments_in(head, &mut arguments, location, None);
@@ -543,6 +553,7 @@ impl Analyzer<'_> {
         let head = self
             .graph
             .entity(primary)
+            .context()
             .template_head
             .ok_or(Error::Invariant("matching specialization without head"))?;
         let result = self.match_argument_list_in(head, &mut arguments, context);
@@ -615,7 +626,7 @@ impl Analyzer<'_> {
                 break;
             }
             if let Some(owner) = node.owner {
-                dependent |= self.graph.entity(owner).template_head.is_some()
+                dependent |= self.graph.entity(owner).context().template_head.is_some()
                     || self
                         .graph
                         .class_templates
@@ -748,18 +759,24 @@ mod tests {
             let TypeKind::Class(class) = graph.types.get(ty).kind else {
                 panic!("class alias");
             };
-            let scope = graph.entity(class).scope.unwrap();
+            let scope = graph.entity(class).context().scope.unwrap();
             let function = graph
                 .own(scope, size, super::super::lookup::Filter::Ordinary)
                 .unwrap();
             let function = graph.binding(function).entity;
-            let body = graph.entity(function).analyzed_body.unwrap();
+            let body = graph.entity(function).callable().analyzed_body.unwrap();
             assert_eq!(graph.function_templates.bodies.body(function), Some(body));
             bodies.insert(body);
             let unused = graph
                 .own(scope, unused, super::super::lookup::Filter::Ordinary)
                 .unwrap();
-            assert!(graph.entity(graph.binding(unused).entity).scope.is_none());
+            assert!(
+                graph
+                    .entity(graph.binding(unused).entity)
+                    .context()
+                    .scope
+                    .is_none()
+            );
             classes.push(class);
         }
         assert_eq!(classes[0], classes[2]);
@@ -805,7 +822,7 @@ mod tests {
             };
             let instance = graph.class_templates.instance(entity).unwrap();
             assert!(!instance.dependent);
-            assert!(graph.entity(entity).scope.is_none());
+            assert!(graph.entity(entity).context().scope.is_none());
             let argument = *instance.arguments.last().unwrap();
             assert!(matches!(graph.types.get(argument).kind,
                 TypeKind::Value { bits, .. } if bits == expected));
@@ -819,7 +836,7 @@ mod tests {
         assert_eq!(graph.binding(binding).ty, Some(concrete[0]));
         let mut patterns = 0;
         for instance in graph.class_templates.instances.values() {
-            let Some(head) = graph.entity(instance.primary).template_head else {
+            let Some(head) = graph.entity(instance.primary).context().template_head else {
                 continue;
             };
             let index = instance.arguments.len() - 1;
@@ -836,6 +853,7 @@ mod tests {
                 assert!(
                     graph
                         .entity(graph.binding(instance.binding).entity)
+                        .context()
                         .scope
                         .is_none()
                 );
@@ -873,7 +891,7 @@ mod tests {
         let mut scopes = crate::support::hash::HashSet::default();
         let mut shared = crate::support::hash::HashSet::default();
         for instance in graph.class_templates.instances.values() {
-            let Some(head) = graph.entity(instance.primary).template_head else {
+            let Some(head) = graph.entity(instance.primary).context().template_head else {
                 continue;
             };
             if graph.templates.parameters(head).len() != 2 {
@@ -927,7 +945,7 @@ mod tests {
         let TypeKind::Class(class) = graph.types.get(ty).kind else {
             panic!("specialization type")
         };
-        assert!(graph.entity(class).scope.is_none());
+        assert!(graph.entity(class).context().scope.is_none());
         let instance = graph.class_templates.instance(class).unwrap();
         assert_eq!(instance.arguments.len(), 2);
         assert!(!instance.dependent);
@@ -1007,8 +1025,8 @@ mod tests {
         assert!(graph.friendships.grants(owner, selected));
         assert!(!graph.friendships.grants(owner, other));
         assert!(!graph.friendships.grants(owner, primary));
-        assert!(graph.entity(selected).scope.is_none());
-        assert!(graph.entity(other).scope.is_none());
+        assert!(graph.entity(selected).context().scope.is_none());
+        assert!(graph.entity(other).context().scope.is_none());
     }
 
     #[test]
@@ -1037,10 +1055,10 @@ mod tests {
             primaries.insert(instance.primary);
             dependent += usize::from(instance.dependent);
             let shell = graph.entity(entity);
-            assert!(shell.scope.is_none());
+            assert!(shell.context().scope.is_none());
             assert!(!shell.defined && !shell.complete);
             assert!(matches!(
-                shell.layout,
+                shell.class().layout,
                 super::super::layout::LayoutState::NotStarted
             ));
             assert!(
@@ -1075,7 +1093,12 @@ mod tests {
             .own(global, name, super::super::lookup::Filter::Elaborated)
             .unwrap();
         let entity = analyzer.graph.binding(binding).entity;
-        let head = analyzer.graph.entity(entity).template_head.unwrap();
+        let head = analyzer
+            .graph
+            .entity(entity)
+            .context()
+            .template_head
+            .unwrap();
         let default = analyzer.graph.templates.default_argument(head, 1).unwrap();
         let int = analyzer
             .graph

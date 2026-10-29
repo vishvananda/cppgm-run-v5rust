@@ -68,6 +68,7 @@ impl Analyzer<'_> {
         let head = self
             .graph
             .entity(primary)
+            .context()
             .template_head
             .ok_or(Error::Invariant("variable template without head"))?;
         let mut arguments = self.form_template_arguments(component, scope, Some(head))?;
@@ -89,6 +90,7 @@ impl Analyzer<'_> {
         let head = self
             .graph
             .entity(primary)
+            .context()
             .template_head
             .ok_or(Error::Invariant("variable specialization without head"))?;
         self.match_declaration_arguments(head, &mut arguments, location)?;
@@ -120,6 +122,7 @@ impl Analyzer<'_> {
         let head = self
             .graph
             .entity(source)
+            .context()
             .template_head
             .ok_or(Error::Invariant("variable pattern without head"))?;
         let given: Vec<_> = deduced.into_iter().map(Some).collect();
@@ -148,18 +151,18 @@ impl Analyzer<'_> {
         let (name, home, variable, data_member, key_word) = (
             template.name,
             template.home,
-            template.variable,
-            template.data_member,
+            template.object().variable,
+            template.object().data_member,
             template.key,
         );
         // A shell keeps its first declaration's type and constexpr fact, even
         // when a subsequent explicit declaration supplies the definition.
         let constexpr = declared.map_or(self.graph.entity(source).constexpr, |d| d.constexpr);
         let entity = self.graph.add_entity(Some(ty), name, key_word)?;
-        let node = self.graph.entity_mut(entity);
+        let mut node = self.graph.entity_mut(entity);
         node.home = home;
-        node.variable = variable;
-        node.data_member = data_member;
+        node.object_mut().variable = variable;
+        node.object_mut().data_member = data_member;
         node.constexpr = constexpr;
         let binding = self.graph.add_hidden_binding_in(
             home.ok_or(Error::Invariant("variable template without owner"))?,
@@ -286,6 +289,7 @@ impl Analyzer<'_> {
                     if let Some(index) = self
                         .graph
                         .entity(old.entity)
+                        .context()
                         .template_parameter
                         .and_then(|p| p.index(depth))
                     {
@@ -309,8 +313,11 @@ impl Analyzer<'_> {
                         pattern.location,
                         pattern.auto_cv,
                     )?;
-                    analyzer.graph.entity_mut(entity).variable_definition =
-                        Some(pattern.declarator);
+                    analyzer
+                        .graph
+                        .entity_mut(entity)
+                        .object_mut()
+                        .variable_definition = Some(pattern.declarator);
                     Ok(Definition { initializer })
                 },
             )
@@ -417,6 +424,7 @@ impl Analyzer<'_> {
         let head = self
             .graph
             .entity(primary)
+            .context()
             .template_head
             .ok_or(Error::Invariant("variable template without head"))?;
         let mut arguments = self.form_template_arguments(last, scope, Some(head))?;
@@ -486,8 +494,10 @@ impl Analyzer<'_> {
             )?;
         }
         self.graph.entity_mut(entity).defined = init.initializer.is_some() || !member;
-        self.graph.entity_mut(entity).variable_definition =
-            self.graph.entity(entity).defined.then_some(init.declarator);
+        self.graph
+            .entity_mut(entity)
+            .object_mut()
+            .variable_definition = self.graph.entity(entity).defined.then_some(init.declarator);
         self.graph.variable_instances.finish(
             entity,
             Ok(Definition {
@@ -582,7 +592,13 @@ mod tests {
             assert_eq!(graph.binding(alias).ty, Some(ty));
         }
         assert!(graph.variable_instances.demands().is_empty());
-        assert!(graph.entity(entity).static_initializer.is_none());
+        assert!(
+            graph
+                .entity(entity)
+                .initialization()
+                .static_initializer
+                .is_none()
+        );
         assert!(graph.root_demands.as_slice().is_empty());
     }
 
@@ -675,7 +691,7 @@ mod tests {
             primaries.push(instance.primary);
             assert_eq!(instance.arguments.len(), 1);
             let Some(super::super::static_initialization::Value::Integer(value)) =
-                graph.entity(entity).static_initializer
+                graph.entity(entity).initialization().static_initializer
             else {
                 panic!("initializer was not evaluated");
             };

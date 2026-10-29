@@ -54,11 +54,11 @@ mod pattern_tests {
             let TypeKind::Class(class) = graph.types.get(binding.ty.unwrap()).kind else {
                 panic!("class alias");
             };
-            let scope = graph.entity(class).scope.unwrap();
+            let scope = graph.entity(class).context().scope.unwrap();
             let primary = graph
                 .binding(graph.functions_at(scope, name.into()).next().unwrap())
                 .entity;
-            let head = graph.entity(primary).template_head.unwrap();
+            let head = graph.entity(primary).context().template_head.unwrap();
             assert_eq!(graph.templates.depth(head), 0);
             let unused = graph
                 .binding(graph.functions_at(scope, unused.into()).next().unwrap())
@@ -164,11 +164,11 @@ impl Analyzer<'_> {
         if defines {
             // The ordinary body owner publishes the replacement once. Sever
             // only this member's source edge; other class instances retain it.
-            let function = self.graph.entity_mut(entity);
+            let mut function = self.graph.entity_mut(entity);
             function.defined = false;
-            function.function_definition = None;
-            function.scope = None;
-            function.function_parameters = info.parameters;
+            function.callable_mut().function_definition = None;
+            function.context_mut().scope = None;
+            function.callable_mut().function_parameters = info.parameters;
             self.graph
                 .function_templates
                 .bodies
@@ -286,7 +286,7 @@ impl Analyzer<'_> {
                 }
             }
         }
-        let function = self.graph.entity_mut(entity);
+        let mut function = self.graph.entity_mut(entity);
         if !explicit {
             if !of_template {
                 // Copied declarations retain the pattern's availability, but
@@ -294,11 +294,11 @@ impl Analyzer<'_> {
                 if definition.defines() {
                     function.defined = false;
                 }
-                function.special_definition = None;
-                function.function_definition = None;
+                function.callable_mut().special_definition = None;
+                function.callable_mut().function_definition = None;
             }
             function.availability = FunctionAvailability::Callable;
-            if of_template && let Some(properties) = function.function.as_mut() {
+            if of_template && let Some(properties) = function.callable_mut().function.as_mut() {
                 properties.no_inline = false;
                 properties.returns = super::graph::FunctionReturn::MayReturn;
                 properties.effects = super::graph::FunctionEffect::Default;
@@ -313,13 +313,14 @@ impl Analyzer<'_> {
             specs.inline
         };
         function.constexpr = specs.constexpr;
-        function.definition_emission = if function.inline == InlinePreference::Inline {
+        function.callable_mut().definition_emission = if function.inline == InlinePreference::Inline
+        {
             DefinitionEmission::Demanded
         } else {
             DefinitionEmission::Always
         };
         if info.parameters.is_some() {
-            function.function_parameters = info.parameters;
+            function.callable_mut().function_parameters = info.parameters;
         }
         self.graph
             .function_templates
@@ -407,7 +408,12 @@ impl Analyzer<'_> {
         while let Some(binding) = self.graph.next_function(home, key, &mut next) {
             let candidate = self.graph.binding(binding);
             if self.graph.entity(candidate.entity).home != Some(home)
-                || self.graph.entity(candidate.entity).template_head.is_some()
+                || self
+                    .graph
+                    .entity(candidate.entity)
+                    .context()
+                    .template_head
+                    .is_some()
                 || !self.same_function_parameters(
                     candidate
                         .ty
@@ -502,8 +508,15 @@ mod tests {
             .unwrap();
         assert!(analyzer.graph.function_templates.bodies.member(entity));
         assert!(!analyzer.graph.function_templates.bodies.started(entity));
-        assert!(analyzer.graph.entity(entity).scope.is_some());
-        assert!(analyzer.graph.entity(entity).function_definition.is_some());
+        assert!(analyzer.graph.entity(entity).context().scope.is_some());
+        assert!(
+            analyzer
+                .graph
+                .entity(entity)
+                .callable()
+                .function_definition
+                .is_some()
+        );
         assert_eq!(analyzer.tree.bodies.mark(), bodies);
         assert_eq!(analyzer.tree.expressions.mark(), expressions);
         analyzer.finish_lowering_boundaries().unwrap();
@@ -542,7 +555,14 @@ mod tests {
         // diagnostics, independently of own-body availability and emission.
         assert!(analyzer.graph.entity(entity).defined);
         assert!(!analyzer.graph.lower_function_defined(entity));
-        assert!(analyzer.graph.entity(entity).function_definition.is_none());
+        assert!(
+            analyzer
+                .graph
+                .entity(entity)
+                .callable()
+                .function_definition
+                .is_none()
+        );
         assert!(matches!(
             analyzer.declaration(ids[2], global),
             Err(Error::Diagnostic {
@@ -590,15 +610,19 @@ mod tests {
         let primary = graph.function_templates.primary(entity).unwrap();
         assert_ne!(entity, graph.binding(primary).entity);
         assert!(function.inline == InlinePreference::Unspecified);
-        assert_eq!(function.definition_emission, DefinitionEmission::Always);
+        assert_eq!(
+            function.callable().definition_emission,
+            DefinitionEmission::Always
+        );
         assert!(function.defined);
         assert!(!graph.function_templates.bodies.started(entity));
         assert_ne!(
             tree.parameters
-                .get(function.function_parameters.unwrap().parameters)[0]
+                .get(function.callable().function_parameters.unwrap().parameters)[0]
                 .location,
             graph
                 .entity(graph.binding(primary).entity)
+                .callable()
                 .function_parameters
                 .unwrap()
                 .location

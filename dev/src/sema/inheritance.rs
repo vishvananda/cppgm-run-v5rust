@@ -87,7 +87,7 @@ impl Graph {
     }
 
     pub(super) fn is_base_of(&self, base: EntityId, derived: EntityId) -> bool {
-        if base == derived || self.entity(derived).bases.is_empty() {
+        if base == derived || self.entity(derived).class().bases.is_empty() {
             return false;
         }
         let mut seen = HashSet::default();
@@ -96,7 +96,7 @@ impl Graph {
             if !seen.insert(class) {
                 continue;
             }
-            for edge in &self.entity(class).bases {
+            for edge in &self.entity(class).class().bases {
                 if edge.class == base {
                     return true;
                 }
@@ -120,7 +120,7 @@ impl Graph {
         let mut root = derived;
         let mut virtual_chain = false;
         while root != base {
-            let [edge] = self.entity(root).bases.as_slice() else {
+            let [edge] = self.entity(root).class().bases.as_slice() else {
                 break;
             };
             virtual_chain |= edge.is_virtual;
@@ -148,7 +148,7 @@ impl Graph {
                 work.pop();
                 continue;
             }
-            if let Some(edge) = self.entity(*class).bases.get(*next) {
+            if let Some(edge) = self.entity(*class).class().bases.get(*next) {
                 if counts.contains_key(&edge.class) {
                     *next += 1;
                 } else {
@@ -156,7 +156,7 @@ impl Graph {
                 }
             } else {
                 let mut result = BaseReachability::default();
-                for edge in &self.entity(*class).bases {
+                for edge in &self.entity(*class).class().bases {
                     let below = counts[&edge.class];
                     if !edge.is_virtual {
                         result.non_virtual =
@@ -242,7 +242,7 @@ impl Graph {
                     .map(|(class, next)| (class, next - 1))
                     .collect();
             }
-            if let Some(edge) = self.entity(*class).bases.get(*next) {
+            if let Some(edge) = self.entity(*class).class().bases.get(*next) {
                 *next += 1;
                 if !misses.contains(&edge.class) {
                     pending.push((edge.class, 0));
@@ -456,6 +456,7 @@ impl Analyzer<'_> {
             let home = self
                 .graph
                 .entity(class)
+                .context()
                 .scope
                 .ok_or(Error::Invariant("base owner without scope"))?;
             self.settle_base_access(home)
@@ -512,7 +513,8 @@ impl Analyzer<'_> {
             if base.pack
                 || ty.is_some_and(|ty| self.template_depth != 0 && self.graph.dependent_type(ty))
             {
-                self.graph.entity_mut(class).base_dependency = ast::BaseDependency::Dependent;
+                self.graph.entity_mut(class).class_mut().base_dependency =
+                    ast::BaseDependency::Dependent;
                 self.tree.bases.replace(
                     node.bases,
                     syntax_index,
@@ -536,7 +538,7 @@ impl Analyzer<'_> {
             if !self.complete_class(parent)? {
                 return Err(Error::at(base.location, "base class is incomplete"));
             }
-            if self.graph.entity(parent).derivation == Derivation::Final {
+            if self.graph.entity(parent).class().derivation == Derivation::Final {
                 return Err(Error::at(
                     base.location,
                     "a final class used as a base class",
@@ -562,20 +564,24 @@ impl Analyzer<'_> {
                 None if node.key == Keyword::Class => Access::Private,
                 Some(_) | None => Access::Public,
             };
-            if self.graph.entity(parent).polymorphism.is_dynamic() {
-                self.graph.entity_mut(class).polymorphism =
+            if self.graph.entity(parent).class().polymorphism.is_dynamic() {
+                self.graph.entity_mut(class).class_mut().polymorphism =
                     super::virtual_members::Polymorphism::Dynamic;
             }
-            self.graph.entity_mut(class).bases.push(BaseClass {
-                class: parent,
-                is_virtual: base.is_virtual,
-                access,
-                offset: None,
-                dependency: base.dependency,
-            });
+            self.graph
+                .entity_mut(class)
+                .class_mut()
+                .bases
+                .push(BaseClass {
+                    class: parent,
+                    is_virtual: base.is_virtual,
+                    access,
+                    offset: None,
+                    dependency: base.dependency,
+                });
             seen.insert(parent);
         }
-        if seen.len() != self.graph.entity(class).bases.len() {
+        if seen.len() != self.graph.entity(class).class().bases.len() {
             return Err(Error::at(
                 node.location,
                 "a class named twice as a direct base class",
@@ -619,7 +625,7 @@ impl Analyzer<'_> {
             if !seen.insert(class) {
                 continue;
             }
-            for edge in &self.graph.entity(class).bases {
+            for edge in &self.graph.entity(class).class().bases {
                 let own = self.member_or_friend(scope, class);
                 if edge.access == Access::Public
                     || own
@@ -643,11 +649,11 @@ impl Analyzer<'_> {
             return Ok(());
         };
         let &(last, index) = edges.last().ok_or(Error::Invariant("empty base path"))?;
-        let base = self.graph.entity(last).bases[index].class;
+        let base = self.graph.entity(last).class().bases[index].class;
         let mut class = derived;
         let mut memo = HashMap::default();
         while class != base {
-            let bases = &self.graph.entity(class).bases;
+            let bases = &self.graph.entity(class).class().bases;
             let edge = if bases.len() > 1 {
                 bases.iter().find(|edge| edge.class == base).or_else(|| {
                     bases.iter().find(|edge| {
@@ -664,7 +670,7 @@ impl Analyzer<'_> {
             {
                 if edges
                     .iter()
-                    .any(|&(class, index)| self.graph.entity(class).bases[index].is_virtual)
+                    .any(|&(class, index)| self.graph.entity(class).class().bases[index].is_virtual)
                     && self.accessible_base_name(derived, base, scope)
                 {
                     return Ok(());
@@ -776,13 +782,13 @@ mod tests {
         assert!(analyzer.graph.retain_base_path(split, base).is_err());
         for class in classes {
             assert!(matches!(
-                analyzer.graph.entity(class).layout,
+                analyzer.graph.entity(class).class().layout,
                 super::super::layout::LayoutState::NotStarted
             ));
         }
-        assert!(analyzer.graph.entity(instance).bases[0].is_virtual);
+        assert!(analyzer.graph.entity(instance).class().bases[0].is_virtual);
         assert!(
-            analyzer.graph.entity(instance).polymorphism
+            analyzer.graph.entity(instance).class().polymorphism
                 == super::super::virtual_members::Polymorphism::Static
         );
         assert!(analyzer.graph.root_demands.as_slice().is_empty());
@@ -822,21 +828,24 @@ mod tests {
         assert!(
             classes
                 .iter()
-                .all(|&class| analyzer.graph.entity(class).scope.is_none())
+                .all(|&class| analyzer.graph.entity(class).context().scope.is_none())
         );
         assert!(analyzer.complete_class(classes[0]).unwrap());
         let mark = analyzer.tree.classes.mark();
         assert!(analyzer.complete_class(classes[1]).unwrap());
         assert_eq!(analyzer.tree.classes.mark(), mark);
         let entity = analyzer.graph.entity(classes[0]);
-        assert_eq!(entity.bases.len(), 3);
-        assert_eq!(entity.bases[0].dependency, ast::BaseDependency::Fixed);
+        assert_eq!(entity.class().bases.len(), 3);
+        assert_eq!(
+            entity.class().bases[0].dependency,
+            ast::BaseDependency::Fixed
+        );
         assert!(
-            entity.bases[1..]
+            entity.class().bases[1..]
                 .iter()
                 .all(|edge| edge.dependency == ast::BaseDependency::Dependent)
         );
-        let home = entity.scope.unwrap();
+        let home = entity.context().scope.unwrap();
         let idle = analyzer
             .graph
             .own(home, names[3], Filter::Ordinary)
@@ -849,9 +858,9 @@ mod tests {
                 .body(analyzer.graph.binding(idle).entity)
                 .is_none()
         );
-        assert!(analyzer.graph.entity(classes[2]).scope.is_none());
+        assert!(analyzer.graph.entity(classes[2]).context().scope.is_none());
         assert!(analyzer.complete_class(classes[2]).unwrap());
-        assert_eq!(analyzer.graph.entity(classes[2]).bases.len(), 1);
+        assert_eq!(analyzer.graph.entity(classes[2]).class().bases.len(), 1);
         assert!(analyzer.graph.root_demands.as_slice().is_empty());
         let ast::DeclKind::Template { declaration, .. } = analyzer
             .tree
@@ -897,26 +906,26 @@ mod tests {
             .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
             .entity;
         assert_eq!(
-            graph.entity(primary).base_dependency,
+            graph.entity(primary).class().base_dependency,
             ast::BaseDependency::Dependent
         );
-        assert_eq!(graph.entity(primary).bases.len(), 1);
+        assert_eq!(graph.entity(primary).class().bases.len(), 1);
         let object = cursor.intern_name(b"d").unwrap();
         let ty = graph
             .binding(graph.own(graph.global, object, Filter::Ordinary).unwrap())
             .ty
             .unwrap();
         let class = graph.class_of(ty).unwrap();
-        let bases = &graph.entity(class).bases;
+        let bases = &graph.entity(class).class().bases;
         assert_eq!(bases.len(), 2);
         assert_eq!(bases[0].dependency, ast::BaseDependency::Dependent);
         assert_eq!(bases[1].dependency, ast::BaseDependency::Fixed);
         assert_eq!(
-            graph.entity(class).base_dependency,
+            graph.entity(class).class().base_dependency,
             ast::BaseDependency::Fixed
         );
-        let home = graph.entity(class).scope.unwrap();
-        let base_home = graph.entity(bases[0].class).scope.unwrap();
+        let home = graph.entity(class).context().scope.unwrap();
+        let base_home = graph.entity(bases[0].class).context().scope.unwrap();
         let name = cursor.intern_name(b"type").unwrap();
         let imported = graph.own(home, name, Filter::Prefix).unwrap();
         let original = graph.own(base_home, name, Filter::Prefix).unwrap();

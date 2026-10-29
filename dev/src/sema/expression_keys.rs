@@ -427,6 +427,7 @@ impl Analyzer<'_> {
                 if self
                     .graph
                     .entity(binding.entity)
+                    .context()
                     .template_parameter
                     .is_none()
                 {
@@ -515,7 +516,7 @@ impl Analyzer<'_> {
             if node.kind == ScopeKind::Class {
                 if let Some(entity) = node.owner {
                     key.words.push(KeyWord::Entity(entity));
-                    key.dependent |= self.graph.entity(entity).template_head.is_some();
+                    key.dependent |= self.graph.entity(entity).context().template_head.is_some();
                 } else {
                     key.words.push(KeyWord::Absent);
                 }

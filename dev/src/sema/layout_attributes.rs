@@ -93,6 +93,7 @@ impl Analyzer<'_> {
         if requested && let Some(entity) = function {
             self.graph
                 .entity_mut(entity)
+                .callable_mut()
                 .function
                 .as_mut()
                 .ok_or(Error::Invariant("return attribute owner without function"))?
@@ -307,7 +308,8 @@ impl Analyzer<'_> {
                 "an alignment-specifier weaker than the alignment of the entity's type",
             ));
         }
-        let old = &mut self.graph.entity_mut(binding.entity).storage_attributes;
+        let mut record = self.graph.entity_mut(binding.entity);
+        let old = &mut record.attributes_mut().storage_attributes;
         if attributes.alignment > u64::from(old.alignment) {
             old.alignment = target_alignment(attributes.alignment)?;
         }
@@ -339,7 +341,8 @@ impl Analyzer<'_> {
             return Ok(());
         }
         let attributes = self.layout_attributes(list, scope, class_site)?;
-        let old = &mut self.graph.entity_mut(class).storage_attributes;
+        let mut record = self.graph.entity_mut(class);
+        let old = &mut record.attributes_mut().storage_attributes;
         old.alignment = old.alignment.max(target_alignment(attributes.alignment)?);
         if !class_site {
             old.packed = attributes.packed;
@@ -438,7 +441,7 @@ mod tests {
                 TypeKind::Scalar(Scalar::Basic(crate::types::FundamentalType::Int)) => R::NoReturn,
                 _ => panic!("unexpected specialization argument"),
             };
-            assert!(function.function.unwrap().returns == expected);
+            assert!(function.callable().function.unwrap().returns == expected);
             instances += 1;
         }
         assert_eq!(instances, 2);

@@ -66,11 +66,11 @@ impl Analyzer<'_> {
         let entity = self.graph.entity(class);
         let value = match predicate {
             T::IsEmpty => entity.key != Keyword::Union && self.predicate_class_empty(class)?,
-            T::IsPolymorphic => entity.polymorphism.is_dynamic(),
+            T::IsPolymorphic => entity.class().polymorphism.is_dynamic(),
             T::IsAbstract => self.graph.virtuals.abstract_class(class),
-            T::IsFinal => entity.derivation == Derivation::Final,
+            T::IsFinal => entity.class().derivation == Derivation::Final,
             T::IsAggregate => {
-                self.graph.aggregate_class(class) && !entity.polymorphism.is_dynamic()
+                self.graph.aggregate_class(class) && !entity.class().polymorphism.is_dynamic()
             }
             T::HasVirtualDestructor => self.graph.virtuals.destructor(class).is_some(),
             _ => return Err(Error::Invariant("nonclass predicate in class dispatch")),
@@ -109,22 +109,26 @@ impl Analyzer<'_> {
         self.check_stack()?;
         // Published only for completed classes: their member/base declarations
         // are immutable. Incomplete substitution observations are never cached.
-        if let Some(empty) = self.graph.entity(class).emptiness {
+        if let Some(empty) = self.graph.entity(class).class().emptiness {
             return Ok(empty);
         }
-        let mut empty = !self.graph.entity(class).polymorphism.is_dynamic();
-        for index in 0..self.graph.entity(class).members.len() {
+        let mut empty = !self.graph.entity(class).class().polymorphism.is_dynamic();
+        for index in 0..self.graph.entity(class).class().members.len() {
             if !empty {
                 break;
             }
-            let member = self.graph.entity(self.graph.entity(class).members[index]);
+            let member = self
+                .graph
+                .entity(self.graph.entity(class).class().members[index]);
             let zero = member.name.is_none()
                 && member
+                    .object()
                     .bit_field
                     .is_some_and(|id| self.graph.bit_fields.width(id) == 0);
-            let overlapping = (member.storage_attributes.overlapping && member.bit_field.is_none())
-                .then(|| member.ty.and_then(|ty| self.graph.class_of(ty)))
-                .flatten();
+            let overlapping = (member.attributes().storage_attributes.overlapping
+                && member.object().bit_field.is_none())
+            .then(|| member.ty.and_then(|ty| self.graph.class_of(ty)))
+            .flatten();
             empty = zero
                 || if let Some(child) = overlapping {
                     self.predicate_class_empty(child)?
@@ -132,14 +136,14 @@ impl Analyzer<'_> {
                     false
                 };
         }
-        for index in 0..self.graph.entity(class).bases.len() {
+        for index in 0..self.graph.entity(class).class().bases.len() {
             if !empty {
                 break;
             }
-            let edge = self.graph.entity(class).bases[index];
+            let edge = self.graph.entity(class).class().bases[index];
             empty = !edge.is_virtual && self.predicate_class_empty(edge.class)?;
         }
-        self.graph.entity_mut(class).emptiness = Some(empty);
+        self.graph.entity_mut(class).class_mut().emptiness = Some(empty);
         Ok(empty)
     }
 }
@@ -206,9 +210,9 @@ mod tests {
             .unwrap();
         let class = graph.class_of(graph.binding(binding).ty.unwrap()).unwrap();
         assert!(graph.entity(class).complete);
-        assert_eq!(graph.entity(class).emptiness, Some(true));
+        assert_eq!(graph.entity(class).class().emptiness, Some(true));
         assert!(matches!(
-            graph.entity(class).layout,
+            graph.entity(class).class().layout,
             LayoutState::NotStarted
         ));
         let binding = graph
@@ -220,7 +224,7 @@ mod tests {
             .unwrap();
         let incomplete = graph.binding(binding).entity;
         assert!(!graph.entity(incomplete).complete);
-        assert!(graph.entity(incomplete).emptiness.is_none());
+        assert!(graph.entity(incomplete).class().emptiness.is_none());
         let binding = graph
             .own(
                 graph.global,
@@ -230,9 +234,9 @@ mod tests {
             .unwrap();
         let class = graph.class_of(graph.binding(binding).ty.unwrap()).unwrap();
         assert!(graph.entity(class).complete);
-        assert!(graph.entity(class).emptiness.is_none());
+        assert!(graph.entity(class).class().emptiness.is_none());
         assert!(matches!(
-            graph.entity(class).layout,
+            graph.entity(class).class().layout,
             LayoutState::NotStarted
         ));
         assert!(graph.storage_layouts.is_empty());

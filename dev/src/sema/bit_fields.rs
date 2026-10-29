@@ -213,7 +213,7 @@ impl Analyzer<'_> {
                     .flatten()
                     .ok_or(Error::Invariant("named bit-field without binding"))?;
                 let entity = self.graph.binding(binding).entity;
-                if self.graph.entity(owner).members.last() != Some(&entity) {
+                if self.graph.entity(owner).class().members.last() != Some(&entity) {
                     // Static/typedef declarations do not become physical fields.
                     continue;
                 }
@@ -232,9 +232,14 @@ impl Analyzer<'_> {
                 entity
             } else {
                 let entity = self.graph.add_entity(Some(ty), None, Keyword::Int)?;
-                self.graph.entity_mut(entity).data_member = Some(DataMemberKind::Instance);
+                self.graph.entity_mut(entity).object_mut().data_member =
+                    Some(DataMemberKind::Instance);
                 self.graph.entity_mut(entity).home = Some(scope);
-                self.graph.entity_mut(owner).members.push(entity);
+                self.graph
+                    .entity_mut(owner)
+                    .class_mut()
+                    .members
+                    .push(entity);
                 entity
             };
             self.record_bit_field(entity, width)?;
@@ -252,7 +257,7 @@ impl Analyzer<'_> {
                 .graph
                 .bit_fields
                 .add(width, FieldSemantics::Dependent)?;
-            self.graph.entity_mut(entity).bit_field = Some(id);
+            self.graph.entity_mut(entity).object_mut().bit_field = Some(id);
             return Ok(());
         }
         let kind = self
@@ -264,6 +269,7 @@ impl Analyzer<'_> {
             let info = self
                 .graph
                 .entity(owner)
+                .enumerated()
                 .enumeration
                 .ok_or(Error::Invariant("bit-field enum without facts"))?;
             if !info.fixed {
@@ -287,13 +293,13 @@ impl Analyzer<'_> {
             .graph
             .bit_fields
             .add(width, FieldSemantics::Integral { operation, signed })?;
-        self.graph.entity_mut(entity).bit_field = Some(id);
+        self.graph.entity_mut(entity).object_mut().bit_field = Some(id);
         Ok(())
     }
 }
 impl super::graph::Graph {
     pub(super) fn unnamed_bit_field(&self, entity: EntityId) -> bool {
         let node = self.entity(entity);
-        node.name.is_none() && node.bit_field.is_some()
+        node.name.is_none() && node.object().bit_field.is_some()
     }
 }

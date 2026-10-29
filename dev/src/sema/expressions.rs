@@ -459,22 +459,23 @@ impl Analyzer<'_> {
         };
         let class = self.graph.entity(entity);
         if !class.complete
-            || class.user_constructor.is_some()
-            || class.implicit_default.is_some()
-            || class.anonymous_class.is_some()
+            || class.class().user_constructor.is_some()
+            || class.class().implicit_default.is_some()
+            || class.class().anonymous_class.is_some()
         {
             return Ok(());
         }
         // Types mode does not demand constructors for anonymous classes,
         // including ones whose printed name was adopted from a typedef.
         let scope = class
+            .context()
             .scope
             .ok_or(Error::Invariant("complete class without scope"))?;
         let name = class.name;
         let constructor = self
             .graph
             .add_scope(ScopeKind::Function, scope, Some(scope), name)?;
-        self.graph.entity_mut(entity).implicit_default = Some(constructor);
+        self.graph.entity_mut(entity).class_mut().implicit_default = Some(constructor);
         Ok(())
     }
     fn push_initializer(&mut self, initializer: ast::Initializer, unevaluated: bool) {

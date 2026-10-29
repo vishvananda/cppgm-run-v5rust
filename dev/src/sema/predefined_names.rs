@@ -82,7 +82,10 @@ impl Printer<'_> {
             return Err(Error::Invariant("pretty name without function signature"));
         };
         let mut out = Vec::new();
-        if node.function.is_some_and(|properties| properties.is_static)
+        if node
+            .callable()
+            .function
+            .is_some_and(|properties| properties.is_static)
             && node
                 .home
                 .is_some_and(|home| self.graph.scope(home).kind == ScopeKind::Class)
@@ -95,7 +98,7 @@ impl Printer<'_> {
         let mut declarator = self.scope(node.home)?;
         declarator.extend(self.function(id)?);
         declarator.extend(self.parameters(ty)?);
-        if node.member_function.is_some_and(|member| {
+        if node.callable().member_function.is_some_and(|member| {
             matches!(
                 member.kind,
                 MemberKind::Constructor | MemberKind::Destructor
@@ -127,7 +130,7 @@ impl Printer<'_> {
                 && let Some(instance) = self.graph.class_templates.instance(class)
             {
                 self.bindings(
-                    self.graph.entity(instance.primary).template_head,
+                    self.graph.entity(instance.primary).context().template_head,
                     &instance.arguments,
                     &mut bindings,
                 )?;
@@ -140,6 +143,7 @@ impl Printer<'_> {
             self.bindings(
                 self.graph
                     .entity(self.graph.binding(primary).entity)
+                    .context()
                     .template_head,
                 arguments,
                 &mut bindings,
@@ -175,7 +179,7 @@ impl Printer<'_> {
     fn function(&self, id: EntityId) -> Result<Vec<u8>, Error> {
         self.check_stack()?;
         let node = self.graph.entity(id);
-        if let Some(member) = node.member_function {
+        if let Some(member) = node.callable().member_function {
             if matches!(
                 member.kind,
                 MemberKind::Constructor | MemberKind::Destructor
@@ -200,7 +204,11 @@ impl Printer<'_> {
                 return Ok(out);
             }
         }
-        match node.function.and_then(|function| function.special) {
+        match node
+            .callable()
+            .function
+            .and_then(|function| function.special)
+        {
             Some(SpecialName::Operator { token, array }) => {
                 let mut out = b"operator".to_vec();
                 if token.as_keyword().is_some() {
@@ -536,12 +544,17 @@ impl Printer<'_> {
         if let TypeKind::Enum(id) = self.graph.types.get(ty).kind {
             let node = self.graph.entity(id);
             let info = node
+                .enumerated()
                 .enumeration
                 .ok_or(Error::Invariant("enum without facts"))?;
-            let scope = if info.scoped { node.scope } else { node.home };
+            let scope = if info.scoped {
+                node.context().scope
+            } else {
+                node.home
+            };
             let enumerator = scope.and_then(|scope| self.graph.scope(scope).bindings.iter().copied().find(|&binding| {
                 let entity = self.graph.entity(self.graph.binding(binding).entity);
-                self.graph.binding(binding).kind == super::graph::BindingKind::Enumerator && matches!(entity.constant, super::constants::ConstantState::Value(value) if value.ty == ty && value.bits == bits)
+                self.graph.binding(binding).kind == super::graph::BindingKind::Enumerator && matches!(entity.object().constant, super::constants::ConstantState::Value(value) if value.ty == ty && value.bits == bits)
             }));
             if let Some(binding) = enumerator {
                 let entity = self.graph.entity(self.graph.binding(binding).entity);

@@ -309,7 +309,7 @@ mod tests {
         };
         assert!(!analyzer.holds_auto(result));
         assert_eq!(analyzer.tree.bodies.mark(), original_bodies + 1);
-        let body = analyzer.graph.entity(selected).analyzed_body;
+        let body = analyzer.graph.entity(selected).callable().analyzed_body;
         let marks = (
             analyzer.tree.bodies.mark(),
             analyzer.tree.expressions.mark(),
@@ -322,7 +322,10 @@ mod tests {
         }
         assert_eq!(analyzer.graph.entity(primary).ty, Some(pattern));
         assert_eq!(analyzer.graph.entity(selected).ty, Some(concrete));
-        assert_eq!(analyzer.graph.entity(selected).analyzed_body, body);
+        assert_eq!(
+            analyzer.graph.entity(selected).callable().analyzed_body,
+            body
+        );
         assert_eq!(
             marks,
             (

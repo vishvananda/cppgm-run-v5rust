@@ -54,6 +54,7 @@ impl Analyzer<'_> {
             .filter_map(|&entity| {
                 self.graph
                     .entity(entity)
+                    .context()
                     .template_parameter
                     .and_then(|info| info.index(depth))
             })

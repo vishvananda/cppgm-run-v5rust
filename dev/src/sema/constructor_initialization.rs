@@ -122,9 +122,9 @@ mod tests {
             let class = graph
                 .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
                 .entity;
-            let binding = graph.entity(class).declared_constructors[0];
+            let binding = graph.entity(class).class().declared_constructors[0];
             let function = graph.binding(binding).entity;
-            let constructor = graph.entity(function).constructor.unwrap();
+            let constructor = graph.entity(function).initialization().constructor.unwrap();
             let bases = &graph.constructors.get(constructor).bases;
             assert_eq!(bases.len(), 1);
             let written = bases[0].initializer.unwrap();
@@ -162,14 +162,20 @@ mod tests {
                 };
                 assert_eq!(*selected.get_or_insert(constructor), constructor);
                 let entity = graph.lower_constructor_entity(constructor).unwrap();
-                assert!(graph.entity(entity).function_definition.is_none());
+                assert!(
+                    graph
+                        .entity(entity)
+                        .callable()
+                        .function_definition
+                        .is_none()
+                );
             }
         }
         let name = cursor.intern_name(b"Unused").unwrap();
         let class = graph
             .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
             .entity;
-        assert!(graph.entity(class).implicit_copies.is_none());
+        assert!(graph.entity(class).special().implicit_copies.is_none());
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -262,7 +268,7 @@ impl Analyzer<'_> {
         let TypeKind::Class(class) = self.graph.types.get(target).kind else {
             return Err(Error::Invariant("class initialization without class"));
         };
-        if !self.complete_class(class)? || self.graph.entity(class).scope.is_none() {
+        if !self.complete_class(class)? || self.graph.entity(class).context().scope.is_none() {
             // initialize_class uses error(), even within a soft trait query.
             return Err(Error::UnconditionalDiagnostic {
                 location,
@@ -483,19 +489,7 @@ impl Analyzer<'_> {
         } else {
             None
         };
-        let offered = self
-            .graph
-            .entity(class)
-            .declared_constructors
-            .iter()
-            .any(|&binding| {
-                !converting
-                    || self
-                        .graph
-                        .entity(self.graph.binding(binding).entity)
-                        .explicitness
-                        != Explicitness::Explicit
-            });
+        let offered = self.offers_constructor(class, converting);
         let copies = !converting
             && matches!(args, [id]
             if !copy_list || !matches!(self.tree.expressions.get(*id).kind, ast::ExprKind::Braced { .. }));
@@ -571,6 +565,23 @@ impl Analyzer<'_> {
         Ok(Some((constructor, arguments)))
     }
 
+    fn offers_constructor(&self, class: EntityId, converting: bool) -> bool {
+        self.graph
+            .entity(class)
+            .class()
+            .declared_constructors
+            .iter()
+            .any(|&binding| {
+                !converting
+                    || self
+                        .graph
+                        .entity(self.graph.binding(binding).entity)
+                        .callable()
+                        .explicitness
+                        != Explicitness::Explicit
+            })
+    }
+
     /// Source selection publishes the inherited identity before its selected
     /// access and copy-list explicitness checks; arguments and use come later.
     fn checked_inherited_constructor(
@@ -587,6 +598,7 @@ impl Analyzer<'_> {
             && self
                 .graph
                 .entity(self.graph.binding(binding).entity)
+                .callable()
                 .explicitness
                 == Explicitness::Explicit
         {
@@ -628,7 +640,7 @@ impl Analyzer<'_> {
 
     pub(super) fn class_has_default_constructor(&mut self, class: EntityId) -> Result<bool, Error> {
         Ok(self.declared_default_constructor(class)?.is_some()
-            || self.graph.entity(class).user_constructor.is_none())
+            || self.graph.entity(class).class().user_constructor.is_none())
     }
     pub(super) fn validate_constructor_use(
         &mut self,
@@ -667,7 +679,8 @@ impl Analyzer<'_> {
             return;
         }
         if let Some(entity) = self.initializing {
-            if self.graph.entity(entity).data_member != Some(super::graph::DataMemberKind::Instance)
+            if self.graph.entity(entity).object().data_member
+                != Some(super::graph::DataMemberKind::Instance)
             {
                 self.graph.initializer_constructors.note(entity, id);
             }

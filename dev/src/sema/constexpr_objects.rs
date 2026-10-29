@@ -170,8 +170,8 @@ impl Analyzer<'_> {
             TypeKind::Class(class) if depth <= 64 => {
                 self.complete_class(class)?;
                 let mut count = 1u64;
-                for index in 0..self.graph.entity(class).bases.len() {
-                    let child = self.graph.entity(class).bases[index].class;
+                for index in 0..self.graph.entity(class).class().bases.len() {
+                    let child = self.graph.entity(class).class().bases[index].class;
                     let ty = self.graph.lower_entity_type(child)?;
                     count = count.saturating_add(self.constant_object_leaves(
                         ty,
@@ -179,8 +179,8 @@ impl Analyzer<'_> {
                         location,
                     )?);
                 }
-                for index in 0..self.graph.entity(class).members.len() {
-                    let child = self.graph.entity(class).members[index];
+                for index in 0..self.graph.entity(class).class().members.len() {
+                    let child = self.graph.entity(class).class().members[index];
                     let ty = self.graph.lower_entity_type(child)?;
                     count = count.saturating_add(self.constant_object_leaves(
                         ty,
@@ -282,8 +282,8 @@ impl Analyzer<'_> {
                     self.prepare_constant_member_spans(class, location)?;
                     self.constexpr_frames.mark_class(cell, class);
                 }
-                for index in 0..self.graph.entity(class).bases.len() {
-                    let base = self.graph.entity(class).bases[index];
+                for index in 0..self.graph.entity(class).class().bases.len() {
+                    let base = self.graph.entity(class).class().bases[index];
                     let ty = self.bare_type(self.graph.lower_entity_type(base.class)?)?;
                     let offset = base
                         .offset
@@ -298,8 +298,8 @@ impl Analyzer<'_> {
                         .add_child(cell, child, None, location)?;
                     self.populate_constant_skeleton(child, child_cell, location, origin)?;
                 }
-                for index in 0..self.graph.entity(class).members.len() {
-                    let member = self.graph.entity(class).members[index];
+                for index in 0..self.graph.entity(class).class().members.len() {
+                    let member = self.graph.entity(class).class().members[index];
                     if self.graph.unnamed_bit_field(member) {
                         continue;
                     }
@@ -375,14 +375,15 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("constant member owner type"))?;
         self.class_layout(class, location)?;
         let entity = self.graph.entity(member);
-        let offset = if let Some(field) = entity.bit_field {
+        let offset = if let Some(field) = entity.object().bit_field {
             self.graph.bit_fields.storage(field)?.bit / 8
         } else {
             entity
+                .object()
                 .member_offset
                 .ok_or(Error::Invariant("constant member without layout"))?
         };
-        let field = entity.bit_field.map(|_| member);
+        let field = entity.object().bit_field.map(|_| member);
         let declared = self.graph.lower_entity_type(member)?;
         let ty = if matches!(
             self.graph.types.get(declared).kind,
@@ -444,6 +445,7 @@ impl Analyzer<'_> {
             let field = self
                 .graph
                 .entity(member)
+                .object()
                 .bit_field
                 .ok_or(Error::Invariant("constant bit field without identity"))?;
             let width = self.graph.bit_fields.width(field);
@@ -620,7 +622,7 @@ impl Analyzer<'_> {
             .get(path)
             .last()
             .ok_or(Error::Invariant("empty constant base path"))?;
-        let base = self.graph.entity(last).bases[index].class;
+        let base = self.graph.entity(last).class().bases[index].class;
         self.constant_base_subobject(place, base, location)
     }
     pub(super) fn constant_base_subobject(
@@ -703,7 +705,7 @@ impl Analyzer<'_> {
         let &(last, index) = edges
             .last()
             .ok_or(Error::Invariant("empty constant cast route"))?;
-        let base = self.graph.entity(last).bases[index].class;
+        let base = self.graph.entity(last).class().bases[index].class;
         let offset = self
             .constant_base_offset(derived, base, location)?
             .ok_or_else(|| {
@@ -802,8 +804,8 @@ impl Analyzer<'_> {
                 }
                 TypeKind::Class(class) => {
                     self.class_layout(class, location)?;
-                    for index in 0..self.graph.entity(class).bases.len() {
-                        let edge = self.graph.entity(class).bases[index];
+                    for index in 0..self.graph.entity(class).class().bases.len() {
+                        let edge = self.graph.entity(class).class().bases[index];
                         let ty = self.graph.lower_entity_type(edge.class)?;
                         let start = super::integral::signed(
                             edge.offset.ok_or(Error::Invariant("base without layout"))?,
@@ -816,15 +818,16 @@ impl Analyzer<'_> {
                             location,
                         )?;
                     }
-                    for index in 0..self.graph.entity(class).members.len() {
-                        let member = self.graph.entity(class).members[index];
+                    for index in 0..self.graph.entity(class).class().members.len() {
+                        let member = self.graph.entity(class).class().members[index];
                         let entity = self.graph.entity(member);
-                        if entity.bit_field.is_some() {
+                        if entity.object().bit_field.is_some() {
                             continue;
                         }
                         let ty = self.graph.lower_entity_type(member)?;
                         let start = super::integral::signed(
                             entity
+                                .object()
                                 .member_offset
                                 .ok_or(Error::Invariant("member without layout"))?,
                         );
@@ -1011,8 +1014,10 @@ mod tests {
                 .lower_initializer_constructors(entities[2])
                 .is_empty()
         );
-        assert!(matches!(analyzer.graph.entity(entities[3]).constant,
-            ConstantState::Value(value) if value.bits == 109));
+        assert!(
+            matches!(analyzer.graph.entity(entities[3]).object().constant,
+            ConstantState::Value(value) if value.bits == 109)
+        );
         let expressions = analyzer.tree.expressions.mark();
         for declaration in &analyzer.tree.decl_lists.get(declarations)[6..8].to_vec() {
             let ast::DeclKind::Simple { declarators, .. } =
@@ -1099,7 +1104,7 @@ mod tests {
         for (name, bits) in names.into_iter().zip([7, 11]) {
             let binding = analyzer.graph.own(global, name, Filter::Ordinary).unwrap();
             assert!(
-                matches!(analyzer.graph.entity(analyzer.graph.binding(binding).entity).constant,
+                matches!(analyzer.graph.entity(analyzer.graph.binding(binding).entity).object().constant,
                 ConstantState::Value(value) if value.bits == bits)
             );
         }
@@ -1161,7 +1166,7 @@ mod tests {
         for (name, bits) in names.into_iter().zip([3, 10, 6]) {
             let binding = analyzer.graph.own(global, name, Filter::Ordinary).unwrap();
             assert!(
-                matches!(analyzer.graph.entity(analyzer.graph.binding(binding).entity).constant,
+                matches!(analyzer.graph.entity(analyzer.graph.binding(binding).entity).object().constant,
                 ConstantState::Value(value) if value.bits == bits)
             );
         }

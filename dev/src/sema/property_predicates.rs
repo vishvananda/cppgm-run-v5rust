@@ -212,7 +212,7 @@ impl Analyzer<'_> {
         let Some(class) = self.graph.class_of(object) else {
             return Ok(true);
         };
-        if !self.complete_class(class)? || self.graph.entity(class).scope.is_none() {
+        if !self.complete_class(class)? || self.graph.entity(class).context().scope.is_none() {
             return Ok(false);
         }
         if self
@@ -294,13 +294,15 @@ impl Analyzer<'_> {
 
     fn property_default_shape(&mut self, class: EntityId) -> Result<bool, Error> {
         let entity = self.graph.entity(class);
-        if entity.polymorphism.is_dynamic() || entity.bases.iter().any(|base| base.is_virtual) {
+        if entity.class().polymorphism.is_dynamic()
+            || entity.class().bases.iter().any(|base| base.is_virtual)
+        {
             return Ok(false);
         }
         let mut declared = false;
         let mut found = false;
-        for index in 0..self.graph.entity(class).declared_constructors.len() {
-            let binding = self.graph.entity(class).declared_constructors[index];
+        for index in 0..self.graph.entity(class).class().declared_constructors.len() {
+            let binding = self.graph.entity(class).class().declared_constructors[index];
             let function = self.graph.binding(binding).entity;
             let entity = self.graph.entity(function);
             if self.graph.inherited_constructors.source(function).is_some() {
@@ -311,14 +313,20 @@ impl Analyzer<'_> {
                 .graph
                 .types
                 .function_parameter_count(self.graph.lower_entity_type(function)?)?;
-            if entity.template_head.is_some()
-                || (0..count).any(|i| entity.defaults.get(i).is_none_or(Option::is_none))
+            if entity.context().template_head.is_some()
+                || (0..count).any(|i| {
+                    entity
+                        .callable()
+                        .defaults
+                        .get(i)
+                        .is_none_or(Option::is_none)
+                })
             {
                 continue;
             }
             if entity.availability != FunctionAvailability::Deleted
                 && !matches!(
-                    entity.special_definition,
+                    entity.callable().special_definition,
                     Some(SpecialDefinition::Defaulted { first: true, .. })
                 )
             {
@@ -329,22 +337,28 @@ impl Analyzer<'_> {
         if declared && !found {
             return Ok(false);
         }
-        let count = self.graph.entity(class).bases.len() + self.graph.entity(class).members.len();
+        let count = self.graph.entity(class).class().bases.len()
+            + self.graph.entity(class).class().members.len();
         for index in 0..count {
             if let Some((child, member, _)) = self.graph.copy_child(class, index)? {
-                if member
-                    .is_some_and(|member| self.graph.entity(member).member_initializer.is_some())
-                    || !self.property_class_question(child, Question::DefaultShape)?
+                if member.is_some_and(|member| {
+                    self.graph
+                        .entity(member)
+                        .initialization()
+                        .member_initializer
+                        .is_some()
+                }) || !self.property_class_question(child, Question::DefaultShape)?
                 {
                     return Ok(false);
                 }
-            } else if index >= self.graph.entity(class).bases.len()
+            } else if index >= self.graph.entity(class).class().bases.len()
                 && self
                     .graph
                     .entity(
-                        self.graph.entity(class).members
-                            [index - self.graph.entity(class).bases.len()],
+                        self.graph.entity(class).class().members
+                            [index - self.graph.entity(class).class().bases.len()],
                     )
+                    .initialization()
                     .member_initializer
                     .is_some()
             {
@@ -362,10 +376,11 @@ impl Analyzer<'_> {
             return Ok(true);
         }
         if !facts.deleted
-            || self.graph.entity(class).polymorphism.is_dynamic()
+            || self.graph.entity(class).class().polymorphism.is_dynamic()
             || self
                 .graph
                 .entity(class)
+                .class()
                 .bases
                 .iter()
                 .any(|base| base.is_virtual)
@@ -376,15 +391,15 @@ impl Analyzer<'_> {
             let entity = self.graph.entity(self.graph.binding(binding).entity);
             if entity.availability != FunctionAvailability::Deleted
                 && !matches!(
-                    entity.special_definition,
+                    entity.callable().special_definition,
                     Some(SpecialDefinition::Defaulted { first: true, .. })
                 )
             {
                 return Ok(false);
             }
         }
-        for index in 0..self.graph.entity(class).bases.len() {
-            let child = self.graph.entity(class).bases[index].class;
+        for index in 0..self.graph.entity(class).class().bases.len() {
+            let child = self.graph.entity(class).class().bases[index].class;
             if !self.property_legacy(
                 T::HasTrivialConstructor,
                 self.graph.lower_entity_type(child)?,
@@ -392,9 +407,15 @@ impl Analyzer<'_> {
                 return Ok(false);
             }
         }
-        for index in 0..self.graph.entity(class).members.len() {
-            let member = self.graph.entity(class).members[index];
-            if self.graph.entity(member).member_initializer.is_some() {
+        for index in 0..self.graph.entity(class).class().members.len() {
+            let member = self.graph.entity(class).class().members[index];
+            if self
+                .graph
+                .entity(member)
+                .initialization()
+                .member_initializer
+                .is_some()
+            {
                 return Ok(false);
             }
             let ty = self.property_element(self.graph.lower_entity_type(member)?);
@@ -413,18 +434,18 @@ impl Analyzer<'_> {
         {
             return Ok(false);
         }
-        for index in 0..self.graph.entity(class).bases.len() {
-            let base = self.graph.entity(class).bases[index];
+        for index in 0..self.graph.entity(class).class().bases.len() {
+            let base = self.graph.entity(class).class().bases[index];
             if base.is_virtual
                 || !self.property_literal(self.graph.lower_entity_type(base.class)?)?
             {
                 return Ok(false);
             }
         }
-        for index in 0..self.graph.entity(class).members.len() {
+        for index in 0..self.graph.entity(class).class().members.len() {
             let ty = self
                 .graph
-                .lower_entity_type(self.graph.entity(class).members[index])?;
+                .lower_entity_type(self.graph.entity(class).class().members[index])?;
             if matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. }) {
                 continue;
             }
@@ -437,12 +458,14 @@ impl Analyzer<'_> {
 
     fn property_standard_class(&mut self, class: EntityId) -> Result<bool, Error> {
         let entity = self.graph.entity(class);
-        if entity.polymorphism.is_dynamic() || entity.bases.iter().any(|base| base.is_virtual) {
+        if entity.class().polymorphism.is_dynamic()
+            || entity.class().bases.iter().any(|base| base.is_virtual)
+        {
             return Ok(false);
         }
-        let first = entity.members.first().copied();
-        for index in 0..self.graph.entity(class).members.len() {
-            let member = self.graph.entity(class).members[index];
+        let first = entity.class().members.first().copied();
+        for index in 0..self.graph.entity(class).class().members.len() {
+            let member = self.graph.entity(class).class().members[index];
             if first.is_some_and(|first| {
                 self.graph.entity(first).member_access != self.graph.entity(member).member_access
             }) || !self.property_standard_layout(self.graph.lower_entity_type(member)?)?
@@ -451,8 +474,8 @@ impl Analyzer<'_> {
             }
         }
         let mut base_has_data = false;
-        for index in 0..self.graph.entity(class).bases.len() {
-            let base = self.graph.entity(class).bases[index].class;
+        for index in 0..self.graph.entity(class).class().bases.len() {
+            let base = self.graph.entity(class).class().bases[index].class;
             if !self.property_class_question(base, Question::StandardLayout)? {
                 return Ok(false);
             }
@@ -475,11 +498,11 @@ impl Analyzer<'_> {
     }
 
     fn property_has_data(&mut self, class: EntityId) -> Result<bool, Error> {
-        if !self.graph.entity(class).members.is_empty() {
+        if !self.graph.entity(class).class().members.is_empty() {
             return Ok(true);
         }
-        for index in 0..self.graph.entity(class).bases.len() {
-            let base = self.graph.entity(class).bases[index].class;
+        for index in 0..self.graph.entity(class).class().bases.len() {
+            let base = self.graph.entity(class).class().bases[index].class;
             if self.property_class_question(base, Question::HasData)? {
                 return Ok(true);
             }
@@ -560,7 +583,7 @@ mod tests {
         for ty in types {
             let class = analyzer.graph.class_of(ty).unwrap();
             assert!(matches!(
-                analyzer.graph.entity(class).layout,
+                analyzer.graph.entity(class).class().layout,
                 super::super::layout::LayoutState::NotStarted
             ));
         }

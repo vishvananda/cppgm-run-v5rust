@@ -431,7 +431,7 @@ impl Analyzer<'_> {
                 );
             }
             self.assignment_boundaries(entity, &mut work, &mut constructors)?;
-            if let Some(constructor) = self.graph.entity(entity).constructor {
+            if let Some(constructor) = self.graph.entity(entity).initialization().constructor {
                 constructors.push(constructor);
             }
             if let Some(children) = constructor_edges.remove(&entity) {
@@ -442,7 +442,7 @@ impl Analyzer<'_> {
             {
                 work.extend(destructors);
             }
-            for demand in self.graph.entity(entity).demands.as_slice() {
+            for demand in self.graph.entity(entity).callable().demands.as_slice() {
                 match demand {
                     Demand::Function { binding, .. } => {
                         work.push(self.graph.binding(*binding).entity);
@@ -469,6 +469,7 @@ impl Analyzer<'_> {
                 if self
                     .graph
                     .entity(entity)
+                    .callable()
                     .member_function
                     .is_some_and(|key| key.kind == super::graph::MemberKind::Destructor)
                     && self.graph.lower_has_available_body(entity)
@@ -626,7 +627,7 @@ impl Analyzer<'_> {
         let result = self.finish_layout(root, location);
         if result.is_err() {
             for &(entity, _) in &self.layout_work[base..] {
-                self.graph.entity_mut(entity).layout = LayoutState::NotStarted;
+                self.graph.entity_mut(entity).class_mut().layout = LayoutState::NotStarted;
             }
         }
         self.layout_work.truncate(base);
@@ -636,11 +637,11 @@ impl Analyzer<'_> {
         if !self.complete_class(entity)? {
             return Err(Error::at(location, "size of an incomplete class"));
         }
-        match self.graph.entity(entity).layout {
+        match self.graph.entity(entity).class().layout {
             LayoutState::Value { .. } => Ok(false),
             LayoutState::InProgress => Err(Error::at(location, "class contains itself")),
             LayoutState::NotStarted => {
-                self.graph.entity_mut(entity).layout = LayoutState::InProgress;
+                self.graph.entity_mut(entity).class_mut().layout = LayoutState::InProgress;
                 self.layout_work.push((entity, 0));
                 Ok(true)
             }
@@ -658,10 +659,11 @@ impl Analyzer<'_> {
                 .layout_work
                 .last()
                 .ok_or(Error::Invariant("missing layout frame"))?;
-            let bases = self.graph.entity(entity).bases.len();
+            let bases = self.graph.entity(entity).class().bases.len();
             if let Some(dependency) = self
                 .graph
                 .entity(entity)
+                .class()
                 .bases
                 .get(index)
                 .map(|edge| edge.class)
@@ -671,7 +673,9 @@ impl Analyzer<'_> {
                     .ok_or(Error::Invariant("missing layout frame"))?
                     .1 += 1;
                 self.start_layout(dependency, location)?;
-            } else if let Some(&member) = self.graph.entity(entity).members.get(index - bases) {
+            } else if let Some(&member) =
+                self.graph.entity(entity).class().members.get(index - bases)
+            {
                 self.layout_work
                     .last_mut()
                     .ok_or(Error::Invariant("missing layout frame"))?
@@ -694,7 +698,7 @@ impl Analyzer<'_> {
         }
         let LayoutState::Value {
             size, alignment, ..
-        } = self.graph.entity(root).layout
+        } = self.graph.entity(root).class().layout
         else {
             return Err(Error::Invariant("uncompleted layout"));
         };
@@ -738,15 +742,15 @@ impl Analyzer<'_> {
         let mut contains_volatile_or_union = union || bases.contains_volatile_or_union;
         let mut contains_data_member_pointer = bases.contains_data_member_pointer;
         let mut contains_empty = bases.contains_empty;
-        let attributes = self.graph.entity(entity).storage_attributes;
-        let pack = u64::from(self.graph.entity(entity).class_packing);
+        let attributes = self.graph.entity(entity).attributes().storage_attributes;
+        let pack = u64::from(self.graph.entity(entity).class().class_packing);
         let mut non_pod = bases.dynamic
-            || self.graph.entity(entity).layout_category == LayoutCategory::NonPod
-            || !self.graph.entity(entity).bases.is_empty();
+            || self.graph.entity(entity).class().layout_category == LayoutCategory::NonPod
+            || !self.graph.entity(entity).class().bases.is_empty();
         let mut packs_all = true;
         let mut data_bits = data_size.wrapping_mul(8);
-        for index in 0..self.graph.entity(entity).members.len() {
-            let member = self.graph.entity(entity).members[index];
+        for index in 0..self.graph.entity(entity).class().members.len() {
+            let member = self.graph.entity(entity).class().members[index];
             let ty = self
                 .graph
                 .entity(member)
@@ -758,22 +762,22 @@ impl Analyzer<'_> {
                 scalar = element;
             }
             contains_volatile_or_union |= self.graph.types.get(scalar).cv.0 & 2 != 0;
-            if (!union || self.graph.entity(entity).members.first() == Some(&member))
-                && self.graph.entity(member).bit_field.is_none()
+            if (!union || self.graph.entity(entity).class().members.first() == Some(&member))
+                && self.graph.entity(member).object().bit_field.is_none()
             {
                 contains_data_member_pointer |= self.graph.lower_holds_data_member_pointer(ty)?;
             }
             let mut packable = true;
             if let TypeKind::Class(child) = self.graph.types.get(scalar).kind {
                 let child = self.graph.entity(child);
-                non_pod |= child.layout_category == LayoutCategory::NonPod;
-                packable =
-                    child.layout_category == LayoutCategory::Pod || child.storage_attributes.packed;
+                non_pod |= child.class().layout_category == LayoutCategory::NonPod;
+                packable = child.class().layout_category == LayoutCategory::Pod
+                    || child.attributes().storage_attributes.packed;
                 if let LayoutState::Value {
                     contains_volatile_or_union: child,
                     contains_empty: child_empty,
                     ..
-                } = child.layout
+                } = child.class().layout
                 {
                     contains_volatile_or_union |= child;
                     contains_empty |= child_empty
@@ -782,13 +786,13 @@ impl Analyzer<'_> {
                 }
             }
             packs_all &= packable;
-            let member_attributes = self.graph.entity(member).storage_attributes;
+            let member_attributes = self.graph.entity(member).attributes().storage_attributes;
             let requested = u64::from(member_attributes.alignment);
             let mut member_alignment = if member_attributes.packed || attributes.packed && packable
             {
                 requested.max(1)
             } else {
-                let declared = if self.graph.entity(member).bit_field.is_none() {
+                let declared = if self.graph.entity(member).object().bit_field.is_none() {
                     self.graph.alias_alignments.object(member, natural)
                 } else {
                     natural
@@ -798,7 +802,7 @@ impl Analyzer<'_> {
             if pack != 0 {
                 member_alignment = member_alignment.min(pack);
             }
-            if let Some(id) = self.graph.entity(member).bit_field {
+            if let Some(id) = self.graph.entity(member).object().bit_field {
                 let named = self.graph.entity(member).name.is_some();
                 let placed = bits.place_member(
                     &mut self.graph.bit_fields,
@@ -817,7 +821,7 @@ impl Analyzer<'_> {
                 data_bits = placed.data_bits;
                 size = size.max(placed.size);
                 alignment = alignment.max(placed.alignment);
-                self.graph.entity_mut(member).member_offset = None;
+                self.graph.entity_mut(member).object_mut().member_offset = None;
                 continue;
             }
             if !union
@@ -836,7 +840,7 @@ impl Analyzer<'_> {
                     natural,
                     location,
                 )?;
-                self.graph.entity_mut(member).member_offset = Some(offset);
+                self.graph.entity_mut(member).object_mut().member_offset = Some(offset);
                 if !empty {
                     data_bits = tail.wrapping_mul(8);
                     bits.end_run(offset);
@@ -863,7 +867,7 @@ impl Analyzer<'_> {
                     .placement
                     .record_member(&self.graph, ty, offset, data_size, location)?;
             }
-            self.graph.entity_mut(member).member_offset = Some(offset);
+            self.graph.entity_mut(member).object_mut().member_offset = Some(offset);
             bits.end_run(offset);
             data_bits = data_size.wrapping_mul(8);
             size = if union {
@@ -895,19 +899,23 @@ impl Analyzer<'_> {
                 ));
             }
         }
-        self.graph.entity_mut(entity).layout_category = if non_pod {
+        self.graph.entity_mut(entity).class_mut().layout_category = if non_pod {
             LayoutCategory::NonPod
         } else {
             LayoutCategory::Pod
         };
-        self.graph.entity_mut(entity).storage_attributes.packed &= packs_all;
+        self.graph
+            .entity_mut(entity)
+            .attributes_mut()
+            .storage_attributes
+            .packed &= packs_all;
         let full_size = round_up(size.max(1), alignment);
         bits.finish(
             &mut self.graph.bit_fields,
             if non_pod { member_data } else { full_size },
             location,
         )?;
-        self.graph.entity_mut(entity).layout = LayoutState::Value {
+        self.graph.entity_mut(entity).class_mut().layout = LayoutState::Value {
             contains_data_member_pointer,
             contains_volatile_or_union,
             empty: bases.empty,
@@ -976,7 +984,7 @@ mod tests {
             let binding = graph.own(graph.global, name, Filter::Prefix).unwrap();
             assert_eq!(
                 matches!(
-                    graph.entity(graph.binding(binding).entity).layout,
+                    graph.entity(graph.binding(binding).entity).class().layout,
                     LayoutState::NotStarted
                 ),
                 !evaluated,
@@ -1004,15 +1012,15 @@ mod tests {
         let result = entity(b"S");
         assert!(graph.lower_direct_class_parameter(result).unwrap());
         assert!(matches!(
-            graph.entity(result).layout,
+            graph.entity(result).class().layout,
             LayoutState::Value { size: 4, .. }
         ));
         for class in [entity(b"Unused"), entity(b"Incomplete")] {
             assert!(matches!(
-                graph.entity(class).layout,
+                graph.entity(class).class().layout,
                 LayoutState::NotStarted
             ));
-            assert!(graph.entity(class).implicit_copies.is_none());
+            assert!(graph.entity(class).special().implicit_copies.is_none());
         }
     }
 
@@ -1073,7 +1081,7 @@ mod tests {
             .collect();
         for &class in &classes {
             assert!(matches!(
-                analyzer.graph.entity(class).layout,
+                analyzer.graph.entity(class).class().layout,
                 LayoutState::NotStarted
             ));
         }
@@ -1089,17 +1097,24 @@ mod tests {
                 .zip([Some(4), Some(8), None, None, None])
         {
             if let Some(expected) = size {
-                assert!(matches!(analyzer.graph.entity(class).layout,
+                assert!(matches!(analyzer.graph.entity(class).class().layout,
                     LayoutState::Value { size, .. } if size == expected));
                 assert!(analyzer.graph.entity(class).complete);
             } else {
                 assert_eq!(analyzer.graph.entity(class).complete, was_complete);
                 assert!(matches!(
-                    analyzer.graph.entity(class).layout,
+                    analyzer.graph.entity(class).class().layout,
                     LayoutState::NotStarted
                 ));
             }
-            assert!(analyzer.graph.entity(class).implicit_copies.is_none());
+            assert!(
+                analyzer
+                    .graph
+                    .entity(class)
+                    .special()
+                    .implicit_copies
+                    .is_none()
+            );
         }
         // Repeating the closure neither copies instantiated syntax nor starts
         // an unused member body, and retains the canonical layout facts.
@@ -1109,7 +1124,7 @@ mod tests {
         assert_eq!(analyzer.tree.expressions.mark(), expressions);
         assert_eq!(analyzer.tree.declarations.mark(), nodes);
         for &class in &classes[..2] {
-            let scope = analyzer.graph.entity(class).scope.unwrap();
+            let scope = analyzer.graph.entity(class).context().scope.unwrap();
             let binding = analyzer.graph.own(scope, unused, Filter::Ordinary).unwrap();
             let member = analyzer.graph.binding(binding).entity;
             assert!(!analyzer.graph.function_templates.bodies.started(member));

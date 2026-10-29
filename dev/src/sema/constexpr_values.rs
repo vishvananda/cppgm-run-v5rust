@@ -191,7 +191,7 @@ impl Analyzer<'_> {
                             .member(&self.graph.expression_facts)
                             .is_some_and(|binding| {
                                 let entity = self.graph.binding(binding).entity;
-                                self.graph.entity(entity).data_member
+                                self.graph.entity(entity).object().data_member
                                     == Some(super::graph::DataMemberKind::Instance)
                                     && self.graph.entity(entity).ty.is_some_and(|ty| {
                                         !matches!(
@@ -318,7 +318,8 @@ impl Analyzer<'_> {
                 "a constexpr variable of a type that is not a literal type",
             ));
         }
-        self.graph.entity_mut(entity).constant = super::constants::ConstantState::Evaluating;
+        self.graph.entity_mut(entity).object_mut().constant =
+            super::constants::ConstantState::Evaluating;
         let outcome = self.with_observed_constant_query(|analyzer| {
             let region = analyzer.constexpr_frames.region();
             let result =
@@ -338,7 +339,7 @@ impl Analyzer<'_> {
             analyzer.constexpr_frames.release(region);
             result
         });
-        self.graph.entity_mut(entity).constant = super::constants::ConstantState::None;
+        self.graph.entity_mut(entity).object_mut().constant = super::constants::ConstantState::None;
         if self.defer_observed_initializer(
             entity,
             super::deferred_constants::Initialization { initializer, scope },
@@ -668,7 +669,8 @@ mod tests {
             (b"read", 7),
             (b"callable", 1),
         ] {
-            let ConstantState::Value(constant) = graph.entity(entity(spelling)).constant else {
+            let ConstantState::Value(constant) = graph.entity(entity(spelling)).object().constant
+            else {
                 panic!("published integer expected");
             };
             assert_eq!(constant.bits, expected);
@@ -696,11 +698,11 @@ mod tests {
         // Pointer/reference values have their own typed store; integral facts never
         // stand in for an address, and string objects need no per-character graph.
         assert!(matches!(
-            graph.entity(pointer).constant,
+            graph.entity(pointer).object().constant,
             ConstantState::None
         ));
         assert!(matches!(
-            graph.entity(reference).constant,
+            graph.entity(reference).object().constant,
             ConstantState::None
         ));
     }

@@ -914,14 +914,14 @@ impl Analyzer<'_> {
                     ));
                 }
                 if binding.kind == super::graph::BindingKind::Type
-                    && entity.template_head.is_some()
+                    && entity.context().template_head.is_some()
                     && self
                         .tree
                         .name_lists
                         .get(node.components)
                         .last()
                         .is_some_and(|last| last.arguments.is_none())
-                    && !entity.scope.is_some_and(|home| {
+                    && !entity.context().scope.is_some_and(|home| {
                         entity.name.is_some_and(|name| {
                             self.graph
                                 .own(home, name, super::lookup::Filter::Elaborated)
@@ -935,7 +935,7 @@ impl Analyzer<'_> {
                     ));
                 }
                 if binding.kind == super::graph::BindingKind::Alias
-                    && entity.template_head.is_some()
+                    && entity.context().template_head.is_some()
                 {
                     return Err(Error::at(
                         self.tree.names.get(name).location,
@@ -1010,6 +1010,7 @@ mod tests {
             let scope = analyzer
                 .graph
                 .entity(analyzer.graph.binding(binding).entity)
+                .context()
                 .scope
                 .unwrap();
             let ty = analyzer.type_syntax(syntax, scope).unwrap();

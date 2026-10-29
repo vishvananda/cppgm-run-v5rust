@@ -130,14 +130,14 @@ impl Analyzer<'_> {
     ) -> Result<Option<u64>, Error> {
         self.check_stack()?;
         self.class_layout(class, location)?;
-        for index in 0..self.graph.entity(class).members.len() {
-            let data = self.graph.entity(class).members[index];
+        for index in 0..self.graph.entity(class).class().members.len() {
+            let data = self.graph.entity(class).class().members[index];
             let entity = self.graph.entity(data);
             if data == member {
-                if entity.bit_field.is_some() {
+                if entity.object().bit_field.is_some() {
                     return Err(Error::at(location, "offsetof of a bit-field"));
                 }
-                return Ok(entity.member_offset);
+                return Ok(entity.object().member_offset);
             }
             // An anonymous union/struct's object owns its injected members.
             let anonymous = entity
@@ -154,8 +154,8 @@ impl Analyzer<'_> {
                 ));
             }
         }
-        for index in 0..self.graph.entity(class).bases.len() {
-            let base = self.graph.entity(class).bases[index];
+        for index in 0..self.graph.entity(class).class().bases.len() {
+            let base = self.graph.entity(class).class().bases[index];
             if !base.is_virtual
                 && let Some(inner) = self.member_offset(base.class, member, location)?
             {
@@ -202,7 +202,7 @@ mod tests {
             .unwrap();
         let class = graph.binding(binding).entity;
         assert!(matches!(
-            graph.entity(class).layout,
+            graph.entity(class).class().layout,
             super::super::layout::LayoutState::Value {
                 size: 20,
                 alignment: 4,
@@ -274,7 +274,7 @@ mod tests {
             .unwrap();
         let entity = graph.binding(binding).entity;
         assert!(matches!(
-            graph.entity(entity).exceptions,
+            graph.entity(entity).callable().exceptions,
             super::super::exceptions::ExceptionState::Value(
                 super::super::exceptions::ExceptionSet::None
             )

@@ -97,7 +97,7 @@ impl Analyzer<'_> {
         let scope = space.binding.and_then(|binding| {
             let bound = self.graph.binding(binding);
             (bound.kind == BindingKind::Namespace)
-                .then(|| self.graph.entity(bound.entity).scope)
+                .then(|| self.graph.entity(bound.entity).context().scope)
                 .flatten()
         });
         if let Some(scope) = scope {
@@ -266,6 +266,7 @@ impl Analyzer<'_> {
                     && self
                         .graph
                         .entity(self.graph.binding(*binding).entity)
+                        .context()
                         .template_head
                         .is_none()
                 {
@@ -286,6 +287,7 @@ impl Analyzer<'_> {
                     .is_some_and(|binding| {
                         self.graph
                             .entity(self.graph.binding(binding).entity)
+                            .callable()
                             .function
                             .is_some_and(|props| props.is_static)
                     });

@@ -211,7 +211,11 @@ impl super::graph::Graph {
         function: EntityId,
     ) -> Result<Option<super::lowering::CopyForm>, Error> {
         let entity = self.entity(function);
-        let Some(kind) = entity.copy_kind.or(entity.assignment_kind) else {
+        let Some(kind) = entity
+            .callable()
+            .copy_kind
+            .or(entity.callable().assignment_kind)
+        else {
             return Ok(None);
         };
         let class = entity
@@ -221,7 +225,7 @@ impl super::graph::Graph {
         Ok(Some(super::lowering::CopyForm {
             class,
             moving: kind == RefKind::Rvalue,
-            assignment: entity.assignment_kind.is_some(),
+            assignment: entity.callable().assignment_kind.is_some(),
             locality: if self.lower_entity_unit_local(class)? {
                 super::lowering::Locality::Unit
             } else {
@@ -230,7 +234,7 @@ impl super::graph::Graph {
         }))
     }
     pub(crate) fn lower_copy_constructor(&self, function: EntityId) -> bool {
-        self.entity(function).copy_kind.is_some()
+        self.entity(function).callable().copy_kind.is_some()
     }
     pub(crate) fn lower_class_copy(&self, id: ast::ExprId) -> Result<Option<CopyAction>, Error> {
         self.expression_facts.get(id)?;
@@ -238,6 +242,7 @@ impl super::graph::Graph {
     }
     pub(crate) fn lower_direct_class_parameter(&self, class: EntityId) -> Result<bool, Error> {
         self.entity(class)
+            .special()
             .implicit_copies
             .and_then(|copies| copies.passing)
             .map(|passing| matches!(passing, ClassPassing::Direct))
@@ -246,6 +251,7 @@ impl super::graph::Graph {
     fn class_parameter_direct(&self, class: EntityId) -> Result<bool, Error> {
         let entity = self.entity(class);
         let copies = entity
+            .special()
             .implicit_copies
             .ok_or(Error::Missing("class parameter copy properties"))?;
         let mut usable =
@@ -260,14 +266,14 @@ impl super::graph::Graph {
                 trivial &= facts.trivial;
             }
         }
-        for &binding in &entity.declared_constructors {
+        for &binding in &entity.class().declared_constructors {
             let constructor = self.entity(self.binding(binding).entity);
-            if constructor.copy_kind.is_none()
+            if constructor.callable().copy_kind.is_none()
                 || constructor.availability == FunctionAvailability::Deleted
             {
                 continue;
             }
-            if let Some(id) = constructor.copy_properties {
+            if let Some(id) = constructor.special().copy_properties {
                 let facts = self.copy_properties.get(id);
                 if facts.deleted {
                     continue;
@@ -310,7 +316,7 @@ impl Analyzer<'_> {
             } else {
                 ClassPassing::Indirect
             });
-            self.graph.entity_mut(class).implicit_copies = Some(copies);
+            self.graph.entity_mut(class).special_mut().implicit_copies = Some(copies);
         }
         Ok(())
     }
@@ -320,7 +326,7 @@ impl Analyzer<'_> {
         class: EntityId,
     ) -> Result<Option<RefKind>, Error> {
         let function = self.graph.entity(function_id);
-        if function.template_head.is_some()
+        if function.context().template_head.is_some()
             || self
                 .graph
                 .inherited_constructors
@@ -333,7 +339,15 @@ impl Analyzer<'_> {
             .ty
             .ok_or(Error::Invariant("copy constructor without type"))?;
         let count = self.graph.types.function_parameter_count(ty)?;
-        if count == 0 || (1..count).any(|i| function.defaults.get(i).is_none_or(Option::is_none)) {
+        if count == 0
+            || (1..count).any(|i| {
+                function
+                    .callable()
+                    .defaults
+                    .get(i)
+                    .is_none_or(Option::is_none)
+            })
+        {
             return Ok(None);
         }
         let parameter = self.graph.types.function_parameter(ty, 0)?;
@@ -346,21 +360,21 @@ impl Analyzer<'_> {
     }
 
     pub(super) fn classify_class_copies(&mut self, class: EntityId) -> Result<(), Error> {
-        for index in 0..self.graph.entity(class).declared_constructors.len() {
-            let binding = self.graph.entity(class).declared_constructors[index];
+        for index in 0..self.graph.entity(class).class().declared_constructors.len() {
+            let binding = self.graph.entity(class).class().declared_constructors[index];
             let function = self.graph.binding(binding).entity;
             let kind = self.constructor_copy_kind(function, class)?;
-            self.graph.entity_mut(function).copy_kind = kind;
+            self.graph.entity_mut(function).callable_mut().copy_kind = kind;
         }
         self.classify_assignments(class)?;
         // A written defaulted member publishes its own facts at class completion;
         // the class's implicit constructors still wait for a use to demand them.
-        for index in 0..self.graph.entity(class).declared_constructors.len() {
-            let binding = self.graph.entity(class).declared_constructors[index];
+        for index in 0..self.graph.entity(class).class().declared_constructors.len() {
+            let binding = self.graph.entity(class).class().declared_constructors[index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if entity.copy_kind.is_some()
+            if entity.callable().copy_kind.is_some()
                 && matches!(
-                    entity.special_definition,
+                    entity.callable().special_definition,
                     Some(SpecialDefinition::Defaulted { .. })
                 )
             {
@@ -377,19 +391,24 @@ impl Analyzer<'_> {
         class: EntityId,
     ) -> Result<Option<RefKind>, Error> {
         let entity = self.graph.entity(self.graph.binding(binding).entity);
-        if entity.template_head.is_some() {
+        if entity.context().template_head.is_some() {
             return Ok(None);
         }
-        if !entity.member_function.is_some_and(|key| key.class == class) {
+        if !entity
+            .callable()
+            .member_function
+            .is_some_and(|key| key.class == class)
+        {
             return Err(Error::Invariant("copy constructor of another class"));
         }
-        Ok(entity.copy_kind)
+        Ok(entity.callable().copy_kind)
     }
 
     fn implicit_copy_candidates(&mut self, class: EntityId) -> Result<ImplicitCopies, Error> {
         self.prepare_copy_properties(class)?;
         self.graph
             .entity(class)
+            .special()
             .implicit_copies
             .ok_or(Error::Invariant("copy properties not published"))
     }
@@ -439,7 +458,8 @@ impl Analyzer<'_> {
         {
             return Ok(());
         }
-        if !self.graph.entity(class).complete || self.graph.entity(class).scope.is_none() {
+        if !self.graph.entity(class).complete || self.graph.entity(class).context().scope.is_none()
+        {
             return Err(Error::at(
                 location,
                 "initialization of an incomplete class object",
@@ -506,6 +526,7 @@ impl Analyzer<'_> {
             CopyOrigin::Declared(binding) => self
                 .graph
                 .entity(self.graph.binding(binding).entity)
+                .callable()
                 .copy_kind
                 .is_some(),
         };
@@ -546,7 +567,7 @@ impl Analyzer<'_> {
         }
         let written_move = direct
             && matches!(selected.origin, CopyOrigin::Declared(binding)
-            if self.graph.entity(self.graph.binding(binding).entity).copy_kind == Some(RefKind::Rvalue));
+            if self.graph.entity(self.graph.binding(binding).entity).callable().copy_kind == Some(RefKind::Rvalue));
         let action = if special
             && candidate.argument.is_none()
             && !selected.binding.temporary
@@ -615,6 +636,7 @@ impl Analyzer<'_> {
             && self
                 .graph
                 .entity(self.graph.binding(binding).entity)
+                .callable()
                 .copy_kind
                 .is_none()
         {
@@ -629,13 +651,13 @@ impl Analyzer<'_> {
         let properties = self.selected_copy_properties(class, selected)?;
         let written_move = matches!(usage, CopyUse::Object { direct: true })
             && matches!(selected.origin, CopyOrigin::Declared(binding)
-                if self.graph.entity(self.graph.binding(binding).entity).copy_kind == Some(RefKind::Rvalue));
+                if self.graph.entity(self.graph.binding(binding).entity).callable().copy_kind == Some(RefKind::Rvalue));
         let empty_lifetime = !self.graph.destructor_trivial(class)? && {
             self.class_layout(class, location)?;
             self.graph.lower_class_empty(class)?
         };
         let provided = matches!(selected.origin, CopyOrigin::Declared(binding)
-            if !matches!(self.graph.entity(self.graph.binding(binding).entity).special_definition,
+            if !matches!(self.graph.entity(self.graph.binding(binding).entity).callable().special_definition,
                 Some(SpecialDefinition::Defaulted { .. })));
         if provided || !properties.trivial || written_move || empty_lifetime {
             let constructor = self.copy_constructor_plan(class, selected)?;
@@ -663,10 +685,10 @@ impl Analyzer<'_> {
         let selected = copy.selection;
         let function = self.graph.selected_copy_function(copy.class, selected)?;
         let entity = self.graph.entity(function);
-        let non_copy = entity.copy_kind.is_none();
+        let non_copy = entity.callable().copy_kind.is_none();
         let provided = matches!(selected.origin, CopyOrigin::Declared(_))
             && !matches!(
-                entity.special_definition,
+                entity.callable().special_definition,
                 Some(SpecialDefinition::Defaulted { .. })
             );
         if !non_copy {
@@ -926,6 +948,7 @@ impl Analyzer<'_> {
         let declared = self
             .graph
             .entity(class)
+            .class()
             .declared_constructors
             .iter()
             .filter(|&&binding| {
@@ -935,6 +958,7 @@ impl Analyzer<'_> {
                 ) || self
                     .graph
                     .entity(self.graph.binding(binding).entity)
+                    .callable()
                     .explicitness
                     != super::specifiers::Explicitness::Explicit
             })
@@ -1016,16 +1040,16 @@ impl Analyzer<'_> {
         candidates: &mut Vec<Candidate>,
     ) -> Result<bool, Error> {
         let mut offered = false;
-        for index in 0..self.graph.entity(class).declared_constructors.len() {
-            let binding = self.graph.entity(class).declared_constructors[index];
+        for index in 0..self.graph.entity(class).class().declared_constructors.len() {
+            let binding = self.graph.entity(class).class().declared_constructors[index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if entity.template_head.is_some() != templated {
+            if entity.context().template_head.is_some() != templated {
                 continue;
             }
             if matches!(
                 context,
                 ConstructorContext::Copy | ConstructorContext::Standard { explicit: false }
-            ) && entity.explicitness == super::specifiers::Explicitness::Explicit
+            ) && entity.callable().explicitness == super::specifiers::Explicitness::Explicit
             {
                 continue;
             }
@@ -1037,7 +1061,7 @@ impl Analyzer<'_> {
             if matches!(
                 context,
                 ConstructorContext::Copy | ConstructorContext::Standard { explicit: false }
-            ) && entity.explicitness == super::specifiers::Explicitness::Explicit
+            ) && entity.callable().explicitness == super::specifiers::Explicitness::Explicit
             {
                 continue;
             }
@@ -1056,12 +1080,12 @@ impl Analyzer<'_> {
                 continue;
             }
             let defaulted = matches!(
-                entity.special_definition,
+                entity.callable().special_definition,
                 Some(SpecialDefinition::Defaulted { .. })
             );
             let explicitly_deleted = entity.availability == FunctionAvailability::Deleted;
-            let copy_properties = entity.copy_properties;
-            let kind = entity.copy_kind;
+            let copy_properties = entity.special().copy_properties;
+            let kind = entity.callable().copy_kind;
             let sequence = if count == 0 {
                 let target = self.decayed_type(facts.ty)?;
                 let Some(mut conversion) = self.scalar_sequence(facts, target, false)? else {
@@ -1186,6 +1210,7 @@ impl Analyzer<'_> {
                 && self
                     .graph
                     .entity(self.graph.binding(binding).entity)
+                    .callable()
                     .explicitness
                     == super::specifiers::Explicitness::Explicit
             {
@@ -1344,7 +1369,7 @@ mod tests {
             );
             let has_copy = analyzer.graph.root_demands.as_slice().iter().any(|demand| {
                 matches!(demand, super::super::function_demands::Demand::Function { binding, .. }
-                    if analyzer.graph.entity(analyzer.graph.binding(*binding).entity).copy_kind.is_some())
+                    if analyzer.graph.entity(analyzer.graph.binding(*binding).entity).callable().copy_kind.is_some())
             });
             assert_eq!(has_copy, index == 4);
         }
@@ -1489,7 +1514,7 @@ mod tests {
                 .entity;
             assert!(graph.lower_direct_class_parameter(u).is_err());
             assert!(matches!(
-                graph.entity(u).layout,
+                graph.entity(u).class().layout,
                 crate::sema::layout::LayoutState::NotStarted
             ));
         }
@@ -1532,7 +1557,7 @@ mod tests {
             analyzer.graph.entity(source).ty.unwrap(),
             ValueCategory::Lvalue,
         );
-        let converter = analyzer.graph.entity(source).declared_conversions[0];
+        let converter = analyzer.graph.entity(source).class().declared_conversions[0];
         let demands = analyzer.graph.root_demands.as_slice().len();
         for _ in 0..3 {
             let CopyResolution::Selected(candidate) = analyzer
@@ -1569,12 +1594,20 @@ mod tests {
             assert!(analyzer.copy_scratch.candidates.is_empty());
         }
         assert_eq!(analyzer.graph.root_demands.as_slice().len(), demands);
-        assert!(analyzer.graph.entity(unused).implicit_copies.is_none());
-        for &binding in &analyzer.graph.entity(target).declared_constructors {
+        assert!(
+            analyzer
+                .graph
+                .entity(unused)
+                .special()
+                .implicit_copies
+                .is_none()
+        );
+        for &binding in &analyzer.graph.entity(target).class().declared_constructors {
             assert!(
                 analyzer
                     .graph
                     .entity(analyzer.graph.binding(binding).entity)
+                    .initialization()
                     .constructor
                     .is_none()
             );
@@ -1669,7 +1702,7 @@ mod tests {
             };
             assert_eq!(graph.constructors.get(constructor).class, base);
         }
-        assert!(graph.entity(derived).implicit_destructor.is_some());
+        assert!(graph.entity(derived).class().implicit_destructor.is_some());
     }
 
     #[test]
@@ -1690,10 +1723,11 @@ mod tests {
         let class = graph
             .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
             .entity;
-        let binding = graph.entity(class).declared_constructors[0];
+        let binding = graph.entity(class).class().declared_constructors[0];
         assert!(
             graph
                 .entity(graph.binding(binding).entity)
+                .initialization()
                 .constructor
                 .is_none()
         );
@@ -1815,7 +1849,11 @@ mod tests {
             let function = graph
                 .binding(graph.own(graph.global, name, Filter::Ordinary).unwrap())
                 .entity;
-            let definition = graph.entity(function).function_definition.unwrap();
+            let definition = graph
+                .entity(function)
+                .callable()
+                .function_definition
+                .unwrap();
             let ast::DeclKind::Function { body, .. } = tree.declarations.get(definition).kind
             else {
                 panic!("function definition");
@@ -1856,15 +1894,15 @@ mod tests {
         let unused = graph
             .binding(graph.own(graph.global, unused, Filter::Prefix).unwrap())
             .entity;
-        assert!(graph.entity(unused).implicit_copies.is_none());
+        assert!(graph.entity(unused).special().implicit_copies.is_none());
         let name = cursor.intern_name(b"B").unwrap();
         let class = graph
             .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
             .entity;
-        for &binding in &graph.entity(class).declared_constructors {
+        for &binding in &graph.entity(class).class().declared_constructors {
             let entity = graph.entity(graph.binding(binding).entity);
-            if entity.copy_kind == Some(RefKind::Rvalue) {
-                assert!(entity.constructor.is_none());
+            if entity.callable().copy_kind == Some(RefKind::Rvalue) {
+                assert!(entity.initialization().constructor.is_none());
             }
         }
     }

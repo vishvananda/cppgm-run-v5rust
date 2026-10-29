@@ -607,10 +607,10 @@ impl Analyzer<'_> {
             let Some(ty) = entity.ty else {
                 return Ok(None);
             };
-            if entity.template_head.is_some()
-                || entity.member_function.is_some()
+            if entity.context().template_head.is_some()
+                || entity.callable().member_function.is_some()
                 || self.exception_dependent_type(ty)
-                || entity.builtin.is_some()
+                || entity.callable().builtin.is_some()
             {
                 return Ok(None);
             }
@@ -747,6 +747,7 @@ mod tests {
         assert!(
             graph
                 .entity(graph.binding(take).entity)
+                .callable()
                 .demands
                 .as_slice()
                 .is_empty()

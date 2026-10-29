@@ -58,6 +58,7 @@ impl Analyzer<'_> {
         if let TypeKind::Enum(entity) = self.graph.types.get(ty).kind {
             self.graph
                 .entity(entity)
+                .enumerated()
                 .enumeration
                 .is_some_and(|info| info.scoped)
         } else {
@@ -812,6 +813,7 @@ impl Analyzer<'_> {
             && matches!(
                 self.graph
                     .entity(self.graph.binding(binding).entity)
+                    .callable()
                     .builtin,
                 Some(super::builtin_calls::BuiltinFunction::Expect)
             )
@@ -834,6 +836,7 @@ impl Analyzer<'_> {
             && self
                 .graph
                 .entity(self.graph.binding(binding).entity)
+                .callable()
                 .builtin
                 .is_some()
         {
@@ -985,6 +988,7 @@ impl Analyzer<'_> {
             && self
                 .graph
                 .entity(binding.entity)
+                .context()
                 .template_parameter
                 .is_some()
         {
@@ -993,7 +997,7 @@ impl Analyzer<'_> {
         if !skipping && binding.kind == BindingKind::Variable {
             self.use_instance_variable(binding.entity)?;
         }
-        if let ConstantState::Value(value) = self.graph.entity(binding.entity).constant {
+        if let ConstantState::Value(value) = self.graph.entity(binding.entity).object().constant {
             return Ok(value);
         }
         let ty = self.binding_expression_type(found)?;
@@ -1358,6 +1362,7 @@ impl Analyzer<'_> {
             let info = self
                 .graph
                 .entity(entity)
+                .enumerated()
                 .enumeration
                 .ok_or(Error::Invariant("enum without metadata"))?;
             if info.scoped {
@@ -1817,15 +1822,15 @@ impl Analyzer<'_> {
                     if matches!(self.tree.expressions.get(id).kind, ExprKind::Braced { elements, .. }
                         if self.tree.expr_lists.get(elements).is_empty()))
             {
-                self.graph.entity_mut(entity).constant = ConstantState::Evaluating;
+                self.graph.entity_mut(entity).object_mut().constant = ConstantState::Evaluating;
                 let value = self.integral_initializer_value(entity, initializer, scope);
-                self.graph.entity_mut(entity).constant = ConstantState::None;
-                self.graph.entity_mut(entity).constant =
+                self.graph.entity_mut(entity).object_mut().constant = ConstantState::None;
+                self.graph.entity_mut(entity).object_mut().constant =
                     value?.map_or(ConstantState::None, ConstantState::Value);
             }
             return Ok(());
         };
-        self.graph.entity_mut(entity).constant = ConstantState::Evaluating;
+        self.graph.entity_mut(entity).object_mut().constant = ConstantState::Evaluating;
         let mut inner = expr;
         while let ExprKind::Paren(id) = self.tree.expressions.get(inner).kind {
             inner = id;
@@ -1846,7 +1851,7 @@ impl Analyzer<'_> {
                     ) && self.is_address_expression(expr))
             {
                 let result = self.constant_operand_value(expr, object, scope);
-                self.graph.entity_mut(entity).constant = ConstantState::None;
+                self.graph.entity_mut(entity).object_mut().constant = ConstantState::None;
                 match result {
                     Ok(Value::Integer(value)) => Some(value),
                     Ok(_) => return Err(Error::Invariant("nonintegral converted initializer")),
@@ -1868,7 +1873,8 @@ impl Analyzer<'_> {
                 };
                 let binding = self.graph.binding(found);
                 if binding.kind == BindingKind::Variable
-                    && let ConstantState::Value(value) = self.graph.entity(binding.entity).constant
+                    && let ConstantState::Value(value) =
+                        self.graph.entity(binding.entity).object().constant
                 {
                     Some(value)
                 } else {
@@ -1898,7 +1904,7 @@ impl Analyzer<'_> {
             };
             Ok(value)
         })();
-        self.graph.entity_mut(entity).constant = ConstantState::None;
+        self.graph.entity_mut(entity).object_mut().constant = ConstantState::None;
         if let Some(value) = result? {
             if value.indeterminate() {
                 return if self.graph.entity(entity).constexpr {
@@ -1928,7 +1934,7 @@ impl Analyzer<'_> {
                 ));
             }
             let value = self.convert_integer_constant(value, target)?;
-            self.graph.entity_mut(entity).constant = ConstantState::Value(value);
+            self.graph.entity_mut(entity).object_mut().constant = ConstantState::Value(value);
         }
         Ok(())
     }
@@ -2073,7 +2079,7 @@ mod tests {
         for name in [qn, qw] {
             let binding = graph.own(graph.global, name, Filter::Ordinary).unwrap();
             assert!(
-                matches!(graph.entity(graph.binding(binding).entity).constant,
+                matches!(graph.entity(graph.binding(binding).entity).object().constant,
                 ConstantState::Value(value) if value.truth())
             );
         }

@@ -249,7 +249,7 @@ mod tests {
             let binding = analyzer.graph.own(global, name, Filter::Ordinary).unwrap();
             let entity = analyzer.graph.binding(binding).entity;
             assert!(
-                matches!(analyzer.graph.entity(entity).constant,ConstantState::Value(value) if value.bits==bits)
+                matches!(analyzer.graph.entity(entity).object().constant,ConstantState::Value(value) if value.bits==bits)
             );
         }
         assert!(!analyzer.constexpr_frames.active());

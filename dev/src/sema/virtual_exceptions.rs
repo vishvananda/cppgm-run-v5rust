@@ -52,7 +52,11 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         if destructor.is_some()
-            && self.graph.entity(function).destructor_specification
+            && self
+                .graph
+                .entity(function)
+                .special()
+                .destructor_specification
                 == DestructorSpecification::Implicit
         {
             return Ok(());
@@ -61,6 +65,7 @@ impl Analyzer<'_> {
             match self
                 .graph
                 .entity(class)
+                .special()
                 .destruction
                 .ok_or(Error::Invariant("overridden destructor without properties"))?
                 .unwind
@@ -112,10 +117,12 @@ impl Analyzer<'_> {
         let implicit = self
             .graph
             .entity(class)
+            .class()
             .declared_destructor
             .is_none_or(|binding| {
                 self.graph
                     .entity(self.graph.binding(binding).entity)
+                    .special()
                     .destructor_specification
                     == DestructorSpecification::Implicit
             });
@@ -133,6 +140,7 @@ impl Analyzer<'_> {
         let deleted = |class| {
             self.graph
                 .entity(class)
+                .special()
                 .destruction
                 .map(|facts| facts.deleted)
         };
@@ -152,7 +160,7 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         if destructor.is_none()
-            && self.graph.entity(found).exception_origin == SpecificationOrigin::Omitted
+            && self.graph.entity(found).callable().exception_origin == SpecificationOrigin::Omitted
         {
             return Ok(());
         }
@@ -220,6 +228,7 @@ impl Analyzer<'_> {
                     Owner::Destructor(class) => self
                         .graph
                         .entity(class)
+                        .class()
                         .declared_destructor
                         .map(|binding| self.graph.binding(binding).entity),
                 };
@@ -317,9 +326,13 @@ impl Analyzer<'_> {
                         continue;
                     }
                     let entity = self.graph.entity(class);
-                    if let Some(binding) = entity.declared_destructor {
+                    if let Some(binding) = entity.class().declared_destructor {
                         let function = self.graph.binding(binding).entity;
-                        if self.graph.entity(function).destructor_specification
+                        if self
+                            .graph
+                            .entity(function)
+                            .special()
+                            .destructor_specification
                             == DestructorSpecification::Explicit
                         {
                             work.push(Owner::Function(function));
@@ -328,7 +341,7 @@ impl Analyzer<'_> {
                     }
                     // Push in reverse execution order: direct bases, indirect
                     // virtual bases, then members, each in source order.
-                    for &member in entity.members.iter().rev() {
+                    for &member in entity.class().members.iter().rev() {
                         let mut ty = self.graph.lower_entity_type(member)?;
                         while let TypeKind::Array { element, .. } = self.graph.types.get(ty).kind {
                             ty = element;
@@ -346,6 +359,7 @@ impl Analyzer<'_> {
                     );
                     work.extend(
                         entity
+                            .class()
                             .bases
                             .iter()
                             .rev()
@@ -367,21 +381,21 @@ impl Analyzer<'_> {
         final_check: bool,
     ) -> Result<FunctionExceptions<'_>, Error> {
         let entity = self.graph.entity(function);
-        if let Some(member) = entity.member_function
+        if let Some(member) = entity.callable().member_function
             && member.kind == super::graph::MemberKind::Destructor
-            && entity.destructor_specification == DestructorSpecification::Implicit
+            && entity.special().destructor_specification == DestructorSpecification::Implicit
         {
             return Ok(FunctionExceptions::Destructor(member.class));
         }
         let dynamic = self.pending_dynamic_throw(function);
-        if matches!(entity.exceptions, ExceptionState::Pending(_)) && !dynamic {
+        if matches!(entity.callable().exceptions, ExceptionState::Pending(_)) && !dynamic {
             if !final_check {
                 return Ok(FunctionExceptions::Deferred);
             }
             self.function_may_throw(function)?;
         }
         let written = self.graph.source_exceptions.specification(function);
-        Ok(match &self.graph.entity(function).exceptions {
+        Ok(match &self.graph.entity(function).callable().exceptions {
             ExceptionState::Value(ExceptionSet::None) => FunctionExceptions::Nonthrowing,
             ExceptionState::Value(ExceptionSet::Dynamic(types)) => {
                 FunctionExceptions::Dynamic(written.unwrap_or(types))
@@ -408,7 +422,7 @@ impl Analyzer<'_> {
             if !seen.insert(class) {
                 continue;
             }
-            for edge in &self.graph.entity(class).bases {
+            for edge in &self.graph.entity(class).class().bases {
                 if edge.access == Access::Public {
                     if edge.class == base {
                         return true;
@@ -518,6 +532,7 @@ mod tests {
         let class = analyzer
             .graph
             .entity(analyzer.graph.binding(binding).entity)
+            .context()
             .scope
             .unwrap();
         let binding = analyzer.graph.own(class, f, Filter::Ordinary).unwrap();
@@ -557,6 +572,7 @@ mod tests {
         let class = analyzer
             .graph
             .entity(analyzer.graph.binding(binding).entity)
+            .context()
             .scope
             .unwrap();
         let binding = analyzer.graph.own(class, f, Filter::Ordinary).unwrap();
@@ -564,7 +580,7 @@ mod tests {
         analyzer.declaration(declarations[2], global).unwrap();
         assert_eq!(analyzer.graph.analysis.exception_overrides.len(), 1);
         assert!(matches!(
-            analyzer.graph.entity(function).exceptions,
+            analyzer.graph.entity(function).callable().exceptions,
             ExceptionState::Pending(_)
         ));
         analyzer.finish_unit_exceptions().unwrap();

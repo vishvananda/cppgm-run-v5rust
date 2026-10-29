@@ -285,7 +285,7 @@ impl Analyzer<'_> {
             && let TypeKind::Address { ty, entity } = self.graph.types.get(argument).kind
             && let TypeKind::Pointer(element) = self.graph.types.get(ty).kind
         {
-            let root = if self.graph.entity(entity).function.is_some() {
+            let root = if self.graph.entity(entity).callable().function.is_some() {
                 Root::Function(entity)
             } else {
                 Root::Variable(entity)
@@ -715,7 +715,7 @@ impl Analyzer<'_> {
             return Ok(place);
         }
         if let Some(entity) = self.graph.reference_argument_entity(binding.entity) {
-            let root = if self.graph.entity(entity).function.is_some() {
+            let root = if self.graph.entity(entity).callable().function.is_some() {
                 Root::Function(entity)
             } else {
                 Root::Variable(entity)
@@ -735,7 +735,7 @@ impl Analyzer<'_> {
                     return Ok(Address::new(Root::Literal(literal), facts.ty));
                 }
                 let entity = self.graph.entity(binding.entity);
-                if entity.data_member == Some(super::graph::DataMemberKind::Instance)
+                if entity.object().data_member == Some(super::graph::DataMemberKind::Instance)
                     && let Some(object) = self
                         .constexpr_frames
                         .current()
@@ -778,7 +778,7 @@ impl Analyzer<'_> {
                     place.designated = facts.ty;
                     return Ok(place);
                 }
-                if entity.data_member == Some(super::graph::DataMemberKind::Instance) {
+                if entity.object().data_member == Some(super::graph::DataMemberKind::Instance) {
                     let storage = facts
                         .anonymous_member(&self.graph.expression_facts)
                         .ok_or_else(|| {
@@ -988,7 +988,9 @@ impl Analyzer<'_> {
             .member(&self.graph.expression_facts)
             .ok_or(Error::Missing("constant member place"))?;
         let entity = self.graph.binding(binding).entity;
-        if self.graph.entity(entity).data_member == Some(super::graph::DataMemberKind::Instance) {
+        if self.graph.entity(entity).object().data_member
+            == Some(super::graph::DataMemberKind::Instance)
+        {
             let owner = facts
                 .member_naming(&self.graph.expression_facts)
                 .ok_or(Error::Invariant("member place without class owner"))?;
@@ -1011,7 +1013,9 @@ impl Analyzer<'_> {
             )?;
             return self.constant_member_designation(place, entity, facts.ty, location);
         }
-        if self.graph.entity(entity).data_member == Some(super::graph::DataMemberKind::Static) {
+        if self.graph.entity(entity).object().data_member
+            == Some(super::graph::DataMemberKind::Static)
+        {
             if self.graph.entity(entity).ty.is_some_and(|ty| {
                 matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
             }) {
@@ -1214,7 +1218,7 @@ impl Analyzer<'_> {
                 self.instantiate_variable_value(entity)?;
                 if !self.graph.entity(entity).constexpr
                     && matches!(
-                        self.graph.entity(entity).constant,
+                        self.graph.entity(entity).object().constant,
                         super::constants::ConstantState::None
                     )
                 {
@@ -1247,7 +1251,7 @@ impl Analyzer<'_> {
                         "an access outside the designated object",
                     ));
                 }
-                match self.graph.entity(entity).constant {
+                match self.graph.entity(entity).object().constant {
                     super::constants::ConstantState::Value(value) => Ok(value),
                     super::constants::ConstantState::Evaluating => Err(nonconstant(
                         location,
@@ -1478,11 +1482,12 @@ impl Analyzer<'_> {
             return Ok(());
         }
         self.graph.constant_addresses.begin(entity);
-        self.graph.entity_mut(entity).constant = super::constants::ConstantState::Evaluating;
+        self.graph.entity_mut(entity).object_mut().constant =
+            super::constants::ConstantState::Evaluating;
         let outcome = self.with_observed_constant_query(|analyzer| {
             analyzer.evaluate_address_initializer(entity, initializer, scope)
         });
-        self.graph.entity_mut(entity).constant = super::constants::ConstantState::None;
+        self.graph.entity_mut(entity).object_mut().constant = super::constants::ConstantState::None;
         if reference
             && self.graph.entity(entity).constexpr
             && let Some(mut expr) = self.single_initializer(initializer)
@@ -1549,6 +1554,7 @@ impl Analyzer<'_> {
             Root::Variable(entity) => {
                 self.graph
                     .entity(entity)
+                    .object()
                     .variable
                     .is_some_and(|properties| {
                         !properties.automatic

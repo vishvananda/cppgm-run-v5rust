@@ -282,11 +282,11 @@ impl Analyzer<'_> {
             return self.copy_constant_object(target, source, copy.location);
         }
         let entity = self.graph.entity(function);
-        let generated_copy = entity.copy_kind.is_some()
+        let generated_copy = entity.callable().copy_kind.is_some()
             && (matches!(
-                entity.special_definition,
+                entity.callable().special_definition,
                 Some(super::special_members::SpecialDefinition::Defaulted { .. })
-            ) || entity.copy_origin == super::copy_construction::Origin::Implicit);
+            ) || entity.callable().copy_origin == super::copy_construction::Origin::Implicit);
         if !generated_copy && !entity.constexpr {
             return Err(nonconstant(
                 copy.location,
@@ -539,6 +539,7 @@ impl Analyzer<'_> {
                     !matches!(
                         self.graph
                             .entity(self.graph.binding(binding).entity)
+                            .callable()
                             .special_definition,
                         Some(super::special_members::SpecialDefinition::Defaulted { .. })
                     )
@@ -583,7 +584,7 @@ impl Analyzer<'_> {
             .graph
             .class_of(target.designated)
             .ok_or(Error::Invariant("constant list wrapper"))?;
-        let [first, second, ..] = self.graph.entity(class).members.as_slice() else {
+        let [first, second, ..] = self.graph.entity(class).class().members.as_slice() else {
             return Err(nonconstant(
                 location,
                 "a std::initializer_list without its array's address and size members",
@@ -652,8 +653,8 @@ impl Analyzer<'_> {
                             .or_else(|| self.graph.union_list_member(class, *next >= values.len()))
                     })
                     .flatten();
-                for index in 0..self.graph.entity(class).members.len() {
-                    let member = self.graph.entity(class).members[index];
+                for index in 0..self.graph.entity(class).class().members.len() {
+                    let member = self.graph.entity(class).class().members[index];
                     if self.graph.unnamed_bit_field(member)
                         || selected.is_some_and(|selected| member != selected)
                     {
@@ -888,7 +889,7 @@ impl Analyzer<'_> {
             let function = self.graph.entity(self.graph.binding(binding).entity);
             if !function.constexpr
                 && matches!(
-                    function.special_definition,
+                    function.callable().special_definition,
                     Some(super::special_members::SpecialDefinition::Defaulted { first: false, .. })
                 )
             {
@@ -904,7 +905,7 @@ impl Analyzer<'_> {
             .map(|binding| self.graph.binding(binding).entity)
             .filter(|&entity| {
                 !matches!(
-                    self.graph.entity(entity).special_definition,
+                    self.graph.entity(entity).callable().special_definition,
                     Some(super::special_members::SpecialDefinition::Defaulted { .. })
                 )
             });
@@ -913,7 +914,7 @@ impl Analyzer<'_> {
             if !entity.constexpr
                 && self.graph.inherited_constructors.source(function).is_none()
                 && !matches!(
-                    entity.special_definition,
+                    entity.callable().special_definition,
                     Some(super::special_members::SpecialDefinition::Defaulted { .. })
                 )
             {
@@ -950,6 +951,7 @@ impl Analyzer<'_> {
         } else {
             self.graph
                 .entity(class)
+                .context()
                 .scope
                 .ok_or(Error::Invariant("constant class without scope"))
                 .map(|scope| {
@@ -1224,7 +1226,7 @@ mod tests {
         let ty = analyzer.graph.lower_entity_type(entity).unwrap();
         let constructor = analyzer.graph.lower_construction(entity).unwrap();
         let class = analyzer.graph.class_of(ty).unwrap();
-        let member = analyzer.graph.entity(class).members[0];
+        let member = analyzer.graph.entity(class).class().members[0];
         let declaration = *analyzer.tree.decl_lists.get(declarations).last().unwrap();
         let ast::DeclKind::Simple { declarators, .. } =
             analyzer.tree.declarations.get(declaration).kind
@@ -1313,7 +1315,7 @@ mod tests {
         for (name, bits) in names.into_iter().zip([463, 863]) {
             let binding = analyzer.graph.own(scope, name, Filter::Ordinary).unwrap();
             assert!(
-                matches!(analyzer.graph.entity(analyzer.graph.binding(binding).entity).constant,
+                matches!(analyzer.graph.entity(analyzer.graph.binding(binding).entity).object().constant,
                 ConstantState::Value(value) if value.bits == bits)
             );
         }

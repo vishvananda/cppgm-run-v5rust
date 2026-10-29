@@ -59,7 +59,7 @@ impl Analyzer<'_> {
     ) -> Result<TypeId, Error> {
         if transform == T::UnderlyingType {
             let info = if let TypeKind::Enum(entity) = self.graph.types.get(ty).kind {
-                self.graph.entity(entity).enumeration
+                self.graph.entity(entity).enumerated().enumeration
             } else {
                 None
             };
@@ -180,6 +180,7 @@ impl Analyzer<'_> {
         let integral = if let TypeKind::Enum(entity) = self.graph.types.get(ty).kind {
             self.graph
                 .entity(entity)
+                .enumerated()
                 .enumeration
                 .and_then(|info| info.underlying)
         } else {

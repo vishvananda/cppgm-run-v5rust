@@ -39,7 +39,7 @@ impl Analyzer<'_> {
         }
         let variable = self.graph.entity(entity);
         if !variable.constexpr
-            || variable.data_member == Some(DataMemberKind::Instance)
+            || variable.object().data_member == Some(DataMemberKind::Instance)
             || !variable
                 .home
                 .is_some_and(|home| self.graph.scope(home).kind == ScopeKind::Class)
@@ -56,7 +56,7 @@ impl Analyzer<'_> {
                 _ => return false,
             };
         }
-        self.graph.entity_mut(entity).constant = ConstantState::None;
+        self.graph.entity_mut(entity).object_mut().constant = ConstantState::None;
         self.graph.constant_addresses.remove(entity);
         self.graph.aggregate_constants.defer(entity, initialization);
         self.deferred
@@ -92,17 +92,20 @@ impl Analyzer<'_> {
         &mut self,
         entity: EntityId,
     ) -> Result<Option<Snapshot>, Error> {
-        if !matches!(self.graph.entity(entity).constant, ConstantState::None) {
+        if !matches!(
+            self.graph.entity(entity).object().constant,
+            ConstantState::None
+        ) {
             return Ok(None);
         }
         let Some(initialization) = self.graph.aggregate_constants.deferred(entity) else {
             return Ok(None);
         };
-        self.graph.entity_mut(entity).constant = ConstantState::Evaluating;
+        self.graph.entity_mut(entity).object_mut().constant = ConstantState::Evaluating;
         let result = self.with_fresh_constant_query(|analyzer| {
             analyzer.initialize_deferred_snapshot(entity, initialization)
         });
-        self.graph.entity_mut(entity).constant = ConstantState::None;
+        self.graph.entity_mut(entity).object_mut().constant = ConstantState::None;
         match result {
             Ok(value) => {
                 // This propagation belongs to a successful provisional read,
@@ -245,7 +248,7 @@ mod tests {
                     .unwrap(),
             )
             .entity;
-        let members = analyzer.graph.entity(class).scope.unwrap();
+        let members = analyzer.graph.entity(class).context().scope.unwrap();
         let entity = analyzer
             .graph
             .binding(
@@ -293,7 +296,7 @@ mod tests {
             #[cfg(not(feature = "telemetry"))]
             let _ = expected_queries;
             assert!(matches!(
-                analyzer.graph.entity(entity).constant,
+                analyzer.graph.entity(entity).object().constant,
                 ConstantState::None
             ));
         }

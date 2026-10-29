@@ -59,6 +59,7 @@ impl Graph {
         let holder = self.member_holder(member, None)?;
         Ok(self
             .entity(holder)
+            .class()
             .anonymous_storage
             .filter(|&storage| self.scope(self.binding_scope(storage)).kind != ScopeKind::Class))
     }
@@ -132,7 +133,7 @@ impl Graph {
 
     pub(crate) fn lower_first_named_member(&self, ty: TypeId) -> Option<NameId> {
         let class = self.class_of(ty)?;
-        let mut work = vec![self.entity(class).members.iter()];
+        let mut work = vec![self.entity(class).class().members.iter()];
         while let Some(members) = work.last_mut() {
             let Some(&member) = members.next() else {
                 work.pop();
@@ -143,9 +144,9 @@ impl Graph {
                 return Some(name);
             }
             if let Some(class) = member.ty.and_then(|ty| self.class_of(ty))
-                && self.entity(class).anonymous_class.is_some()
+                && self.entity(class).class().anonymous_class.is_some()
             {
-                work.push(self.entity(class).members.iter());
+                work.push(self.entity(class).class().members.iter());
             }
         }
         None
@@ -161,6 +162,7 @@ impl Graph {
         }
         let Some((class, tokens)) = node.owner.and_then(|class| {
             self.entity(class)
+                .class()
                 .anonymous_class?
                 .label()
                 .map(|tokens| (class, tokens))
@@ -209,10 +211,11 @@ impl Graph {
         if let Some(name) = entity.name {
             return Ok(ClassSpelling::Name(name));
         }
-        if let Some(ordinal) = entity.local_type_ordinal {
+        if let Some(ordinal) = entity.class().local_type_ordinal {
             return Ok(ClassSpelling::Local(ordinal));
         }
         entity
+            .class()
             .anonymous_class
             .and_then(AnonymousClass::label)
             .map(ClassSpelling::Anonymous)
@@ -242,7 +245,9 @@ impl Graph {
     // its original class. Follow its owned storage to the object being named;
     // only then can the caller select a base route or a union memory fact.
     pub(super) fn anonymous_member_storage(&self, class: EntityId) -> Option<EntityId> {
-        let object = self.binding(self.entity(class).anonymous_storage?).entity;
+        let object = self
+            .binding(self.entity(class).class().anonymous_storage?)
+            .entity;
         let home = self.entity(object).home?;
         (self.scope(home).kind == ScopeKind::Class).then_some(object)
     }
@@ -277,15 +282,21 @@ impl Analyzer<'_> {
             return Ok(());
         };
         if self.semantic()
-            && self.graph.entity(class).anonymous_class.is_some()
-            && self.graph.entity(class).local_type_ordinal.is_none()
+            && self.graph.entity(class).class().anonymous_class.is_some()
+            && self
+                .graph
+                .entity(class)
+                .class()
+                .local_type_ordinal
+                .is_none()
         {
             self.graph.local_types = self
                 .graph
                 .local_types
                 .checked_add(1)
                 .ok_or(Error::Limit("unnamed class ordinal limit"))?;
-            self.graph.entity_mut(class).local_type_ordinal = Some(self.graph.local_types);
+            self.graph.entity_mut(class).class_mut().local_type_ordinal =
+                Some(self.graph.local_types);
         }
         Ok(())
     }
@@ -318,7 +329,7 @@ impl Analyzer<'_> {
         let TypeKind::Class(entity) = self.graph.types.get(ty).kind else {
             return;
         };
-        let Some(anonymous) = self.graph.entity(entity).anonymous_class else {
+        let Some(anonymous) = self.graph.entity(entity).class().anonymous_class else {
             return;
         };
         if self.graph.entity(entity).name.is_some() {
@@ -326,11 +337,11 @@ impl Analyzer<'_> {
         }
         if let Some(name) = name {
             self.graph.entity_mut(entity).name = Some(name);
-            if let Some(scope) = self.graph.entity(entity).scope {
+            if let Some(scope) = self.graph.entity(entity).context().scope {
                 self.graph.scope_mut(scope).name = Some(name);
             }
         } else {
-            self.graph.entity_mut(entity).anonymous_class =
+            self.graph.entity_mut(entity).class_mut().anonymous_class =
                 Some(AnonymousClass::Labeled(anonymous.tokens()));
         }
         // As in name_unnamed_type, the placeholder's printed name changes,
@@ -350,7 +361,7 @@ impl Analyzer<'_> {
         let TypeKind::Class(entity) = self.graph.types.get(declared).kind else {
             return Ok(None);
         };
-        let Some(anonymous) = self.graph.entity(entity).anonymous_class else {
+        let Some(anonymous) = self.graph.entity(entity).class().anonymous_class else {
             return Ok(None);
         };
         if self.graph.entity(entity).name.is_some() {
@@ -389,10 +400,12 @@ impl Analyzer<'_> {
                 .checked_add(1)
                 .ok_or(Error::Limit("token ordinal limit"))?;
         }
-        self.graph.entity_mut(entity).anonymous_class = Some(AnonymousClass::Labeled(tokens));
+        self.graph.entity_mut(entity).class_mut().anonymous_class =
+            Some(AnonymousClass::Labeled(tokens));
         let class = self
             .graph
             .entity(entity)
+            .context()
             .scope
             .ok_or(Error::Invariant("anonymous class without scope"))?;
         // Read only this class's source-order bindings. No enclosing-scope scan.
@@ -426,9 +439,13 @@ impl Analyzer<'_> {
                 .ok_or(Error::Invariant("class without owner"))?;
             let storage = self.graph.add_entity(Some(specs.ty), None, Keyword::Int)?;
             self.graph.entity_mut(storage).member_access = self.graph.scope(scope).member_access;
-            self.graph.entity_mut(owner).members.push(storage);
+            self.graph
+                .entity_mut(owner)
+                .class_mut()
+                .members
+                .push(storage);
             if self.graph.scope(scope).member_access != super::graph::Access::Public {
-                self.graph.entity_mut(owner).layout_category =
+                self.graph.entity_mut(owner).class_mut().layout_category =
                     super::layout::LayoutCategory::NonPod;
             }
             let binding = self.graph.add_binding(
@@ -442,7 +459,7 @@ impl Analyzer<'_> {
                     key: Keyword::Int,
                 },
             )?;
-            self.graph.entity_mut(entity).anonymous_storage = Some(binding);
+            self.graph.entity_mut(entity).class_mut().anonymous_storage = Some(binding);
             return Ok(None);
         }
         if !self.semantic() || self.template_depth != 0 {
@@ -452,21 +469,22 @@ impl Analyzer<'_> {
         // Its label is derived only in dump views from the class's token provenance.
         let storage = self.graph.add_entity(Some(specs.ty), None, Keyword::Int)?;
         self.graph.entity_mut(storage).defined = true;
-        self.graph.entity_mut(storage).variable = Some(super::graph::VariableProperties {
-            is_extern: false,
-            internal_linkage: kind == ScopeKind::Namespace,
-            // The frozen anonymous_union owner creates this hidden object
-            // without inheriting a surrounding linkage specification.
-            language: super::linkage::Language::Cpp,
-            // analyzer_classes.cpp publishes no thread-storage flag on this hidden object.
-            thread_storage: super::specifiers::ThreadStorage::Ordinary,
-            static_specifier: if specs.is_static {
-                super::specifiers::StaticSpecifier::Present
-            } else {
-                super::specifiers::StaticSpecifier::Absent
-            },
-            automatic: kind == ScopeKind::Block && !specs.is_static,
-        });
+        self.graph.entity_mut(storage).object_mut().variable =
+            Some(super::graph::VariableProperties {
+                is_extern: false,
+                internal_linkage: kind == ScopeKind::Namespace,
+                // The frozen anonymous_union owner creates this hidden object
+                // without inheriting a surrounding linkage specification.
+                language: super::linkage::Language::Cpp,
+                // analyzer_classes.cpp publishes no thread-storage flag on this hidden object.
+                thread_storage: super::specifiers::ThreadStorage::Ordinary,
+                static_specifier: if specs.is_static {
+                    super::specifiers::StaticSpecifier::Present
+                } else {
+                    super::specifiers::StaticSpecifier::Absent
+                },
+                automatic: kind == ScopeKind::Block && !specs.is_static,
+            });
         let binding = self.graph.add_binding(
             scope,
             None,
@@ -478,7 +496,7 @@ impl Analyzer<'_> {
                 key: Keyword::Int,
             },
         )?;
-        self.graph.entity_mut(entity).anonymous_storage = Some(binding);
+        self.graph.entity_mut(entity).class_mut().anonymous_storage = Some(binding);
         self.default_initialize(binding, location)?;
         if self.lowering() {
             self.request_union_storage(storage, location);
@@ -575,7 +593,7 @@ mod tests {
             .class_of(graph.lower_entity_type(object).unwrap())
             .unwrap();
         assert!(matches!(
-            graph.entity(class).layout,
+            graph.entity(class).class().layout,
             super::super::layout::LayoutState::NotStarted
         ));
     }

@@ -43,14 +43,14 @@ impl Graph {
         indirect: &[EntityId],
     ) -> Result<Option<(EntityId, bool)>, Error> {
         let entity = self.entity(class);
-        if let Some(base) = entity.bases.get(index) {
+        if let Some(base) = entity.class().bases.get(index) {
             return Ok(Some((base.class, false)));
         }
-        let index = index - entity.bases.len();
+        let index = index - entity.class().bases.len();
         if let Some(&base) = indirect.get(index) {
             return Ok(Some((base, false)));
         }
-        let member = entity.members[index - indirect.len()];
+        let member = entity.class().members[index - indirect.len()];
         let mut ty = self
             .entity(member)
             .ty
@@ -72,11 +72,11 @@ impl Graph {
         index: usize,
     ) -> Result<Option<EntityId>, Error> {
         let entity = self.entity(class);
-        if index >= entity.bases.len() {
+        if index >= entity.class().bases.len() {
             if entity.key == Keyword::Union {
                 return Ok(None);
             }
-            let member = entity.members[index - entity.bases.len()];
+            let member = entity.class().members[index - entity.class().bases.len()];
             let mut ty = self
                 .entity(member)
                 .ty
@@ -93,21 +93,25 @@ impl Graph {
             .map(|(child, _)| child))
     }
     pub(crate) fn lower_destructor_subobjects_throw(&self, class: EntityId) -> Result<bool, Error> {
-        let count = self.entity(class).bases.len()
+        let count = self.entity(class).class().bases.len()
             + if self.entity(class).key == Keyword::Union {
                 0
             } else {
-                self.entity(class).members.len()
+                self.entity(class).class().members.len()
             };
         for index in 0..count {
             if let Some((child, _)) = self.destruction_child(class, index, &[])? {
-                let facts = self.entity(child).destruction.ok_or(Error::Invariant(
-                    "subobject destructor properties not complete",
-                ))?;
+                let facts = self
+                    .entity(child)
+                    .special()
+                    .destruction
+                    .ok_or(Error::Invariant(
+                        "subobject destructor properties not complete",
+                    ))?;
                 let nothrow = match facts.unwind {
                     DestructorUnwind::Implicit { nothrow } => nothrow,
                     DestructorUnwind::Declared(function) => matches!(
-                        self.entity(function).exceptions,
+                        self.entity(function).callable().exceptions,
                         ExceptionState::Value(ExceptionSet::None)
                     ),
                 };
@@ -120,10 +124,14 @@ impl Graph {
     }
     pub(super) fn destructor_binding(&self, class: EntityId) -> Option<BindingId> {
         let entity = self.entity(class);
-        entity.declared_destructor.or(entity.implicit_destructor)
+        entity
+            .class()
+            .declared_destructor
+            .or(entity.class().implicit_destructor)
     }
     pub(super) fn destructor_trivial(&self, class: EntityId) -> Result<bool, Error> {
         self.entity(class)
+            .special()
             .destruction
             .map(|facts| facts.trivial)
             .ok_or(Error::Invariant("destructor properties not complete"))
@@ -132,6 +140,7 @@ impl Graph {
     // queries above require completion before consuming its properties.
     pub(super) fn has_nontrivial_destructor(&self, class: EntityId) -> bool {
         self.entity(class)
+            .special()
             .destruction
             .is_some_and(|facts| !facts.trivial)
     }
@@ -144,16 +153,16 @@ impl Analyzer<'_> {
         parent: EntityId,
         member: bool,
     ) -> Result<bool, Error> {
-        let Some(facts) = self.graph.entity(class).destruction else {
+        let Some(facts) = self.graph.entity(class).special().destruction else {
             return Ok(true);
         };
         if self.graph.entity(facts.declaration).availability == FunctionAvailability::Deleted {
             return Ok(false);
         }
-        let Some(binding) = self.graph.entity(class).declared_destructor else {
+        let Some(binding) = self.graph.entity(class).class().declared_destructor else {
             return Ok(true);
         };
-        if self.graph.entity(class).scope.is_none()
+        if self.graph.entity(class).context().scope.is_none()
             || self.graph.binding(binding).entity != facts.declaration
         {
             return Ok(true);
@@ -161,6 +170,7 @@ impl Analyzer<'_> {
         let scope = self
             .graph
             .entity(parent)
+            .context()
             .scope
             .ok_or(Error::Invariant("subobject destructor access scope"))?;
         Ok(self.subobject_destructor_accessible(
@@ -175,7 +185,7 @@ impl Analyzer<'_> {
         &self,
         class: EntityId,
     ) -> Result<bool, Error> {
-        for base in &self.graph.entity(class).bases {
+        for base in &self.graph.entity(class).class().bases {
             if !self.subobject_destructor_usable(base.class, class, false)? {
                 return Ok(false);
             }
@@ -189,7 +199,7 @@ impl Analyzer<'_> {
         // at their declaration position, without querying their own destructor.
         let mut work = vec![(class, 0usize)];
         while let Some((holder, next)) = work.last_mut() {
-            let Some(&member) = self.graph.entity(*holder).members.get(*next) else {
+            let Some(&member) = self.graph.entity(*holder).class().members.get(*next) else {
                 work.pop();
                 continue;
             };
@@ -215,14 +225,14 @@ impl Analyzer<'_> {
     }
     pub(super) fn implicit_destructor_nothrow(&mut self, class: EntityId) -> Result<bool, Error> {
         let indirect = self.graph.indirect_virtual_bases(class);
-        let count = self.graph.entity(class).bases.len()
+        let count = self.graph.entity(class).class().bases.len()
             + indirect.len()
-            + self.graph.entity(class).members.len();
+            + self.graph.entity(class).class().members.len();
         for index in 0..count {
             let Some((child, _)) = self.graph.destruction_child(class, index, &indirect)? else {
                 continue;
             };
-            let Some(facts) = self.graph.entity(child).destruction else {
+            let Some(facts) = self.graph.entity(child).special().destruction else {
                 continue;
             };
             let nothrow = match facts.unwind {
@@ -244,15 +254,15 @@ impl Analyzer<'_> {
             deleted: false,
         };
         let indirect = self.graph.indirect_virtual_bases(class);
-        let count = self.graph.entity(class).bases.len()
+        let count = self.graph.entity(class).class().bases.len()
             + indirect.len()
-            + self.graph.entity(class).members.len();
+            + self.graph.entity(class).class().members.len();
         for index in 0..count {
             let Some((child, member)) = self.graph.destruction_child(class, index, &indirect)?
             else {
                 continue;
             };
-            let Some(child_facts) = self.graph.entity(child).destruction else {
+            let Some(child_facts) = self.graph.entity(child).special().destruction else {
                 continue;
             };
             facts.trivial &= child_facts.trivial;
@@ -271,11 +281,14 @@ impl Analyzer<'_> {
         Ok(self.subobject_destructor_facts(class)?.deleted)
     }
     pub(super) fn complete_destructor(&mut self, class: EntityId) -> Result<(), Error> {
-        let declared = self.graph.entity(class).declared_destructor;
+        let declared = self.graph.entity(class).class().declared_destructor;
         let explicit = declared
             .map(|binding| self.graph.binding(binding).entity)
             .filter(|&function| {
-                self.graph.entity(function).destructor_specification
+                self.graph
+                    .entity(function)
+                    .special()
+                    .destructor_specification
                     == DestructorSpecification::Explicit
             });
         // An explicit specification remains declaration-owned and lazy. In
@@ -291,7 +304,7 @@ impl Analyzer<'_> {
         let subobjects = self.subobject_destructor_facts(class)?;
         let declaration = if let Some(binding) = declared {
             self.graph.binding(binding).entity
-        } else if let Some(facts) = self.graph.entity(class).destruction {
+        } else if let Some(facts) = self.graph.entity(class).special().destruction {
             facts.declaration
         } else {
             let void = self.graph.types.scalar(Scalar::Void)?;
@@ -318,21 +331,22 @@ impl Analyzer<'_> {
             let id = self.graph.binding(binding).entity;
             let entity = self.graph.entity(id);
             let defaulted = matches!(
-                entity.special_definition,
+                entity.callable().special_definition,
                 Some(SpecialDefinition::Defaulted { first: true, .. } | SpecialDefinition::Deleted)
             );
             facts.trivial &= defaulted;
             facts.deleted =
                 entity.availability == FunctionAvailability::Deleted || defaulted && facts.deleted;
-            if entity.destructor_specification == DestructorSpecification::Implicit {
+            if entity.special().destructor_specification == DestructorSpecification::Implicit {
                 let DestructorUnwind::Implicit { nothrow } = facts.unwind else {
                     return Err(Error::Invariant("implicit destructor with explicit unwind"));
                 };
-                self.graph.entity_mut(id).exceptions = ExceptionState::Value(if nothrow {
-                    ExceptionSet::None
-                } else {
-                    ExceptionSet::All
-                });
+                self.graph.entity_mut(id).callable_mut().exceptions =
+                    ExceptionState::Value(if nothrow {
+                        ExceptionSet::None
+                    } else {
+                        ExceptionSet::All
+                    });
             }
             if facts.deleted {
                 self.graph.entity_mut(id).availability = FunctionAvailability::Deleted;
@@ -342,16 +356,17 @@ impl Analyzer<'_> {
             let DestructorUnwind::Implicit { nothrow } = facts.unwind else {
                 return Err(Error::Invariant("implicit destructor with declared unwind"));
             };
-            self.graph.entity_mut(declaration).exceptions = ExceptionState::Value(if nothrow {
-                ExceptionSet::None
-            } else {
-                ExceptionSet::All
-            });
+            self.graph.entity_mut(declaration).callable_mut().exceptions =
+                ExceptionState::Value(if nothrow {
+                    ExceptionSet::None
+                } else {
+                    ExceptionSet::All
+                });
             if facts.deleted {
                 self.graph.entity_mut(declaration).availability = FunctionAvailability::Deleted;
             }
         }
-        self.graph.entity_mut(class).destruction = Some(facts);
+        self.graph.entity_mut(class).special_mut().destruction = Some(facts);
         Ok(())
     }
     pub(super) fn destructor_callable(
@@ -364,6 +379,7 @@ impl Analyzer<'_> {
         let Some(facts) = self
             .graph
             .entity(class)
+            .special()
             .destruction
             .filter(|facts| !facts.trivial || facts.deleted)
         else {
@@ -376,11 +392,12 @@ impl Analyzer<'_> {
         let DestructorUnwind::Implicit { nothrow } = facts.unwind else {
             return Err(Error::Invariant("implicit destructor with declared unwind"));
         };
-        self.graph.entity_mut(entity).exceptions = ExceptionState::Value(if nothrow {
-            ExceptionSet::None
-        } else {
-            ExceptionSet::All
-        });
+        self.graph.entity_mut(entity).callable_mut().exceptions =
+            ExceptionState::Value(if nothrow {
+                ExceptionSet::None
+            } else {
+                ExceptionSet::All
+            });
         if facts.deleted {
             self.graph.entity_mut(entity).availability = FunctionAvailability::Deleted;
         }
@@ -417,6 +434,7 @@ impl Analyzer<'_> {
             .or_else(|| {
                 self.graph
                     .entity(class)
+                    .special()
                     .destruction
                     .map(|facts| facts.declaration)
             });
@@ -424,7 +442,7 @@ impl Analyzer<'_> {
             return Ok(());
         };
         self.check_function_not_deleted(declaration, location)?;
-        if let Some(binding) = self.graph.entity(class).declared_destructor {
+        if let Some(binding) = self.graph.entity(class).class().declared_destructor {
             self.check_declaration_member_access(binding, class, Some(object), scope, location)?;
         }
         Ok(())
@@ -453,10 +471,16 @@ impl Analyzer<'_> {
             && self
                 .graph
                 .entity(class)
+                .special()
                 .destruction
                 .is_some_and(|facts| !facts.trivial)
             && (self.graph.entity(class).key != Keyword::Union
-                || self.graph.entity(class).declared_destructor.is_some())
+                || self
+                    .graph
+                    .entity(class)
+                    .class()
+                    .declared_destructor
+                    .is_some())
             && let Some(binding) = self.destructor_callable(class)?
         {
             self.graph.storage_destructions.push((
@@ -514,19 +538,19 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         let indirect = self.graph.indirect_virtual_bases(class);
-        let count = self.graph.entity(class).bases.len()
+        let count = self.graph.entity(class).class().bases.len()
             + indirect.len()
             + if self.graph.entity(class).key == Keyword::Union {
                 0
             } else {
-                self.graph.entity(class).members.len()
+                self.graph.entity(class).class().members.len()
             };
         for index in 0..count {
             let Some((child, member)) = self.graph.destruction_child(class, index, &indirect)?
             else {
                 continue;
             };
-            if member && self.graph.entity(child).anonymous_class.is_some() {
+            if member && self.graph.entity(child).class().anonymous_class.is_some() {
                 continue;
             }
             self.check_existing_destructor(
@@ -546,7 +570,8 @@ impl Analyzer<'_> {
         work: &mut Vec<EntityId>,
     ) -> Result<(), Error> {
         self.prepare_destruction(class)?;
-        let count = self.graph.entity(class).bases.len() + self.graph.entity(class).members.len();
+        let count = self.graph.entity(class).class().bases.len()
+            + self.graph.entity(class).class().members.len();
         for index in 0..count {
             if let Some(child) = self.graph.destruction_output_child(class, index)?
                 && !self.graph.destructor_trivial(child)?
@@ -563,15 +588,18 @@ impl Analyzer<'_> {
         // edges on each destructor instead of demanding unrelated definitions.
         let mut work = vec![class];
         while let Some(current) = work.pop() {
-            if self.graph.entity(current).destruction_preparation == Preparation::Ready {
+            if self.graph.entity(current).special().destruction_preparation == Preparation::Ready {
                 continue;
             }
-            self.graph.entity_mut(current).destruction_preparation = Preparation::Ready;
+            self.graph
+                .entity_mut(current)
+                .special_mut()
+                .destruction_preparation = Preparation::Ready;
             let parent = self
                 .destructor_callable(current)?
                 .map(|binding| self.graph.binding(binding).entity);
-            let count =
-                self.graph.entity(current).bases.len() + self.graph.entity(current).members.len();
+            let count = self.graph.entity(current).class().bases.len()
+                + self.graph.entity(current).class().members.len();
             for index in 0..count {
                 if let Some(child) = self.graph.destruction_output_child(current, index)? {
                     if let (Some(parent), Some(binding)) =
@@ -628,14 +656,16 @@ mod tests {
             let declaration = analyzer
                 .graph
                 .entity(class)
+                .special()
                 .destruction
                 .unwrap()
                 .declaration;
             let function = analyzer.graph.entity(declaration);
-            assert!(function.function.is_some());
-            assert!(function.scope.is_none());
+            assert!(function.callable().function.is_some());
+            assert!(function.context().scope.is_none());
             assert!(
                 function
+                    .callable()
                     .member_function
                     .is_some_and(|member| member.class == class
                         && member.kind == super::super::graph::MemberKind::Destructor)
@@ -648,6 +678,7 @@ mod tests {
                 analyzer
                     .graph
                     .entity(class)
+                    .special()
                     .destruction
                     .unwrap()
                     .declaration,
@@ -668,7 +699,7 @@ mod tests {
             );
             assert_eq!(analyzer.graph.binding_limit(), limit);
             assert!(analyzer.graph.binding_visible_before(handle, Some(0)));
-            let scope = analyzer.graph.entity(class).scope.unwrap();
+            let scope = analyzer.graph.entity(class).context().scope.unwrap();
             assert!(!analyzer.graph.scope(scope).bindings.contains(&handle));
         }
     }
@@ -698,41 +729,63 @@ mod tests {
             analyzer.graph.binding(binding).entity
         };
         let outer = class(global, outer_name);
-        let inner = class(analyzer.graph.entity(outer).scope.unwrap(), inner_name);
+        let inner = class(
+            analyzer.graph.entity(outer).context().scope.unwrap(),
+            inner_name,
+        );
         let unused = class(global, unused_name);
         let inline_only = class(global, inline_name);
         let destructor = |class| {
             analyzer
                 .graph
-                .binding(analyzer.graph.entity(class).declared_destructor.unwrap())
+                .binding(
+                    analyzer
+                        .graph
+                        .entity(class)
+                        .class()
+                        .declared_destructor
+                        .unwrap(),
+                )
                 .entity
         };
         let inner_destructor = destructor(inner);
         let unused_destructor = destructor(unused);
         assert!(matches!(
-            analyzer.graph.entity(inner_destructor).exceptions,
+            analyzer
+                .graph
+                .entity(inner_destructor)
+                .callable()
+                .exceptions,
             ExceptionState::Pending(_)
         ));
         assert!(matches!(
-            analyzer.graph.entity(outer).layout,
+            analyzer.graph.entity(outer).class().layout,
             super::super::layout::LayoutState::NotStarted
         ));
         assert!(!analyzer.function_may_throw(inner_destructor).unwrap());
         assert!(matches!(
-            analyzer.graph.entity(inner_destructor).exceptions,
+            analyzer
+                .graph
+                .entity(inner_destructor)
+                .callable()
+                .exceptions,
             ExceptionState::Value(ExceptionSet::None)
         ));
         assert!(!analyzer.function_may_throw(inner_destructor).unwrap());
         assert!(matches!(
-            analyzer.graph.entity(unused_destructor).exceptions,
+            analyzer
+                .graph
+                .entity(unused_destructor)
+                .callable()
+                .exceptions,
             ExceptionState::Pending(_)
         ));
         assert!(matches!(
-            analyzer.graph.entity(unused).layout,
+            analyzer.graph.entity(unused).class().layout,
             super::super::layout::LayoutState::NotStarted
         ));
         assert!(matches!(
-            analyzer.graph.entity(inline_only).layout,
+            analyzer.graph.entity(inline_only).class().layout,
             super::super::layout::LayoutState::NotStarted
         ));
         assert!(analyzer.graph.storage_layouts.is_empty());

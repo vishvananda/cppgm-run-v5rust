@@ -50,12 +50,14 @@ impl Analyzer<'_> {
         if self
             .graph
             .entity(binding.entity)
+            .object()
             .variable
             .is_some_and(|variable| !variable.automatic)
         {
             if self
                 .graph
                 .entity(binding.entity)
+                .object()
                 .variable
                 .is_some_and(|variable| {
                     variable.static_specifier == super::specifiers::StaticSpecifier::Present
@@ -70,6 +72,7 @@ impl Analyzer<'_> {
                     if self
                         .graph
                         .entity(function)
+                        .context()
                         .scope
                         .is_some_and(|scope| self.graph.encloses(scope, owner))
                     {
@@ -77,6 +80,7 @@ impl Analyzer<'_> {
                     }
                     self.graph
                         .entity_mut(function)
+                        .callable_mut()
                         .demands
                         .names_enclosing_statics = true;
                 }

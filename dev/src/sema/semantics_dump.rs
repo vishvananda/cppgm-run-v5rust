@@ -168,8 +168,10 @@ impl Graph {
                     if let Some(key) = printer
                         .graph
                         .entity(printer.graph.binding(binding).entity)
+                        .callable()
                         .member_function
-                        && printer.graph.entity(key.class).implicit_destructor == Some(binding)
+                        && printer.graph.entity(key.class).class().implicit_destructor
+                            == Some(binding)
                     {
                         printer.implicit_destructor_definition(binding, key.class, depth)?;
                     } else if let Some(
@@ -181,12 +183,14 @@ impl Graph {
                     ) = printer
                         .graph
                         .entity(printer.graph.binding(binding).entity)
+                        .callable()
                         .special_definition
                     {
                         printer.function_definition(binding, Some(body), depth)?;
                     } else if let Some(body) = printer
                         .graph
                         .entity(printer.graph.binding(binding).entity)
+                        .callable()
                         .analyzed_body
                         && printer
                             .graph
@@ -209,10 +213,12 @@ impl Graph {
                     } else if let Some(declaration) = printer
                         .graph
                         .entity(printer.graph.binding(binding).entity)
+                        .callable()
                         .function_definition
                         && printer
                             .graph
                             .entity(printer.graph.binding(binding).entity)
+                            .callable()
                             .special_definition
                             .is_none()
                     {
@@ -252,6 +258,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         let clause = self
             .graph
             .entity(self.graph.binding(binding).entity)
+            .callable()
             .function_parameters;
         let count = self
             .graph
@@ -412,6 +419,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 if self
                     .graph
                     .entity(self.graph.binding(binding).entity)
+                    .callable()
                     .definition_emission
                     == super::function_demands::DefinitionEmission::Always
                 {
@@ -482,6 +490,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         let scope = self
             .graph
             .entity(b.entity)
+            .context()
             .scope
             .ok_or_else(|| io::Error::other("function without scope"))?;
         let ty = self
@@ -514,6 +523,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         let special = self
             .graph
             .entity(b.entity)
+            .callable()
             .member_function
             .is_some_and(|key| {
                 matches!(
@@ -533,7 +543,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
     fn function_name(&mut self, id: BindingId) -> io::Result<()> {
         let binding = self.graph.binding(id);
         let entity = self.graph.entity(binding.entity);
-        if let Some(key) = entity.member_function
+        if let Some(key) = entity.callable().member_function
             && key.kind == super::graph::MemberKind::Constructor
         {
             return self
@@ -550,7 +560,12 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             if node.name.is_some()
                 || node.owner.is_some_and(|class| {
                     self.graph.lower_closure(class).is_some()
-                        || self.graph.entity(class).local_type_ordinal.is_some()
+                        || self
+                            .graph
+                            .entity(class)
+                            .class()
+                            .local_type_ordinal
+                            .is_some()
                 })
             {
                 parts.push(id);
@@ -567,7 +582,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 write!(self.output, "__lambda{}", closure.ordinal)?;
             } else if let Some(ordinal) = node
                 .owner
-                .and_then(|class| self.graph.entity(class).local_type_ordinal)
+                .and_then(|class| self.graph.entity(class).class().local_type_ordinal)
             {
                 write!(self.output, "__local_type{ordinal}")?;
             } else {
@@ -576,6 +591,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             self.output.write_all(b"::")?;
         }
         if let Some(super::function_names::SpecialName::Operator { token, array }) = entity
+            .callable()
             .function
             .filter(|function| function.allocation.is_some())
             .and_then(|function| function.special)
@@ -588,15 +604,15 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             )?;
         } else if self.graph.lower_closure_converter(binding.entity).is_some() {
             self.output.write_all(b"operator <function pointer>")?;
-        } else if let Some(name) = entity.special_name {
+        } else if let Some(name) = entity.callable().special_name {
             crate::syntax::write_member_label(self.tree, self.cursor, name, self.output)?;
-        } else if let Some(key) = entity.member_function
+        } else if let Some(key) = entity.callable().member_function
             && key.kind == super::graph::MemberKind::Destructor
         {
             self.output.write_all(b"~")?;
             self.name(self.graph.entity(key.class).name)?;
         } else if let Some(super::function_names::SpecialName::Operator { token, array }) =
-            entity.function.and_then(|f| f.special)
+            entity.callable().function.and_then(|f| f.special)
         {
             write!(
                 self.output,
@@ -653,6 +669,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         let home = entity.home?;
         if self.graph.scope(home).kind != ScopeKind::Class
             || entity
+                .callable()
                 .function
                 .is_some_and(|properties| properties.is_static)
         {
@@ -856,10 +873,15 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         if binding.kind != BindingKind::Variable {
             return Ok(());
         }
-        if let Some(constructor) = self.graph.entity(binding.entity).constructor
+        if let Some(constructor) = self
+            .graph
+            .entity(binding.entity)
+            .initialization()
+            .constructor
             && !self
                 .graph
                 .entity(binding.entity)
+                .object()
                 .variable
                 .is_some_and(|properties| properties.is_extern)
         {
@@ -1378,12 +1400,14 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 {
                     self.output.write_all(b"operator()")?;
                 } else if let Some(member) = function
+                    .callable()
                     .member_function
                     .filter(|member| member.kind == super::graph::MemberKind::Constructor)
                 {
                     self.name(self.graph.entity(member.class).name)?;
                 } else if let Some(super::function_names::SpecialName::Operator { token, array }) =
                     function
+                        .callable()
                         .function
                         .filter(|properties| properties.allocation.is_some())
                         .and_then(|properties| properties.special)
@@ -1394,9 +1418,10 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                         token.spelling(),
                         if array { "[]" } else { "" }
                     )?;
-                } else if let Some(name) = function.special_name {
+                } else if let Some(name) = function.callable().special_name {
                     crate::syntax::write_member_label(self.tree, self.cursor, name, self.output)?;
                 } else if function
+                    .callable()
                     .member_function
                     .is_some_and(|member| member.kind == super::graph::MemberKind::Destructor)
                 {
@@ -1445,6 +1470,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             && self
                 .graph
                 .entity(self.graph.binding(binding).entity)
+                .object()
                 .data_member
                 == Some(super::graph::DataMemberKind::Instance)
         {
@@ -1478,6 +1504,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             && self
                 .graph
                 .entity(self.graph.binding(binding).entity)
+                .callable()
                 .member_function
                 .is_some_and(|member| member.kind == super::graph::MemberKind::Conversion)
         {
@@ -1918,6 +1945,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 for default in self
                     .graph
                     .entity(entity)
+                    .callable()
                     .defaults
                     .iter()
                     .skip(self.tree.expr_lists.get(arguments).len())

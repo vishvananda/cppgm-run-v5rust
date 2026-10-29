@@ -34,13 +34,21 @@ impl super::graph::Graph {
     /// virtual bases. This is plan order; lowering owns construction order.
     pub(super) fn copy_targets(&self, class: EntityId) -> Result<Vec<CopyTarget>, Error> {
         let entity = self.entity(class);
-        let mut targets = Vec::with_capacity(entity.bases.len() + entity.members.len());
-        for index in 0..entity.bases.len() {
+        let mut targets =
+            Vec::with_capacity(entity.class().bases.len() + entity.class().members.len());
+        for index in 0..entity.class().bases.len() {
             targets.push(CopyTarget::Base(
                 u32::try_from(index).map_err(|_| Error::Limit("copy base index"))?,
             ));
         }
-        targets.extend(entity.members.iter().copied().map(CopyTarget::Member));
+        targets.extend(
+            entity
+                .class()
+                .members
+                .iter()
+                .copied()
+                .map(CopyTarget::Member),
+        );
         targets.extend(
             self.indirect_virtual_bases(class)
                 .into_iter()
@@ -54,7 +62,7 @@ impl super::graph::Graph {
         target: CopyTarget,
     ) -> Result<TypeId, Error> {
         let entity = match target {
-            CopyTarget::Base(index) => self.entity(class).bases[index as usize].class,
+            CopyTarget::Base(index) => self.entity(class).class().bases[index as usize].class,
             CopyTarget::Member(member) | CopyTarget::VirtualBase(member) => member,
         };
         self.entity(entity)
@@ -110,7 +118,7 @@ impl super::graph::Graph {
             })
             .is_some_and(|source| {
                 matches!(
-                    self.entity(source).special_definition,
+                    self.entity(source).callable().special_definition,
                     Some(super::special_members::SpecialDefinition::Defaulted {
                         first: false,
                         body: None,
@@ -140,6 +148,7 @@ impl Analyzer<'_> {
         let copies = self
             .graph
             .entity(class)
+            .special()
             .implicit_copies
             .ok_or(Error::Invariant("copy declarations without properties"))?;
         let mut bindings = [None; 2];
@@ -178,11 +187,13 @@ impl Analyzer<'_> {
             CopyOrigin::Declared(binding) => Ok(self
                 .graph
                 .entity(self.graph.binding(binding).entity)
+                .special()
                 .copy_properties),
             CopyOrigin::Implicit { kind, .. } => {
                 let copies = self
                     .graph
                     .entity(class)
+                    .special()
                     .implicit_copies
                     .ok_or(Error::Invariant("copy plan without properties"))?;
                 Ok(Some(
@@ -209,11 +220,11 @@ impl Analyzer<'_> {
         } else if let CopyOrigin::Declared(binding) = origin {
             let function = self.graph.binding(binding).entity;
             let entity = self.graph.entity(function);
-            if let Some(id) = entity.constructor {
+            if let Some(id) = entity.initialization().constructor {
                 return Ok(Some(id));
             }
             if matches!(
-                entity.special_definition,
+                entity.callable().special_definition,
                 Some(super::special_members::SpecialDefinition::Defaulted { .. })
             ) || self.graph.inherited_constructors.root(function).is_some()
             {
@@ -221,7 +232,10 @@ impl Analyzer<'_> {
                     "copy plan missing prepared constructor facts",
                 ));
             }
-            let owner = entity.member_function.map_or(class, |member| member.class);
+            let owner = entity
+                .callable()
+                .member_function
+                .map_or(class, |member| member.class);
             self.constructor_declaration_plan(binding, owner).map(Some)
         } else {
             Err(Error::Invariant("implicit copy plan without properties"))
@@ -400,16 +414,16 @@ impl Analyzer<'_> {
         )?;
         let function = self.graph.add_implicit_constructor(class, signature)?;
         let nothrow = self.graph.copy_properties.get(properties).nothrow;
-        let entity = self.graph.entity_mut(function);
-        entity.copy_origin = Origin::Implicit;
-        entity.copy_kind = Some(kind);
-        entity.copy_properties = Some(properties);
+        let mut entity = self.graph.entity_mut(function);
+        entity.callable_mut().copy_origin = Origin::Implicit;
+        entity.callable_mut().copy_kind = Some(kind);
+        entity.special_mut().copy_properties = Some(properties);
         if self.graph.copy_properties.get(properties).deleted {
             self.graph.entity_mut(function).availability =
                 super::graph::FunctionAvailability::Deleted;
         }
-        let entity = self.graph.entity_mut(function);
-        entity.exceptions = super::exceptions::ExceptionState::Value(if nothrow {
+        let mut entity = self.graph.entity_mut(function);
+        entity.callable_mut().exceptions = super::exceptions::ExceptionState::Value(if nothrow {
             super::exceptions::ExceptionSet::None
         } else {
             super::exceptions::ExceptionSet::All
@@ -455,14 +469,18 @@ mod tests {
                 )
                 .entity
         });
-        let binding = analyzer.graph.entity(defaulted).declared_constructors[0];
+        let binding = analyzer
+            .graph
+            .entity(defaulted)
+            .class()
+            .declared_constructors[0];
         let function = analyzer
             .graph
             .entity(analyzer.graph.binding(binding).entity);
         let facts = analyzer
             .graph
             .copy_properties
-            .get(function.copy_properties.unwrap());
+            .get(function.special().copy_properties.unwrap());
         // Explicit defaulting selects the indirect base before E publishes
         // virtual facts, while its callable body remains undemanded.
         assert_eq!(facts.subobjects.len(), 2);
@@ -500,7 +518,14 @@ mod tests {
         );
         assert!(actions[4].constructor.is_some());
         assert!(!plan.nothrow && plan.nontrivial());
-        assert!(analyzer.graph.entity(unused).implicit_copies.is_none());
+        assert!(
+            analyzer
+                .graph
+                .entity(unused)
+                .special()
+                .implicit_copies
+                .is_none()
+        );
         assert!(analyzer.graph.storage_layouts.is_empty());
         assert!(analyzer.graph.root_demands.as_slice().is_empty());
         assert_eq!(
@@ -535,10 +560,10 @@ mod tests {
             .entity;
         let function = graph.entity(
             graph
-                .binding(graph.entity(class).declared_constructors[1])
+                .binding(graph.entity(class).class().declared_constructors[1])
                 .entity,
         );
-        let parameters = function.function_parameters.unwrap();
+        let parameters = function.callable().function_parameters.unwrap();
         let written = tree.parameters.get(parameters.parameters)[0];
         assert!(
             tree.declarators
@@ -546,8 +571,8 @@ mod tests {
                 .name
                 .is_some()
         );
-        assert!(function.parameter_entities.is_empty());
-        assert!(function.scope.is_none());
+        assert!(function.callable().parameter_entities.is_empty());
+        assert!(function.context().scope.is_none());
     }
 
     #[test]
@@ -577,13 +602,21 @@ mod tests {
                 .entity
         });
         analyzer.prepare_copy_properties(class).unwrap();
-        let copies = analyzer.graph.entity(class).implicit_copies.unwrap();
+        let copies = analyzer
+            .graph
+            .entity(class)
+            .special()
+            .implicit_copies
+            .unwrap();
         let declarations = [copies.copy_properties, copies.move_properties].map(|id| {
             let properties = analyzer.graph.copy_properties.get(id.unwrap());
             assert!(properties.callable.is_none());
             let declaration = properties.declaration.unwrap();
             let function = analyzer.graph.entity(declaration);
-            assert!(function.scope.is_none() && function.constructor.is_none());
+            assert!(
+                function.context().scope.is_none()
+                    && function.initialization().constructor.is_none()
+            );
             declaration
         });
         let before = analyzer.graph.statistics();
@@ -600,14 +633,24 @@ mod tests {
             let function = analyzer
                 .graph
                 .entity(analyzer.graph.binding(binding).entity);
-            assert!(function.constructor.is_none() && function.scope.is_none());
+            assert!(
+                function.initialization().constructor.is_none()
+                    && function.context().scope.is_none()
+            );
             let properties = analyzer
                 .graph
                 .copy_properties
-                .get(function.copy_properties.unwrap());
+                .get(function.special().copy_properties.unwrap());
             assert!(matches!(properties.plan, ConstructorState::NotStarted));
         }
-        assert!(analyzer.graph.entity(unused).implicit_copies.is_none());
+        assert!(
+            analyzer
+                .graph
+                .entity(unused)
+                .special()
+                .implicit_copies
+                .is_none()
+        );
         assert!(analyzer.graph.root_demands.as_slice().is_empty());
         assert!(analyzer.graph.storage_layouts.is_empty());
         assert_eq!(syntax_mark, tree.expressions.mark());
@@ -652,10 +695,10 @@ mod tests {
             )
             .entity;
         assert!(
-            graph.entity(unused).copy_preparation
+            graph.entity(unused).special().copy_preparation
                 == super::super::copy_properties::Preparation::Pending
         );
-        let copies = graph.entity(class).implicit_copies.unwrap();
+        let copies = graph.entity(class).special().implicit_copies.unwrap();
         let properties = graph.copy_properties.get(copies.copy_properties.unwrap());
         let ConstructorState::Ready(plan) = properties.plan else {
             panic!("copy plan was demanded");

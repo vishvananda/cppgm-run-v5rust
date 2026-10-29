@@ -53,6 +53,7 @@ impl Analyzer<'_> {
             .any(|&parameter| {
                 self.graph
                     .entity(parameter)
+                    .context()
                     .template_parameter
                     .is_some_and(super::templates::ParameterInfo::is_pack)
             })
@@ -99,6 +100,7 @@ impl Analyzer<'_> {
                     } else if self
                         .graph
                         .entity(*entity)
+                        .context()
                         .template_parameter
                         .is_some_and(super::templates::ParameterInfo::is_pack)
                         && parameters.insert(*entity)
@@ -248,7 +250,12 @@ mod tests {
                 .own(analyzer.graph.global, name, Filter::Ordinary)
                 .unwrap();
             let primary = analyzer.graph.binding(binding).entity;
-            let head = analyzer.graph.entity(primary).template_head.unwrap();
+            let head = analyzer
+                .graph
+                .entity(primary)
+                .context()
+                .template_head
+                .unwrap();
             let parameter = analyzer.graph.templates.parameters(head)[0];
             params.push(analyzer.graph.entity(parameter).ty.unwrap());
             primaries.push(primary);
@@ -319,6 +326,7 @@ mod tests {
         let head = analyzer
             .graph
             .entity(analyzer.graph.binding(binding).entity)
+            .context()
             .template_head
             .unwrap();
         let scope = analyzer.graph.templates.parameter_scope(head);

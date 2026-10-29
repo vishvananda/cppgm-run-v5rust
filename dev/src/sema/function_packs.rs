@@ -69,6 +69,7 @@ impl Analyzer<'_> {
                 .filter_map(|&entity| {
                     self.graph
                         .entity(entity)
+                        .context()
                         .template_parameter
                         .and_then(|info| info.index(depth))
                 })
@@ -479,7 +480,11 @@ mod tests {
                 .binding(graph.function_templates.primary(entity).unwrap())
                 .entity;
             assert!(signatures.insert(entity));
-            let original = graph.entity(primary).function_parameters.unwrap();
+            let original = graph
+                .entity(primary)
+                .callable()
+                .function_parameters
+                .unwrap();
             let parameters = tree.parameters.get(original.parameters);
             assert_eq!(parameters.len(), 2);
             assert!(tree.declarators.get(parameters[1].declarator.unwrap()).pack);
@@ -489,7 +494,7 @@ mod tests {
                 continue;
             };
             assert!(bodies.insert(body));
-            let parameters = graph.entity(entity).function_parameters.unwrap();
+            let parameters = graph.entity(entity).callable().function_parameters.unwrap();
             assert_eq!(tree.parameters.get(parameters.parameters).len(), count + 1);
             for parameter in tree.parameters.get(parameters.parameters) {
                 assert!(

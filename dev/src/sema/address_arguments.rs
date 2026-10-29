@@ -46,17 +46,18 @@ impl Graph {
 
     pub(super) fn address_argument_unit_local(&self, entity: EntityId) -> Result<bool, Error> {
         let node = self.entity(entity);
-        if node.function.is_some() {
+        if node.callable().function.is_some() {
             return self.lower_function_unit_local(entity);
         }
         Ok(self.lower_variable(entity)?.locality == super::lowering::Locality::Unit)
     }
     pub(super) fn address_argument_object_local(&self, entity: EntityId) -> Result<bool, Error> {
         let node = self.entity(entity);
-        if node.function.is_some() {
+        if node.callable().function.is_some() {
             return self.lower_function_local_in_mode(entity, true);
         }
         let variable = node
+            .object()
             .variable
             .ok_or(Error::Invariant("address argument without variable"))?;
         if variable.internal_linkage {
@@ -86,14 +87,14 @@ impl Graph {
 
     fn linked_argument_entity(&self, entity: EntityId) -> bool {
         let record = self.entity(entity);
-        if let Some(function) = record.function {
+        if let Some(function) = record.callable().function {
             return function.is_static
                 || record
                     .home
                     .is_none_or(|home| self.scope(home).kind != ScopeKind::Class);
         }
-        record.data_member != Some(super::graph::DataMemberKind::Instance)
-            && record.variable.is_some_and(|variable| {
+        record.object().data_member != Some(super::graph::DataMemberKind::Instance)
+            && record.object().variable.is_some_and(|variable| {
                 variable.thread_storage == super::specifiers::ThreadStorage::Ordinary
                     && (variable.is_extern
                         || record.home.is_some_and(|home| {
@@ -148,6 +149,7 @@ impl Analyzer<'_> {
         let Some(mut target) = self
             .graph
             .entity(parameter)
+            .context()
             .template_parameter
             .ok_or(Error::Invariant("argument without parameter"))?
             .value_type
@@ -224,7 +226,7 @@ impl Analyzer<'_> {
             return Ok(Some(argument));
         };
         if !matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
-            || self.graph.entity(entity).variable.is_none()
+            || self.graph.entity(entity).object().variable.is_none()
             || !(self.integral_kind(target).is_some()
                 || matches!(self.graph.types.get(target).kind, TypeKind::Enum(_)))
         {
@@ -322,7 +324,7 @@ impl Analyzer<'_> {
                         TypeKind::Reference { .. }
                     )
                 {
-                    if self.graph.entity(entity).variable.is_some() {
+                    if self.graph.entity(entity).object().variable.is_some() {
                         self.use_instance_variable(entity)?;
                     } else {
                         self.note_argument_function(entity);
@@ -667,7 +669,12 @@ mod tests {
         analyzer.declarations(declarations, global).unwrap();
         let function = analyzer.graph.own(global, name, Filter::Ordinary).unwrap();
         let entity = analyzer.graph.binding(function).entity;
-        let head = analyzer.graph.entity(entity).template_head.unwrap();
+        let head = analyzer
+            .graph
+            .entity(entity)
+            .context()
+            .template_head
+            .unwrap();
         let class = analyzer
             .graph
             .own(global, class_name, Filter::Ordinary)
@@ -720,7 +727,7 @@ mod tests {
             let TypeKind::Class(entity) = graph.types.get(alias(name)).kind else {
                 panic!("class shell")
             };
-            assert!(graph.entity(entity).scope.is_none());
+            assert!(graph.entity(entity).context().scope.is_none());
             let instance = graph.class_templates.instance(entity).unwrap();
             let argument = *instance.arguments.last().unwrap();
             let TypeKind::Value { ty, bits } = graph.types.get(argument).kind else {
@@ -772,7 +779,7 @@ mod tests {
             let TypeKind::Class(entity) = graph.types.get(alias(name)).kind else {
                 panic!("class shell")
             };
-            assert!(graph.entity(entity).scope.is_none());
+            assert!(graph.entity(entity).context().scope.is_none());
             let argument = graph.class_templates.instance(entity).unwrap().arguments[0];
             let TypeKind::Address { ty, entity } = graph.types.get(argument).kind else {
                 panic!("address argument")

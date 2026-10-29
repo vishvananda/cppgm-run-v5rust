@@ -542,20 +542,22 @@ impl Analyzer<'_> {
             Cv::default(),
         )?;
         let entity = self.graph.add_entity(Some(ty), Some(key), Keyword::Int)?;
-        self.graph.entity_mut(entity).builtin = Some(BuiltinFunction::LibraryNan(fundamental));
-        self.graph.entity_mut(entity).exceptions =
+        self.graph.entity_mut(entity).callable_mut().builtin =
+            Some(BuiltinFunction::LibraryNan(fundamental));
+        self.graph.entity_mut(entity).callable_mut().exceptions =
             super::exceptions::ExceptionState::Value(super::exceptions::ExceptionSet::None);
-        self.graph.entity_mut(entity).function = Some(super::graph::FunctionProperties {
-            language: super::linkage::Language::C,
-            effects: super::graph::FunctionEffect::Default,
-            no_inline: false,
-            returns: super::graph::FunctionReturn::MayReturn,
-            internal_linkage: false,
-            denotes: None,
-            is_static: false,
-            special: None,
-            allocation: None,
-        });
+        self.graph.entity_mut(entity).callable_mut().function =
+            Some(super::graph::FunctionProperties {
+                language: super::linkage::Language::C,
+                effects: super::graph::FunctionEffect::Default,
+                no_inline: false,
+                returns: super::graph::FunctionReturn::MayReturn,
+                internal_linkage: false,
+                denotes: None,
+                is_static: false,
+                special: None,
+                allocation: None,
+            });
         let binding = self.graph.add_hidden_binding_in(
             self.graph.global,
             Binding {
@@ -676,6 +678,7 @@ mod tests {
             analyzer
                 .graph
                 .entity(analyzer.graph.binding(public[0]).entity)
+                .callable()
                 .builtin,
             Some(BuiltinFunction::Floating(_))
         ));
@@ -683,6 +686,7 @@ mod tests {
             analyzer
                 .graph
                 .entity(analyzer.graph.binding(binding).entity)
+                .callable()
                 .builtin,
             Some(BuiltinFunction::LibraryNan(F::Double))
         ));

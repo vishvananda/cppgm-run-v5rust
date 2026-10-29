@@ -114,8 +114,8 @@ impl Analyzer<'_> {
 pub(super) fn scalar_signature(graph: &Graph, function: EntityId) -> bool {
     let entity = graph.entity(function);
     if !entity.constexpr
-        || entity.builtin.is_some()
-        || entity.member_function.is_some()
+        || entity.callable().builtin.is_some()
+        || entity.callable().member_function.is_some()
         || entity
             .home
             .is_some_and(|home| graph.scope(home).kind == ScopeKind::Class)
@@ -234,7 +234,8 @@ impl Proof<'_> {
             ExprKind::Id(name) => Ok(self.graph.resolved_name(name).is_some_and(|binding| {
                 let binding = self.graph.binding(binding);
                 binding.kind == BindingKind::Parameter
-                    && self.graph.entity(binding.entity).home == self.graph.entity(function).scope
+                    && self.graph.entity(binding.entity).home
+                        == self.graph.entity(function).context().scope
             })),
             ExprKind::Paren(inner) | ExprKind::Cast { operand: inner, .. } => {
                 self.expression(Some(inner), function, child_depth)
@@ -435,7 +436,7 @@ mod tests {
             analyzer.declarations(declarations, scope).unwrap();
             let binding = analyzer.graph.own(scope, name, Filter::Ordinary).unwrap();
             let entity = analyzer.graph.binding(binding).entity;
-            assert!(matches!(analyzer.graph.entity(entity).constant,
+            assert!(matches!(analyzer.graph.entity(entity).object().constant,
                 super::super::constants::ConstantState::Value(value) if value.bits == bits));
             #[cfg(feature = "telemetry")]
             {

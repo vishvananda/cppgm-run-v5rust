@@ -66,14 +66,19 @@ mod tests {
                 super::super::graph::FunctionAvailability::Deleted
             );
             assert!(!graph.function_templates.bodies.started(entity));
-            assert!(graph.entity(entity).constructor.is_none());
+            assert!(graph.entity(entity).initialization().constructor.is_none());
         }
         let assignment = graph.binding(definitions[3].binding).entity;
         assert_eq!(graph.lower_explicit_functions().count(), 5);
-        assert!(graph.entity(assignment).assignment.is_some());
+        assert!(graph.entity(assignment).callable().assignment.is_some());
         assert!(graph.lower_has_synthesized_body(assignment));
         let deleted = graph.binding(definitions[4].binding).entity;
-        let facts = graph.entity(deleted).assignment.as_ref().unwrap();
+        let facts = graph
+            .entity(deleted)
+            .callable()
+            .assignment
+            .as_ref()
+            .unwrap();
         assert!(facts.deleted && facts.nothrow);
         assert!(facts.actions[0].function.is_none());
         assert!(!graph.function_templates.bodies.started(deleted));
@@ -111,16 +116,16 @@ mod tests {
         let TypeKind::Class(class) = graph.types.get(binding.ty.unwrap()).kind else {
             panic!("class alias");
         };
-        let scope = graph.entity(class).scope.unwrap();
+        let scope = graph.entity(class).context().scope.unwrap();
         let functions: Vec<_> = graph
             .scope(scope)
             .bindings
             .iter()
             .map(|&id| graph.binding(id).entity)
-            .filter(|&entity| graph.entity(entity).member_function.is_some())
+            .filter(|&entity| graph.entity(entity).callable().member_function.is_some())
             .collect();
         assert_eq!(functions.len(), 3);
-        assert_eq!(graph.entity(class).declared_constructors.len(), 1);
+        assert_eq!(graph.entity(class).class().declared_constructors.len(), 1);
         assert!(
             graph
                 .function_templates
@@ -132,7 +137,7 @@ mod tests {
         for entity in functions {
             assert!(graph.function_instantiation_suppressed(entity));
             assert!(!graph.function_templates.bodies.started(entity));
-            for default in graph.entity(entity).defaults.iter().flatten() {
+            for default in graph.entity(entity).callable().defaults.iter().flatten() {
                 assert!(graph.expression_facts.get(default.expression).is_err());
             }
         }

@@ -320,7 +320,13 @@ impl Analyzer<'_> {
                     return Ok(first.statement);
                 };
                 let binding = self.graph.binding(binding);
-                if self.graph.entity(binding.entity).template_head.is_some() {
+                if self
+                    .graph
+                    .entity(binding.entity)
+                    .context()
+                    .template_head
+                    .is_some()
+                {
                     ast::ReadingCategory::Template
                 } else if matches!(binding.kind, BindingKind::Type | BindingKind::Alias) {
                     ast::ReadingCategory::Type

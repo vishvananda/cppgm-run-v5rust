@@ -137,7 +137,7 @@ impl Analyzer<'_> {
                     };
                     let entity = self.graph.entity(function);
                     if entity.inline != InlinePreference::Inline
-                        && !entity.function.is_some_and(|f| {
+                        && !entity.callable().function.is_some_and(|f| {
                             f.internal_linkage && self.graph.lower_always_inline(function)
                         })
                     {

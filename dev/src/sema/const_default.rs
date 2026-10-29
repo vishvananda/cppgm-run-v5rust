@@ -55,7 +55,13 @@ impl Analyzer<'_> {
         let mut work = Vec::new();
         self.enter_const_default(&mut work, class, constructor)?;
         while let Some(frame) = work.last_mut() {
-            if let Some(base) = self.graph.entity(frame.class).bases.get(frame.next_base) {
+            if let Some(base) = self
+                .graph
+                .entity(frame.class)
+                .class()
+                .bases
+                .get(frame.next_base)
+            {
                 frame.next_base += 1;
                 let class = base.class;
                 let function = self.implicit_constructor_function(class)?;
@@ -66,6 +72,7 @@ impl Analyzer<'_> {
             if let Some(&member) = self
                 .graph
                 .entity(frame.class)
+                .class()
                 .members
                 .get(frame.next_member)
             {
@@ -76,13 +83,13 @@ impl Analyzer<'_> {
                     .and_then(|ty| self.graph.class_of(ty))
                     .and_then(|class| self.graph.anonymous_member_storage(class))
                     .is_some_and(|storage| storage == member);
-                if variable.variable.is_none() && !anonymous_object
-                    || variable.bit_field.is_some() && variable.name.is_none()
+                if variable.object().variable.is_none() && !anonymous_object
+                    || variable.object().bit_field.is_some() && variable.name.is_none()
                 {
                     continue;
                 }
                 frame.members += 1;
-                if variable.member_initializer.is_some() {
+                if variable.initialization().member_initializer.is_some() {
                     frame.initialized += 1;
                     continue;
                 }
@@ -137,7 +144,7 @@ impl Analyzer<'_> {
                     && slot.declared.is_some()
                     && entity.availability != FunctionAvailability::Deleted
                     && !matches!(
-                        entity.special_definition,
+                        entity.callable().special_definition,
                         Some(SpecialDefinition::Defaulted { first: true, .. })
                     )
             })

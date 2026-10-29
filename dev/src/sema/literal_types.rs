@@ -63,12 +63,13 @@ impl Analyzer<'_> {
             return Ok(());
         }
         let eligible = if entity
+            .callable()
             .member_function
             .is_some_and(|member| member.kind == super::graph::MemberKind::Constructor)
         {
             let id = self.defaulted_constexpr_constructor_plan(function)?;
             self.constant_implicit_constructor_eligible(id, &mut HashMap::default(), 0)?
-        } else if entity.member_function.is_none() {
+        } else if entity.callable().member_function.is_none() {
             self.constant_assignment_eligible(function, &mut HashMap::default(), 0)?
         } else {
             false
@@ -112,6 +113,7 @@ impl Analyzer<'_> {
         let actions = self
             .graph
             .entity(function)
+            .callable()
             .assignment
             .as_ref()
             .ok_or(Error::Invariant("constant assignment without plan"))?
@@ -121,6 +123,7 @@ impl Analyzer<'_> {
             let selected = self
                 .graph
                 .entity(function)
+                .callable()
                 .assignment
                 .as_ref()
                 .ok_or(Error::Invariant("lost constant assignment plan"))?
@@ -130,14 +133,19 @@ impl Analyzer<'_> {
                 continue;
             };
             let entity = self.graph.entity(selected);
-            let implicit = entity.assignment_origin == super::assignment::Origin::Implicit
+            let implicit = entity.callable().assignment_origin
+                == super::assignment::Origin::Implicit
                 || !entity.constexpr
                     && matches!(
-                        entity.special_definition,
+                        entity.callable().special_definition,
                         Some(SpecialDefinition::Defaulted { first: true, .. })
                     );
             let eligible = if implicit {
-                entity.assignment.as_ref().is_some_and(|plan| plan.trivial)
+                entity
+                    .callable()
+                    .assignment
+                    .as_ref()
+                    .is_some_and(|plan| plan.trivial)
                     || self.constant_assignment_eligible(selected, known, depth + 1)?
             } else {
                 entity.constexpr
@@ -181,17 +189,17 @@ impl Analyzer<'_> {
                 TypeKind::Scalar(Scalar::Void)
             ));
         };
-        match self.graph.entity(class).literal {
+        match self.graph.entity(class).class().literal {
             LiteralState::Complete(value) => return Ok(value),
             LiteralState::InProgress => return Ok(true),
             LiteralState::NotStarted => (),
         }
-        if !self.complete_class(class)? || self.graph.entity(class).scope.is_none() {
+        if !self.complete_class(class)? || self.graph.entity(class).context().scope.is_none() {
             return Ok(false);
         }
-        self.graph.entity_mut(class).literal = LiteralState::InProgress;
+        self.graph.entity_mut(class).class_mut().literal = LiteralState::InProgress;
         let result = self.constant_literal_class(class);
-        self.graph.entity_mut(class).literal = match result {
+        self.graph.entity_mut(class).class_mut().literal = match result {
             Ok(value) => LiteralState::Complete(value),
             Err(_) => LiteralState::NotStarted,
         };
@@ -203,17 +211,17 @@ impl Analyzer<'_> {
         if self.graph.has_nontrivial_destructor(class) {
             return Ok(false);
         }
-        for index in 0..self.graph.entity(class).bases.len() {
-            if self.graph.entity(class).bases[index].is_virtual {
+        for index in 0..self.graph.entity(class).class().bases.len() {
+            if self.graph.entity(class).class().bases[index].is_virtual {
                 return Ok(false);
             }
-            let base = self.graph.entity(class).bases[index].class;
+            let base = self.graph.entity(class).class().bases[index].class;
             if !self.constant_literal_type(self.graph.lower_entity_type(base)?)? {
                 return Ok(false);
             }
         }
-        for index in 0..self.graph.entity(class).members.len() {
-            let member = self.graph.entity(class).members[index];
+        for index in 0..self.graph.entity(class).class().members.len() {
+            let member = self.graph.entity(class).class().members[index];
             let mut ty = self.graph.lower_entity_type(member)?;
             if !self.constant_literal_type(ty)? {
                 return Ok(false);
@@ -230,10 +238,10 @@ impl Analyzer<'_> {
         if self.graph.aggregate_class(class) {
             return Ok(true);
         }
-        for index in (0..self.graph.entity(class).declared_constructors.len()).rev() {
-            let binding = self.graph.entity(class).declared_constructors[index];
+        for index in (0..self.graph.entity(class).class().declared_constructors.len()).rev() {
+            let binding = self.graph.entity(class).class().declared_constructors[index];
             let function = self.graph.binding(binding).entity;
-            if self.graph.entity(function).copy_kind.is_some() {
+            if self.graph.entity(function).callable().copy_kind.is_some() {
                 continue;
             }
             if self.graph.entity(function).constexpr {
@@ -246,7 +254,7 @@ impl Analyzer<'_> {
                 }
             }
         }
-        if self.graph.entity(class).user_constructor.is_some() {
+        if self.graph.entity(class).class().user_constructor.is_some() {
             return Ok(false);
         }
         // An unavailable/deleted implicit default is a negative suitability
@@ -258,6 +266,7 @@ impl Analyzer<'_> {
         let id = self
             .graph
             .entity(slot.function)
+            .initialization()
             .constructor
             .ok_or(Error::Invariant(
                 "queried default without constructor record",
@@ -293,9 +302,9 @@ impl Analyzer<'_> {
                 .inherited_constructors
                 .source(self.graph.binding(binding).entity)
                 .is_none()
-                && function.copy_origin != super::copy_construction::Origin::Implicit
+                && function.callable().copy_origin != super::copy_construction::Origin::Implicit
                 && !matches!(
-                    function.special_definition,
+                    function.callable().special_definition,
                     Some(SpecialDefinition::Defaulted { first: true, .. })
                 )
             {
@@ -335,6 +344,7 @@ impl Analyzer<'_> {
         if self
             .graph
             .entity(class)
+            .class()
             .bases
             .iter()
             .any(|edge| edge.is_virtual)
@@ -423,7 +433,7 @@ impl Analyzer<'_> {
                 return Ok(false);
             }
         }
-        if union && !self.graph.entity(class).members.is_empty() && selected_count != 1 {
+        if union && !self.graph.entity(class).class().members.is_empty() && selected_count != 1 {
             return Ok(false);
         }
         if self
@@ -541,7 +551,7 @@ impl Analyzer<'_> {
         );
         self.with_constant_frame(frame, |analyzer| {
             let place = analyzer.allocate_constant_object(ty, None, initializer.location)?;
-            let constructor = analyzer.graph.entity(member).constructor;
+            let constructor = analyzer.graph.entity(member).initialization().constructor;
             analyzer.construct_constant_object(
                 place,
                 Some(initializer),
@@ -655,8 +665,9 @@ impl Analyzer<'_> {
         let entity = self.graph.entity(function);
         if !entity.constexpr
             || entity.availability == FunctionAvailability::Deleted
-            || entity.template_head.is_some()
+            || entity.context().template_head.is_some()
             || entity
+                .callable()
                 .special_definition
                 .is_some_and(|special| matches!(special, SpecialDefinition::Defaulted { .. }))
             || entity
@@ -666,6 +677,7 @@ impl Analyzer<'_> {
             return Ok(());
         }
         let id = entity
+            .initialization()
             .constructor
             .ok_or(Error::Invariant("constexpr constructor without plan"))?;
         if let Some(delegation) = self.graph.constructors.get(id).delegation {
@@ -682,6 +694,7 @@ impl Analyzer<'_> {
         if self
             .graph
             .entity(self.graph.constructors.get(id).class)
+            .class()
             .bases
             .iter()
             .any(|edge| edge.is_virtual)
@@ -769,7 +782,7 @@ impl Analyzer<'_> {
                 ));
             }
         }
-        if union && selected_count == 0 && !self.graph.entity(class).members.is_empty() {
+        if union && selected_count == 0 && !self.graph.entity(class).class().members.is_empty() {
             return Err(Error::at(
                 location,
                 if self.graph.anonymous_member_storage(class).is_some() {

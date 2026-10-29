@@ -176,7 +176,7 @@ impl Graph {
     }
     fn outside_defaulted_member(&self, entity: EntityId) -> Option<SpecialDefinition> {
         let source = self.function_templates.bodies.source(entity)?;
-        match self.entity(source).special_definition {
+        match self.entity(source).callable().special_definition {
             Some(
                 special @ SpecialDefinition::Defaulted {
                     first: false,
@@ -215,18 +215,17 @@ fn body_parameter_source(
 ) -> ast::ParameterClause {
     while let Some(source) = graph.function_templates.bodies.source(entity) {
         let original = graph.entity(source);
-        let source_body =
-            original
-                .function_definition
-                .and_then(|id| match tree.declarations.get(id).kind {
-                    ast::DeclKind::Function { body, .. } => Some(body),
-                    ast::DeclKind::SpecialMember { body, .. } => body,
-                    _ => None,
-                });
+        let source_body = original.callable().function_definition.and_then(|id| {
+            match tree.declarations.get(id).kind {
+                ast::DeclKind::Function { body, .. } => Some(body),
+                ast::DeclKind::SpecialMember { body, .. } => body,
+                _ => None,
+            }
+        });
         if source_body != Some(body) {
             break;
         }
-        if let Some(parameters) = original.function_parameters {
+        if let Some(parameters) = original.callable().function_parameters {
             clause = parameters;
         }
         entity = source;
@@ -345,7 +344,7 @@ pub(crate) fn analyze_unit_with_mode(
         if deleted
             && (!lowering
                 || !matches!(
-                    graph.entity(entity).special_definition,
+                    graph.entity(entity).callable().special_definition,
                     Some(SpecialDefinition::Defaulted { first: true, .. })
                 ))
         {
@@ -365,7 +364,7 @@ pub(crate) fn analyze_unit_with_mode(
         if graph.function_templates.instantiations.defined(entity)
             && graph.function_templates.bodies.pending_member(entity)
             && matches!(
-                graph.entity(entity).special_definition,
+                graph.entity(entity).callable().special_definition,
                 Some(SpecialDefinition::Defaulted { .. })
             )
         {
@@ -578,7 +577,7 @@ impl Analyzer<'_> {
             // A copied body cannot make its original definition available
             // ahead of the outermost class's complete-class context. A copy
             // inside another instance is itself a valid deferred pattern.
-            if definition.scope.is_none()
+            if definition.context().scope.is_none()
                 && !definition
                     .home
                     .is_some_and(|home| self.graph.within_class_instance(home))
@@ -640,7 +639,7 @@ impl Analyzer<'_> {
             }
             return Ok(true);
         }
-        if self.graph.entity(entity).scope.is_some()
+        if self.graph.entity(entity).context().scope.is_some()
             && self.graph.lower_function_body(entity).is_some()
         {
             return Ok(true);
@@ -650,7 +649,7 @@ impl Analyzer<'_> {
             if self.graph.function_templates.bodies.pending_member(entity) {
                 return self.selected_function_definition(entity, constant);
             }
-            return Ok(self.graph.entity(entity).scope.is_some());
+            return Ok(self.graph.entity(entity).context().scope.is_some());
         }
         Ok(false)
     }
@@ -714,19 +713,20 @@ impl Analyzer<'_> {
                 location,
                 limit,
                 |analyzer| {
-                    let target = analyzer.graph.entity_mut(entity);
-                    target.function_parameters = Some(parameters);
-                    target.special_definition = match target.special_definition {
-                        Some(SpecialDefinition::Body(_)) => Some(SpecialDefinition::Body(body)),
-                        Some(SpecialDefinition::Defaulted {
-                            first,
-                            body: Some(_),
-                        }) => Some(SpecialDefinition::Defaulted {
-                            first,
-                            body: Some(body),
-                        }),
-                        other => other,
-                    };
+                    let mut target = analyzer.graph.entity_mut(entity);
+                    target.callable_mut().function_parameters = Some(parameters);
+                    target.callable_mut().special_definition =
+                        match target.callable_mut().special_definition {
+                            Some(SpecialDefinition::Body(_)) => Some(SpecialDefinition::Body(body)),
+                            Some(SpecialDefinition::Defaulted {
+                                first,
+                                body: Some(_),
+                            }) => Some(SpecialDefinition::Defaulted {
+                                first,
+                                body: Some(body),
+                            }),
+                            other => other,
+                        };
                     analyzer.function_body(DeferredBody {
                         parameters,
                         body,
@@ -763,7 +763,7 @@ impl Analyzer<'_> {
             .filter(|&scope| self.graph.scope(scope).kind == ScopeKind::Class)
             .unwrap_or(body.print);
         body.template_depth != 0
-            && (function.template_head.is_some() || self.templated_class_scope(home))
+            && (function.context().template_head.is_some() || self.templated_class_scope(home))
             && self.graph.within_class_instance(home)
     }
 
@@ -774,15 +774,15 @@ impl Analyzer<'_> {
         let Some(special) = self.graph.outside_defaulted_member(entity) else {
             return Ok(false);
         };
-        let member = self.graph.entity(entity).member_function;
+        let member = self.graph.entity(entity).callable().member_function;
         self.graph
             .function_templates
             .bodies
             .states
             .insert(entity, State::InProgress);
-        let target = self.graph.entity_mut(entity);
+        let mut target = self.graph.entity_mut(entity);
         target.defined = true;
-        target.special_definition = Some(special);
+        target.callable_mut().special_definition = Some(special);
         self.required_instantiation(
             self.graph.instantiation_levels.get(entity)?,
             crate::support::source::SourceOffset(0),
@@ -831,10 +831,10 @@ impl Analyzer<'_> {
         entity: EntityId,
         demand: DefinitionDemand,
     ) -> Result<(), Error> {
-        let Some(member) = self.graph.entity(entity).member_function else {
+        let Some(member) = self.graph.entity(entity).callable().member_function else {
             let binding = self.graph.function_origin(entity)?;
             self.prepare_default_assignment(binding)?;
-            if self.graph.entity(entity).assignment.is_some() {
+            if self.graph.entity(entity).callable().assignment.is_some() {
                 self.graph
                     .function_templates
                     .bodies
@@ -860,7 +860,7 @@ impl Analyzer<'_> {
         let binding = self.graph.function_origin(entity)?;
         let ty = self.graph.lower_entity_type(entity)?;
         let first = matches!(
-            self.graph.entity(entity).special_definition,
+            self.graph.entity(entity).callable().special_definition,
             Some(SpecialDefinition::Defaulted { first: true, .. })
         );
         if first
@@ -869,6 +869,7 @@ impl Analyzer<'_> {
                 || self
                     .graph
                     .entity(member.class)
+                    .special()
                     .destruction
                     .is_some_and(|facts| !facts.trivial))
         {
@@ -895,7 +896,13 @@ impl Analyzer<'_> {
             // for an in-class defaulted default constructor. Only an ordinary
             // initialization use demands its subobject/exception plan. Preserve
             // an existing plan; an otherwise unused root has a declaration body.
-            if self.graph.entity(entity).constructor.is_none() {
+            if self
+                .graph
+                .entity(entity)
+                .initialization()
+                .constructor
+                .is_none()
+            {
                 self.constructor_declaration_plan(binding, member.class)?;
             }
             return Ok(());
@@ -942,12 +949,16 @@ impl Analyzer<'_> {
             ..pattern
         };
         let from = self.graph.entity(source);
-        let (special, syntax) = (from.special_definition, from.function_definition);
-        let target = self.graph.entity_mut(entity);
+        let (special, syntax) = (
+            from.callable().special_definition,
+            from.callable().function_definition,
+        );
+        let mut target = self.graph.entity_mut(entity);
         target.defined = true;
-        target.special_definition = special;
-        target.function_definition = syntax;
-        target.definition_emission = super::function_demands::DefinitionEmission::Demanded;
+        target.callable_mut().special_definition = special;
+        target.callable_mut().function_definition = syntax;
+        target.callable_mut().definition_emission =
+            super::function_demands::DefinitionEmission::Demanded;
         self.graph
             .function_templates
             .bodies
@@ -1087,7 +1098,11 @@ impl Analyzer<'_> {
                 template_depth: 0,
                 ..definition
             },
-            definition: self.graph.entity(definition.entity).function_definition,
+            definition: self
+                .graph
+                .entity(definition.entity)
+                .callable()
+                .function_definition,
             location,
         })
     }
@@ -1097,12 +1112,15 @@ impl Analyzer<'_> {
         prepared: PreparedBody,
     ) -> Result<ast::BodyId, Error> {
         let body = prepared.body;
-        let target = self.graph.entity_mut(body.entity);
-        target.function_definition = prepared.definition;
+        let mut target = self.graph.entity_mut(body.entity);
+        target.callable_mut().function_definition = prepared.definition;
         target.defined = true;
-        target.function_parameters = Some(body.parameters);
-        if matches!(target.special_definition, Some(SpecialDefinition::Body(_))) {
-            target.special_definition = Some(SpecialDefinition::Body(body.body));
+        target.callable_mut().function_parameters = Some(body.parameters);
+        if matches!(
+            target.callable_mut().special_definition,
+            Some(SpecialDefinition::Body(_))
+        ) {
+            target.callable_mut().special_definition = Some(SpecialDefinition::Body(body.body));
         }
         self.substitute_throw_specification(body.entity)?;
         self.function_body(body)?;
@@ -1140,7 +1158,12 @@ impl Analyzer<'_> {
                 continue;
             };
             let binding = self.graph.binding(source);
-            let Some(parameter) = self.graph.entity(binding.entity).template_parameter else {
+            let Some(parameter) = self
+                .graph
+                .entity(binding.entity)
+                .context()
+                .template_parameter
+            else {
                 continue;
             };
             let index = parameter
@@ -1217,8 +1240,8 @@ mod tests {
         for (&class, closure) in &analyzer.graph.closures.records {
             let call = analyzer.graph.entity(closure.call);
             assert!(closure.enclosing.is_none());
-            assert!(bodies.insert(call.analyzed_body.unwrap()));
-            assert!(scopes.insert(call.scope.unwrap()));
+            assert!(bodies.insert(call.callable().analyzed_body.unwrap()));
+            assert!(scopes.insert(call.context().scope.unwrap()));
             assert_eq!(analyzer.graph.lower_call_closure(closure.call), Some(class));
             assert!(
                 !analyzer
@@ -1436,9 +1459,13 @@ mod tests {
                 .member_links
                 .keys()
                 .find(|&&entity| {
-                    graph.entity(entity).member_function.is_some_and(|member| {
-                        member.kind == super::super::graph::MemberKind::Destructor
-                    })
+                    graph
+                        .entity(entity)
+                        .callable()
+                        .member_function
+                        .is_some_and(|member| {
+                            member.kind == super::super::graph::MemberKind::Destructor
+                        })
                 })
                 .unwrap();
             assert!(bodies.body(entity).is_some());
@@ -1514,23 +1541,37 @@ mod tests {
             .bodies
             .demands
             .iter()
-            .find(|&&entity| analyzer.graph.entity(entity).copy_kind.is_some())
+            .find(|&&entity| analyzer.graph.entity(entity).callable().copy_kind.is_some())
             .unwrap();
-        let plan = analyzer.graph.entity(entity).constructor.unwrap();
+        let plan = analyzer
+            .graph
+            .entity(entity)
+            .initialization()
+            .constructor
+            .unwrap();
         assert!(analyzer.graph.constructors.get(plan).copy.is_none());
         let syntax = (
             analyzer.tree.expressions.mark(),
             analyzer.tree.declarations.mark(),
         );
         assert!(analyzer.instantiate_defaulted_member(entity).unwrap());
-        assert_eq!(analyzer.graph.entity(entity).constructor, Some(plan));
+        assert_eq!(
+            analyzer.graph.entity(entity).initialization().constructor,
+            Some(plan)
+        );
         assert!(analyzer.graph.constructors.get(plan).copy.is_some());
         assert!(!analyzer.graph.lower_constructor_trivial(plan));
         assert!(analyzer.graph.lower_constructor_copies_storage(plan));
-        let properties = analyzer.graph.entity(entity).copy_properties;
+        let properties = analyzer.graph.entity(entity).special().copy_properties;
         assert!(analyzer.instantiate_defaulted_member(entity).unwrap());
-        assert_eq!(analyzer.graph.entity(entity).constructor, Some(plan));
-        assert_eq!(analyzer.graph.entity(entity).copy_properties, properties);
+        assert_eq!(
+            analyzer.graph.entity(entity).initialization().constructor,
+            Some(plan)
+        );
+        assert_eq!(
+            analyzer.graph.entity(entity).special().copy_properties,
+            properties
+        );
         assert_eq!(
             syntax,
             (
@@ -1555,8 +1596,13 @@ mod tests {
                 .keys()
                 .any(|&other| {
                     other != entity
-                        && analyzer.graph.entity(other).copy_kind.is_some()
-                        && analyzer.graph.entity(other).constructor.is_none()
+                        && analyzer.graph.entity(other).callable().copy_kind.is_some()
+                        && analyzer
+                            .graph
+                            .entity(other)
+                            .initialization()
+                            .constructor
+                            .is_none()
                         && analyzer
                             .graph
                             .function_templates
@@ -1605,11 +1651,17 @@ mod tests {
             let body = bodies.body(entity).unwrap();
             assert_ne!(body, pattern.body.body);
             assert!(copies.insert(body));
-            assert!(graph.entity(entity).function_definition.is_some());
+            assert!(
+                graph
+                    .entity(entity)
+                    .callable()
+                    .function_definition
+                    .is_some()
+            );
             owners.insert(graph.entity(entity).home.unwrap());
             if let Some(default) = graph
                 .templates
-                .default_argument(graph.entity(primary).template_head.unwrap(), 0)
+                .default_argument(graph.entity(primary).context().template_head.unwrap(), 0)
             {
                 let ast::TemplateArgumentKind::Type(syntax) = default.syntax else {
                     panic!("type default")
@@ -1619,8 +1671,8 @@ mod tests {
         }
         assert_eq!(owners.len(), 2);
         for (&copy, &original) in &bodies.member_links {
-            let own = graph.entity(copy).template_head.unwrap();
-            let source = graph.entity(original).template_head.unwrap();
+            let own = graph.entity(copy).context().template_head.unwrap();
+            let source = graph.entity(original).context().template_head.unwrap();
             assert_ne!(own, source);
             assert_ne!(
                 graph.templates.parameter_scope(own),
@@ -1670,7 +1722,7 @@ mod tests {
                 assert_ne!(body, pattern.body);
                 assert!(completed.insert(body));
             } else {
-                assert!(graph.entity(entity).scope.is_none());
+                assert!(graph.entity(entity).context().scope.is_none());
             }
         }
         assert_eq!(completed.len(), 2);
@@ -1683,7 +1735,7 @@ mod tests {
         // publication. Each instance links back to those original entities.
         for &source in bodies.member_links.values() {
             assert!(!functions.contains(&source));
-            assert!(graph.entity(source).scope.is_some());
+            assert!(graph.entity(source).context().scope.is_some());
         }
         let declarations = &graph.scope(graph.global).bindings;
         let variable_position = declarations
@@ -1784,10 +1836,10 @@ mod tests {
             if let Some(body) = bodies.body(entity) {
                 assert_ne!(pattern.body, body);
                 assert!(seen.insert(body));
-                assert!(graph.entity(entity).scope.is_some());
-                assert!(graph.entity(entity).template_head.is_none());
+                assert!(graph.entity(entity).context().scope.is_some());
+                assert!(graph.entity(entity).context().template_head.is_none());
             } else {
-                assert!(graph.entity(entity).scope.is_none());
+                assert!(graph.entity(entity).context().scope.is_none());
             }
         }
     }
@@ -1932,7 +1984,11 @@ mod tests {
         for entity in [first, second] {
             assert!(graph.lower_explicit_function_root(entity));
             let primary = graph.function_templates.primary(entity).unwrap();
-            let default = graph.entity(graph.binding(primary).entity).defaults[1].unwrap();
+            let default = graph
+                .entity(graph.binding(primary).entity)
+                .callable()
+                .defaults[1]
+                .unwrap();
             assert!(graph.expression_facts.get(default.expression).is_err());
         }
         assert_eq!(graph.function_templates.bodies.states.len(), 2);
@@ -1978,7 +2034,7 @@ mod tests {
             for &entity in &bodies.demands {
                 assert!(bodies.body(entity).is_some());
                 assert!(graph.function_templates.primary(entity).is_some());
-                assert!(graph.entity(entity).template_head.is_none());
+                assert!(graph.entity(entity).context().template_head.is_none());
             }
         }
     }
@@ -2009,7 +2065,7 @@ mod tests {
                 let parameter = graph.types.function_parameter(ty, 0).unwrap();
                 assert_eq!(graph.types.get(parameter).cv.0, 0);
                 assert!(matches!(
-                    graph.entity(entity).exceptions,
+                    graph.entity(entity).callable().exceptions,
                     super::super::exceptions::ExceptionState::Value(
                         super::super::exceptions::ExceptionSet::None
                     )
@@ -2071,7 +2127,7 @@ mod tests {
             let Some(copy) = bodies.body(entity) else {
                 continue;
             };
-            let Some(constructor) = graph.entity(entity).constructor else {
+            let Some(constructor) = graph.entity(entity).initialization().constructor else {
                 continue;
             };
             let count = graph.constructors.get(constructor).bases.len();
@@ -2095,10 +2151,10 @@ mod tests {
             assert_eq!(parameters.len(), 1);
             assert!(tree.declarators.get(parameters[0].declarator.unwrap()).pack);
             let function = graph.entity(entity);
-            assert_eq!(function.parameter_entities.len(), count);
+            assert_eq!(function.callable().parameter_entities.len(), count);
             assert_eq!(
                 tree.parameters
-                    .get(function.function_parameters.unwrap().parameters)
+                    .get(function.callable().function_parameters.unwrap().parameters)
                     .len(),
                 count
             );
@@ -2113,7 +2169,7 @@ mod tests {
             .copied()
             .filter(|&entity| {
                 graph.function_templates.primary(entity).is_some()
-                    && graph.entity(entity).member_function.is_some()
+                    && graph.entity(entity).callable().member_function.is_some()
             })
             .collect();
         assert_eq!(specialized.len(), 1);
@@ -2174,13 +2230,16 @@ mod tests {
             assert!(body.compound.index() >= statements);
             assert!(roots.insert(body.compound));
             let function = graph.entity(entity);
-            assert!(scopes.insert(function.scope.unwrap()));
+            assert!(scopes.insert(function.context().scope.unwrap()));
             assert!(function.defined);
             assert_eq!(
-                function.definition_emission,
+                function.callable().definition_emission,
                 super::super::function_demands::DefinitionEmission::Demanded
             );
-            let frame = graph.scope(function.scope.unwrap()).parent.unwrap();
+            let frame = graph
+                .scope(function.context().scope.unwrap())
+                .parent
+                .unwrap();
             assert_eq!(graph.scope(frame).kind, ScopeKind::TemplateParameters);
             assert!(graph.scope(frame).bindings.is_empty());
             assert_eq!(graph.scope(frame).index.len(), 1);

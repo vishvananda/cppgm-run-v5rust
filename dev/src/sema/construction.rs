@@ -111,9 +111,10 @@ impl Constructor {
         self.triviality == Triviality::Nontrivial
     }
     fn own_action(&self, graph: &super::graph::Graph) -> bool {
-        graph.entity(self.class).polymorphism.is_dynamic()
+        graph.entity(self.class).class().polymorphism.is_dynamic()
             || graph
                 .entity(self.class)
+                .class()
                 .bases
                 .iter()
                 .any(|edge| edge.is_virtual)
@@ -122,6 +123,7 @@ impl Constructor {
                 !matches!(
                     graph
                         .entity(graph.binding(binding).entity)
+                        .callable()
                         .special_definition,
                     Some(SpecialDefinition::Defaulted { first: true, .. })
                 )
@@ -333,9 +335,11 @@ impl Analyzer<'_> {
         // declare_variable counts nontrivial automatic construction after
         // selecting it. anonymous_union's hidden-object path does not count it.
         if variable
+            .object()
             .variable
             .is_some_and(|properties| properties.automatic)
             && variable
+                .initialization()
                 .constructor
                 .is_some_and(|id| self.graph.constructors.get(id).nontrivial())
         {
@@ -356,10 +360,11 @@ impl Analyzer<'_> {
             return Ok(());
         }
         let variable = self.graph.binding(binding).entity;
-        if self.graph.entity(variable).data_member == Some(super::graph::DataMemberKind::Static)
+        if self.graph.entity(variable).object().data_member
+            == Some(super::graph::DataMemberKind::Static)
             && (self.graph.entity(variable).constexpr
                 || matches!(
-                    self.graph.entity(variable).constant,
+                    self.graph.entity(variable).object().constant,
                     super::constants::ConstantState::Value(_)
                 ))
         {
@@ -383,10 +388,13 @@ impl Analyzer<'_> {
                 location,
             )?;
             self.validate_const_default(object, constructor, location)?;
-            self.graph.entity_mut(variable).constructor = Some(constructor);
+            self.graph
+                .entity_mut(variable)
+                .initialization_mut()
+                .constructor = Some(constructor);
             if self.lowering()
                 && self.unevaluated == 0
-                && self.graph.entity(variable).data_member
+                && self.graph.entity(variable).object().data_member
                     != Some(super::graph::DataMemberKind::Instance)
             {
                 self.graph.constructor_boundaries.push((
@@ -409,6 +417,7 @@ impl Analyzer<'_> {
             && !self
                 .graph
                 .entity(variable)
+                .object()
                 .variable
                 .is_some_and(|properties| properties.is_extern)
         {
@@ -434,6 +443,7 @@ impl Analyzer<'_> {
         let id = self
             .graph
             .entity(slot.function)
+            .initialization()
             .constructor
             .ok_or(Error::Invariant(
                 "default function without constructor record",
@@ -468,16 +478,21 @@ impl Analyzer<'_> {
         class: EntityId,
     ) -> Result<super::default_construction::Lookup, Error> {
         let mut selected = None;
-        for index in (0..self.graph.entity(class).declared_constructors.len()).rev() {
-            let binding = self.graph.entity(class).declared_constructors[index];
+        for index in (0..self.graph.entity(class).class().declared_constructors.len()).rev() {
+            let binding = self.graph.entity(class).class().declared_constructors[index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
             let count = self.graph.types.function_parameter_count(
                 entity
                     .ty
                     .ok_or(Error::Invariant("constructor without type"))?,
             )?;
-            if (0..count).any(|index| entity.defaults.get(index).is_none_or(Option::is_none))
-                || entity.template_head.is_some()
+            if (0..count).any(|index| {
+                entity
+                    .callable()
+                    .defaults
+                    .get(index)
+                    .is_none_or(Option::is_none)
+            }) || entity.context().template_head.is_some()
             {
                 continue;
             }
@@ -495,10 +510,10 @@ impl Analyzer<'_> {
         }
         // The frozen default-constructor query tries templates only after all
         // ordinary candidates. Empty calls do not partially order templates.
-        for index in (0..self.graph.entity(class).declared_constructors.len()).rev() {
-            let binding = self.graph.entity(class).declared_constructors[index];
+        for index in (0..self.graph.entity(class).class().declared_constructors.len()).rev() {
+            let binding = self.graph.entity(class).class().declared_constructors[index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
-            let Some(head) = entity.template_head else {
+            let Some(head) = entity.context().template_head else {
                 continue;
             };
             let ty = entity
@@ -507,7 +522,11 @@ impl Analyzer<'_> {
             let count = self.graph.types.function_parameter_count(ty)?;
             let mut matches = true;
             for index in 0..count {
-                let default = entity.defaults.get(index).is_some_and(Option::is_some);
+                let default = entity
+                    .callable()
+                    .defaults
+                    .get(index)
+                    .is_some_and(Option::is_some);
                 let expansion = index + 1 == count
                     && matches!(
                         self.graph
@@ -555,6 +574,7 @@ impl Analyzer<'_> {
         let direct: crate::support::hash::HashSet<_> = self
             .graph
             .entity(class)
+            .class()
             .bases
             .iter()
             .filter(|edge| edge.is_virtual)
@@ -622,6 +642,7 @@ impl Analyzer<'_> {
             if let Some(default) = self
                 .graph
                 .entity(source)
+                .callable()
                 .defaults
                 .get(index)
                 .copied()
@@ -654,7 +675,7 @@ impl Analyzer<'_> {
         } else {
             let signature = self.constructor_signature(None)?;
             let function = self.graph.add_implicit_constructor(class, signature)?;
-            self.graph.entity_mut(function).exceptions =
+            self.graph.entity_mut(function).callable_mut().exceptions =
                 super::exceptions::ExceptionState::Value(super::exceptions::ExceptionSet::All);
             self.graph.constructors.default_functions.insert(
                 class,
@@ -729,13 +750,18 @@ impl Analyzer<'_> {
             CopyTransfer::Call
         };
         let function = record.declaration;
-        if let Some(id) = function.and_then(|entity| self.graph.entity(entity).constructor) {
+        if let Some(id) =
+            function.and_then(|entity| self.graph.entity(entity).initialization().constructor)
+        {
             self.graph.constructors.replace(id, record);
             return Ok(id);
         }
         let id = self.graph.constructors.add(record)?;
         if let Some(entity) = function {
-            self.graph.entity_mut(entity).constructor = Some(id);
+            self.graph
+                .entity_mut(entity)
+                .initialization_mut()
+                .constructor = Some(id);
         }
         Ok(id)
     }
@@ -745,28 +771,32 @@ impl Analyzer<'_> {
         binding: BindingId,
     ) -> Result<ConstructorId, Error> {
         let entity = self.graph.binding(binding).entity;
-        if let Some(id) = self.graph.entity(entity).constructor {
+        if let Some(id) = self.graph.entity(entity).initialization().constructor {
             return Ok(id);
         }
         let class = self
             .graph
             .entity(entity)
+            .callable()
             .member_function
             .ok_or(Error::Invariant("constructor without owner"))?
             .class;
         if self.graph.inherited_constructors.source(entity).is_some() {
             return self.inherited_constructor_plan(binding);
         }
-        if self.graph.entity(entity).copy_origin == super::copy_construction::Origin::Implicit {
+        if self.graph.entity(entity).callable().copy_origin
+            == super::copy_construction::Origin::Implicit
+        {
             let kind = self
                 .graph
                 .entity(entity)
+                .callable()
                 .copy_kind
                 .ok_or(Error::Invariant("implicit constructor without copy kind"))?;
             return self.build_implicit_copy_plan(class, kind);
         }
         if matches!(
-            self.graph.entity(entity).special_definition,
+            self.graph.entity(entity).callable().special_definition,
             Some(SpecialDefinition::Defaulted { .. })
         ) {
             if self.graph.types.function_parameter_count(
@@ -793,7 +823,7 @@ impl Analyzer<'_> {
         class: EntityId,
     ) -> Result<ConstructorId, Error> {
         let function = self.graph.binding(binding).entity;
-        if let Some(id) = self.graph.entity(function).constructor {
+        if let Some(id) = self.graph.entity(function).initialization().constructor {
             return Ok(id);
         }
         // A declaration has no owned plan to fold. Retain the function's raw
@@ -843,6 +873,7 @@ impl Analyzer<'_> {
             let properties = self
                 .graph
                 .entity(function)
+                .special()
                 .copy_properties
                 .ok_or(Error::Invariant("defaulted copy properties"))?;
             if self.graph.copy_properties.get(properties).deleted {
@@ -862,7 +893,7 @@ impl Analyzer<'_> {
             ));
         }
         if matches!(
-            self.graph.entity(function).special_definition,
+            self.graph.entity(function).callable().special_definition,
             Some(SpecialDefinition::Defaulted { first: false, .. })
         ) {
             self.graph.constructors.set_default_triviality(id, false);
@@ -877,6 +908,7 @@ impl Analyzer<'_> {
         let binding = self.graph.function_origin(function)?;
         let entity = self.graph.entity(function);
         let class = entity
+            .callable()
             .member_function
             .ok_or(Error::Invariant("defaulted constructor without owner"))?
             .class;
@@ -888,7 +920,7 @@ impl Analyzer<'_> {
         {
             return self.declared_constructor_plan(binding);
         }
-        if let Some(id) = entity.constructor
+        if let Some(id) = entity.initialization().constructor
             && self.graph.constructors.get(id).facts != ConstructorFacts::Declaration
         {
             return Ok(id);
@@ -915,7 +947,7 @@ impl Analyzer<'_> {
             return Ok(());
         };
         self.check_class_destruction(ty, scope, location)?;
-        if !self.graph.entity(class).bases.is_empty() {
+        if !self.graph.entity(class).class().bases.is_empty() {
             self.prepare_destruction(class)?;
         }
         let Some(destructor) = self.destructor_callable(class)? else {
@@ -939,9 +971,11 @@ impl Analyzer<'_> {
         if nontrivial
             && !initialized
             && object
+                .object()
                 .variable
                 .is_some_and(|properties| properties.automatic)
             && !object
+                .initialization()
                 .constructor
                 .is_some_and(|id| self.graph.constructors.get(id).nontrivial())
         {
@@ -975,6 +1009,7 @@ impl Analyzer<'_> {
         let owner = self
             .graph
             .entity(class)
+            .context()
             .scope
             .ok_or(Error::Invariant("constructor owner without scope"))?;
         let mut written = crate::support::hash::HashMap::default();
@@ -999,9 +1034,9 @@ impl Analyzer<'_> {
             }
         }
         let mut deferred = false;
-        let mut bases = Vec::with_capacity(self.graph.entity(class).bases.len());
-        for index in 0..self.graph.entity(class).bases.len() {
-            let base = self.graph.entity(class).bases[index].class;
+        let mut bases = Vec::with_capacity(self.graph.entity(class).class().bases.len());
+        for index in 0..self.graph.entity(class).class().bases.len() {
+            let base = self.graph.entity(class).class().bases[index].class;
             bases.push(self.reserved_base_plan(
                 class,
                 base,
@@ -1247,12 +1282,12 @@ impl Analyzer<'_> {
         let node = self.graph.binding(binding);
         let member = self.graph.entity(node.entity);
         if node.kind == super::graph::BindingKind::Variable {
-            if member.data_member == Some(super::graph::DataMemberKind::Instance)
+            if member.object().data_member == Some(super::graph::DataMemberKind::Instance)
                 && member.home == Some(owner)
             {
                 return Ok(node.entity);
             }
-            if member.data_member == Some(super::graph::DataMemberKind::Instance)
+            if member.object().data_member == Some(super::graph::DataMemberKind::Instance)
                 && self.graph.member_holder(node.entity, Some(class))? == class
             {
                 return Ok(node.entity);
@@ -1291,6 +1326,7 @@ impl Analyzer<'_> {
             let direct = self
                 .graph
                 .entity(class)
+                .class()
                 .bases
                 .iter()
                 .find(|edge| edge.class == base);
@@ -1345,7 +1381,8 @@ mod tests {
                     .entity,
             );
         }
-        let ConstructorState::Ready(id) = graph.entity(classes[2]).default_construction else {
+        let ConstructorState::Ready(id) = graph.entity(classes[2]).special().default_construction
+        else {
             panic!("default selection");
         };
         let plan = graph.constructors.get(id);
@@ -1360,7 +1397,7 @@ mod tests {
             classes[0]
         );
         assert!(matches!(
-            graph.entity(classes[3]).default_construction,
+            graph.entity(classes[3]).special().default_construction,
             ConstructorState::NotStarted
         ));
         assert_eq!(syntax, (tree.expressions.mark(), tree.declarations.mark()));
@@ -1381,7 +1418,8 @@ mod tests {
         let class = graph
             .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
             .entity;
-        let super::ConstructorState::Ready(id) = graph.entity(class).default_construction else {
+        let super::ConstructorState::Ready(id) = graph.entity(class).special().default_construction
+        else {
             panic!("holder plan");
         };
         let plan = graph.constructors.get(id);
@@ -1391,7 +1429,7 @@ mod tests {
             assert_eq!(slot.is_some(), matches!(index, 1 | 3 | 4));
             if let Some(action) = slot {
                 assert_eq!(action.member, plan.members[index].0);
-                assert_eq!(action.member, graph.entity(class).members[index]);
+                assert_eq!(action.member, graph.entity(class).class().members[index]);
             }
         }
     }
@@ -1420,28 +1458,34 @@ mod tests {
         };
         let mid = class(b"Mid");
         let outer = class(b"Outer");
-        let ConstructorState::Ready(outer_id) = graph.entity(outer).default_construction else {
+        let ConstructorState::Ready(outer_id) = graph.entity(outer).special().default_construction
+        else {
             panic!("outer constructor was not prepared");
         };
-        let ConstructorState::Ready(mid_id) = graph.entity(mid).default_construction else {
+        let ConstructorState::Ready(mid_id) = graph.entity(mid).special().default_construction
+        else {
             panic!("child constructor was not prepared");
         };
         let outer_plan = graph.constructors.get(outer_id);
         assert!(outer_plan.nontrivial());
         assert_eq!(outer_plan.subobjects.len(), 1);
         let child = outer_plan.subobjects[0].unwrap();
-        assert_eq!(child.member, graph.entity(outer).members[0]);
+        assert_eq!(child.member, graph.entity(outer).class().members[0]);
         assert_eq!(child.constructor, mid_id);
         assert!(child.arguments.is_none());
         let mid_plan = graph.constructors.get(mid_id);
         let child = mid_plan.subobjects[0].unwrap();
-        assert_eq!(child.member, graph.entity(mid).members[0]);
+        assert_eq!(child.member, graph.entity(mid).class().members[0]);
         assert_eq!(
             Some(child.constructor),
-            graph.entity(child.member).constructor
+            graph.entity(child.member).initialization().constructor
         );
-        let InitializerKind::Braced(list) =
-            graph.entity(child.member).member_initializer.unwrap().kind
+        let InitializerKind::Braced(list) = graph
+            .entity(child.member)
+            .initialization()
+            .member_initializer
+            .unwrap()
+            .kind
         else {
             panic!("member initializer shape changed");
         };
@@ -1452,7 +1496,10 @@ mod tests {
             matches!(child.arguments, Some(ConstructorArguments::Values(values)) if std::ptr::eq(tree.expr_lists.get(values), tree.expr_lists.get(elements)))
         );
         assert!(matches!(
-            graph.entity(class(b"Unused")).default_construction,
+            graph
+                .entity(class(b"Unused"))
+                .special()
+                .default_construction,
             ConstructorState::NotStarted
         ));
     }
@@ -1512,7 +1559,8 @@ mod tests {
                     .is_some_and(|slot| slot.declared == Some(binding)
                         && slot.function == analyzer.graph.binding(binding).entity)
             );
-            let ConstructorState::Ready(plan) = analyzer.graph.entity(class).default_construction
+            let ConstructorState::Ready(plan) =
+                analyzer.graph.entity(class).special().default_construction
             else {
                 panic!("selected plan");
             };
@@ -1524,14 +1572,19 @@ mod tests {
         assert!(
             graph
                 .entity(classes[2])
+                .class()
                 .declared_constructors
                 .iter()
-                .all(|&id| graph.entity(graph.binding(id).entity).constructor.is_none())
+                .all(|&id| graph
+                    .entity(graph.binding(id).entity)
+                    .initialization()
+                    .constructor
+                    .is_none())
         );
         let unused = classes[4];
         assert!(graph.constructors.default_function(unused).is_none());
         assert!(matches!(
-            graph.entity(unused).default_construction,
+            graph.entity(unused).special().default_construction,
             ConstructorState::NotStarted
         ));
     }
@@ -1579,7 +1632,7 @@ mod tests {
                     .is_none()
             );
             assert!(matches!(
-                analyzer.graph.entity(class).default_construction,
+                analyzer.graph.entity(class).special().default_construction,
                 super::ConstructorState::NotStarted
             ));
             assert_eq!(analyzer.constexpr_frames.depth(), 0);
@@ -1621,8 +1674,15 @@ mod tests {
                     .unwrap(),
                 plan
             );
-            assert_eq!(analyzer.graph.entity(declaration).constructor, Some(plan));
-            assert!(analyzer.graph.entity(declaration).scope.is_none());
+            assert_eq!(
+                analyzer
+                    .graph
+                    .entity(declaration)
+                    .initialization()
+                    .constructor,
+                Some(plan)
+            );
+            assert!(analyzer.graph.entity(declaration).context().scope.is_none());
             assert!(analyzer.graph.function_origin(declaration).is_err());
         }
         assert_eq!(analyzer.graph.statistics().entities, before.entities);
@@ -1706,13 +1766,13 @@ mod tests {
             .graph
             .binding(analyzer.graph.own(global, name, Filter::Prefix).unwrap())
             .entity;
-        let member = analyzer.graph.entity(class).members[0];
+        let member = analyzer.graph.entity(class).class().members[0];
         let child = analyzer
             .graph
             .class_of(analyzer.graph.lower_entity_type(member).unwrap())
             .unwrap();
         let super::ConstructorState::Ready(outer) =
-            analyzer.graph.entity(class).default_construction
+            analyzer.graph.entity(class).special().default_construction
         else {
             panic!("enclosing constructor was required");
         };
@@ -1720,7 +1780,7 @@ mod tests {
             .unwrap()
             .constructor;
         assert!(matches!(
-            analyzer.graph.entity(child).default_construction,
+            analyzer.graph.entity(child).special().default_construction,
             super::ConstructorState::NotStarted
         ));
         assert!(analyzer.graph.lower_constructor_entity(plan).is_none());
@@ -1737,7 +1797,14 @@ mod tests {
         );
         assert!(analyzer.graph.lower_constructor_entity(plan).is_none());
         let declaration = analyzer.graph.lower_constructor_entity(direct).unwrap();
-        assert_eq!(analyzer.graph.entity(declaration).constructor, Some(direct));
+        assert_eq!(
+            analyzer
+                .graph
+                .entity(declaration)
+                .initialization()
+                .constructor,
+            Some(direct)
+        );
         assert!(analyzer.graph.function_origin(declaration).is_err());
         assert_eq!(analyzer.graph.root_demands.as_slice().len(), demands);
     }
@@ -1764,7 +1831,7 @@ mod tests {
             .entity;
         assert!(graph.lower_direct_class_parameter(u).is_err());
         assert!(matches!(
-            graph.entity(u).layout,
+            graph.entity(u).class().layout,
             crate::sema::layout::LayoutState::NotStarted
         ));
     }

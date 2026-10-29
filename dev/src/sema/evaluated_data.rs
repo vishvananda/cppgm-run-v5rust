@@ -181,6 +181,7 @@ impl Analyzer<'_> {
                 let field = self
                     .graph
                     .entity(field)
+                    .object()
                     .bit_field
                     .ok_or(Error::Invariant("constant field without layout"))?;
                 let storage = self.graph.bit_fields.storage(field)?;

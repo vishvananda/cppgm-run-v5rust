@@ -30,7 +30,9 @@ impl Analyzer<'_> {
         let target = self.graph.publish_variable_type(binding)?;
         let entity = self.graph.binding(binding).entity;
         let saved = self.member_initializer_class;
-        if self.graph.entity(entity).data_member == Some(super::graph::DataMemberKind::Instance) {
+        if self.graph.entity(entity).object().data_member
+            == Some(super::graph::DataMemberKind::Instance)
+        {
             self.member_initializer_class = self
                 .graph
                 .entity(entity)
@@ -66,8 +68,14 @@ impl Analyzer<'_> {
                 self.initialize_class_object(target, initializer, scope, location)
                     .map(|selected| {
                         if let Some((constructor, arguments)) = selected {
-                            self.graph.entity_mut(entity).constructor = Some(constructor);
-                            self.graph.entity_mut(entity).constructor_arguments = Some(arguments);
+                            self.graph
+                                .entity_mut(entity)
+                                .initialization_mut()
+                                .constructor = Some(constructor);
+                            self.graph
+                                .entity_mut(entity)
+                                .initialization_mut()
+                                .constructor_arguments = Some(arguments);
                         }
                         target
                     })

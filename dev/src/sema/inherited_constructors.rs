@@ -101,29 +101,35 @@ impl Analyzer<'_> {
             return;
         }
         if !matches!(
-            self.graph.entity(class).literal,
+            self.graph.entity(class).class().literal,
             super::literal_types::LiteralState::InProgress
         ) {
-            self.graph.entity_mut(class).literal = super::literal_types::LiteralState::NotStarted;
+            self.graph.entity_mut(class).class_mut().literal =
+                super::literal_types::LiteralState::NotStarted;
         }
-        let Some(constructor) = self.graph.entity(member).constructor else {
+        let Some(constructor) = self.graph.entity(member).initialization().constructor else {
             return;
         };
         let action = super::construction::MemberConstruction {
             member,
             constructor,
-            arguments: self.graph.entity(member).constructor_arguments,
+            arguments: self
+                .graph
+                .entity(member)
+                .initialization()
+                .constructor_arguments,
         };
         let mut work: Vec<_> = self
             .graph
             .entity(class)
+            .class()
             .declared_constructors
             .iter()
             .filter_map(|&binding| {
                 let function = self.graph.binding(binding).entity;
-                (self.graph.entity(function).home == self.graph.entity(class).scope
+                (self.graph.entity(function).home == self.graph.entity(class).context().scope
                     && self.graph.inherited_constructors.source(function).is_some())
-                .then(|| self.graph.entity(function).constructor)
+                .then(|| self.graph.entity(function).initialization().constructor)
                 .flatten()
             })
             .collect();
@@ -225,13 +231,19 @@ impl Analyzer<'_> {
         let owner = self
             .graph
             .entity(class)
+            .context()
             .scope
             .ok_or(Error::Invariant("inheriting class without scope"))?;
-        let least = usize::from(self.graph.entity(class).user_constructor.is_none());
-        let inherited = self.graph.entity(base).declared_constructors.clone();
+        let least = usize::from(self.graph.entity(class).class().user_constructor.is_none());
+        let inherited = self
+            .graph
+            .entity(base)
+            .class()
+            .declared_constructors
+            .clone();
         for source in inherited.into_iter().rev() {
             let entity = self.graph.binding(source).entity;
-            if self.graph.entity(entity).template_head.is_some() {
+            if self.graph.entity(entity).context().template_head.is_some() {
                 // The base template retains its own canonical identity. Only a
                 // selected specialization creates a derived forwarding entry.
                 let binding = self
@@ -240,6 +252,7 @@ impl Analyzer<'_> {
                 self.graph.inherit_binding_access(binding, source);
                 self.graph
                     .entity_mut(class)
+                    .class_mut()
                     .declared_constructors
                     .push(binding);
                 continue;
@@ -255,6 +268,7 @@ impl Analyzer<'_> {
                 && self
                     .graph
                     .entity(entity)
+                    .callable()
                     .defaults
                     .get(first - 1)
                     .is_some_and(Option::is_some)
@@ -286,7 +300,7 @@ impl Analyzer<'_> {
                 if self.graph.constructor(class, signature).is_some() {
                     continue;
                 }
-                let explicitness = self.graph.entity(entity).explicitness;
+                let explicitness = self.graph.entity(entity).callable().explicitness;
                 let function = self.graph.add_entity(
                     Some(signature),
                     self.graph.entity(class).name,
@@ -294,18 +308,20 @@ impl Analyzer<'_> {
                 )?;
                 let seed = !self.function_may_throw(entity)?;
                 let availability = self.graph.entity(entity).availability;
-                let node = self.graph.entity_mut(function);
+                let mut node = self.graph.entity_mut(function);
                 node.defined = true;
                 node.inline = super::specifiers::InlinePreference::Inline;
-                node.definition_emission = super::function_demands::DefinitionEmission::Demanded;
-                node.explicitness = explicitness;
+                node.callable_mut().definition_emission =
+                    super::function_demands::DefinitionEmission::Demanded;
+                node.callable_mut().explicitness = explicitness;
                 node.availability = availability;
-                node.exceptions = super::exceptions::ExceptionState::Value(if seed {
-                    super::exceptions::ExceptionSet::None
-                } else {
-                    super::exceptions::ExceptionSet::All
-                });
-                node.function = Some(constructor_properties());
+                node.callable_mut().exceptions =
+                    super::exceptions::ExceptionState::Value(if seed {
+                        super::exceptions::ExceptionSet::None
+                    } else {
+                        super::exceptions::ExceptionSet::All
+                    });
+                node.callable_mut().function = Some(constructor_properties());
                 let binding = self.graph.add_binding(
                     owner,
                     None,
@@ -343,7 +359,7 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<BindingId, Error> {
         let function = self.graph.binding(source).entity;
-        let Some(member) = self.graph.entity(function).member_function else {
+        let Some(member) = self.graph.entity(function).callable().member_function else {
             return Ok(source);
         };
         if member.class == class || self.graph.function_templates.primary(function).is_none() {
@@ -393,29 +409,31 @@ impl Analyzer<'_> {
         let owner = self
             .graph
             .entity(class)
+            .context()
             .scope
             .ok_or(Error::Invariant("inherited template without owner"))?;
         let source_function = self.graph.binding(forwarded).entity;
-        let explicitness = self.graph.entity(source_function).explicitness;
+        let explicitness = self.graph.entity(source_function).callable().explicitness;
         let inherited =
             self.graph
                 .add_entity(Some(signature), self.graph.entity(class).name, Keyword::Int)?;
         let seed = !self.function_may_throw(source_function)?;
         let availability = self.graph.entity(source_function).availability;
-        let node = self.graph.entity_mut(inherited);
+        let mut node = self.graph.entity_mut(inherited);
         node.home = Some(owner);
         node.defined = true;
         node.inline = super::specifiers::InlinePreference::Inline;
-        node.definition_emission = super::function_demands::DefinitionEmission::Demanded;
-        node.function = Some(constructor_properties());
+        node.callable_mut().definition_emission =
+            super::function_demands::DefinitionEmission::Demanded;
+        node.callable_mut().function = Some(constructor_properties());
         node.availability = availability;
-        node.explicitness = explicitness;
-        node.exceptions = super::exceptions::ExceptionState::Value(if seed {
+        node.callable_mut().explicitness = explicitness;
+        node.callable_mut().exceptions = super::exceptions::ExceptionState::Value(if seed {
             super::exceptions::ExceptionSet::None
         } else {
             super::exceptions::ExceptionSet::All
         });
-        node.member_function = Some(MemberKey {
+        node.callable_mut().member_function = Some(MemberKey {
             class,
             kind: MemberKind::Constructor,
             signature,
@@ -458,7 +476,10 @@ impl Analyzer<'_> {
             self.graph.entity_mut(function).availability =
                 super::graph::FunctionAvailability::Deleted;
         }
-        self.graph.entity_mut(function).constructor_exceptions =
+        self.graph
+            .entity_mut(function)
+            .callable_mut()
+            .constructor_exceptions =
             super::construction::ConstructorExceptionSource::InheritedPlan {
                 constructor: id,
                 pending: true,
@@ -470,12 +491,13 @@ impl Analyzer<'_> {
         binding: BindingId,
     ) -> Result<ConstructorId, Error> {
         let function = self.graph.binding(binding).entity;
-        if let Some(id) = self.graph.entity(function).constructor {
+        if let Some(id) = self.graph.entity(function).initialization().constructor {
             return Ok(id);
         }
         let class = self
             .graph
             .entity(function)
+            .callable()
             .member_function
             .ok_or(Error::Invariant("inheriting constructor without class"))?
             .class;
@@ -496,12 +518,14 @@ impl Analyzer<'_> {
         let class = self
             .graph
             .entity(function)
+            .callable()
             .member_function
             .ok_or(Error::Invariant("inheriting constructor without owner"))?
             .class;
         let scope = self
             .graph
             .entity(class)
+            .context()
             .scope
             .ok_or(Error::Invariant("inheriting class without scope"))?;
         let Some(&base) = self.graph.inherited_constructors.bases.get(&class) else {
@@ -555,7 +579,7 @@ mod tests {
         let end = class(b"E");
         let unused = class(b"Unused");
         for owner in [derived, end, unused] {
-            let declarations = &graph.entity(owner).declared_constructors;
+            let declarations = &graph.entity(owner).class().declared_constructors;
             assert_eq!(declarations.len(), 2); // The base copy constructor is excluded.
             let mut counts: Vec<_> = declarations
                 .iter()
@@ -572,7 +596,12 @@ mod tests {
                 let function = graph.binding(binding).entity;
                 let record = graph.inherited_constructors.sources[&function];
                 assert_eq!(
-                    graph.entity(record.root).member_function.unwrap().class,
+                    graph
+                        .entity(record.root)
+                        .callable()
+                        .member_function
+                        .unwrap()
+                        .class,
                     base
                 );
                 let count = graph
@@ -596,13 +625,14 @@ mod tests {
                 );
             }
             assert!(matches!(
-                graph.entity(owner).default_construction,
+                graph.entity(owner).special().default_construction,
                 ConstructorState::NotStarted
             ));
         }
         let one_argument = |owner| {
             graph
                 .entity(owner)
+                .class()
                 .declared_constructors
                 .iter()
                 .copied()
@@ -619,7 +649,7 @@ mod tests {
         let function = graph.binding(binding).entity;
         let plan = graph
             .constructors
-            .get(graph.entity(function).constructor.unwrap());
+            .get(graph.entity(function).initialization().constructor.unwrap());
         assert_eq!(plan.class, end);
         assert!(plan.bases[0].forwards);
         let source = graph.inherited_constructors.source(function).unwrap();
@@ -632,7 +662,8 @@ mod tests {
             panic!("member initializer shape changed");
         };
         let crate::syntax::ast::InitializerKind::Assign(original_expression) = graph
-            .entity(graph.entity(derived).members[0])
+            .entity(graph.entity(derived).class().members[0])
+            .initialization()
             .member_initializer
             .unwrap()
             .kind
@@ -647,13 +678,20 @@ mod tests {
         assert_eq!(
             graph
                 .entity(graph.binding(original).entity)
+                .callable()
                 .member_function
                 .unwrap()
                 .class,
             base
         );
-        assert!(graph.entity(function).scope.is_none());
-        assert!(graph.entity(function).parameter_entities.is_empty());
+        assert!(graph.entity(function).context().scope.is_none());
+        assert!(
+            graph
+                .entity(function)
+                .callable()
+                .parameter_entities
+                .is_empty()
+        );
         assert!(matches!(
             graph
                 .types
@@ -669,9 +707,14 @@ mod tests {
         assert!(
             graph
                 .entity(unused)
+                .class()
                 .declared_constructors
                 .iter()
-                .all(|&binding| graph.entity(graph.binding(binding).entity).scope.is_none())
+                .all(|&binding| graph
+                    .entity(graph.binding(binding).entity)
+                    .context()
+                    .scope
+                    .is_none())
         );
         assert!(graph.lower_class_layout(unused).is_err());
     }
@@ -699,18 +742,27 @@ mod tests {
                 .graph
                 .binding(analyzer.graph.own(global, name, Filter::Prefix).unwrap())
                 .entity;
-            let binding = analyzer.graph.entity(class).declared_constructors[0];
+            let binding = analyzer.graph.entity(class).class().declared_constructors[0];
             let function = analyzer.graph.binding(binding).entity;
-            let id = analyzer.graph.entity(function).constructor.unwrap();
+            let id = analyzer
+                .graph
+                .entity(function)
+                .initialization()
+                .constructor
+                .unwrap();
             assert!(analyzer.graph.function_nothrow_value(function));
             assert!(matches!(
-                analyzer.graph.entity(function).constructor_exceptions,
+                analyzer
+                    .graph
+                    .entity(function)
+                    .callable()
+                    .constructor_exceptions,
                 crate::sema::construction::ConstructorExceptionSource::InheritedPlan {
                     pending: true,
                     ..
                 }
             ));
-            assert!(analyzer.graph.entity(function).scope.is_none());
+            assert!(analyzer.graph.entity(function).context().scope.is_none());
             assert!(analyzer.graph.root_demands.as_slice().is_empty());
             let result = analyzer.function_may_throw(function);
             if fails {
@@ -719,7 +771,11 @@ mod tests {
                 assert!(result.unwrap());
             }
             assert!(matches!(
-                analyzer.graph.entity(function).constructor_exceptions,
+                analyzer
+                    .graph
+                    .entity(function)
+                    .callable()
+                    .constructor_exceptions,
                 crate::sema::construction::ConstructorExceptionSource::InheritedPlan {
                     pending: false,
                     ..
@@ -727,8 +783,11 @@ mod tests {
             ));
             assert_eq!(analyzer.graph.function_nothrow_value(function), fails);
             assert_eq!(analyzer.function_may_throw(function).unwrap(), !fails);
-            assert_eq!(analyzer.graph.entity(function).constructor, Some(id));
-            assert!(analyzer.graph.entity(function).scope.is_none());
+            assert_eq!(
+                analyzer.graph.entity(function).initialization().constructor,
+                Some(id)
+            );
+            assert!(analyzer.graph.entity(function).context().scope.is_none());
             assert!(analyzer.graph.root_demands.as_slice().is_empty());
         }
     }
@@ -802,9 +861,9 @@ mod tests {
             let entity = analyzer
                 .graph
                 .entity(analyzer.graph.binding(binding).entity);
-            assert!(entity.parameter_entities.is_empty());
-            assert!(entity.scope.is_none());
-            assert!(entity.constructor.is_some());
+            assert!(entity.callable().parameter_entities.is_empty());
+            assert!(entity.context().scope.is_none());
+            assert!(entity.initialization().constructor.is_some());
             let record = analyzer.graph.inherited_constructors.sources
                 [&analyzer.graph.binding(binding).entity];
             assert_eq!(record.root, key.source);

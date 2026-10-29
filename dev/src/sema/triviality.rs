@@ -117,6 +117,7 @@ impl Analyzer<'_> {
     ) -> Result<Vec<Member>, Error> {
         let entity = self.graph.entity(class);
         let home = entity
+            .context()
             .scope
             .ok_or(Error::Invariant("copy trait class scope"))?;
         let bindings = if assignment {
@@ -124,7 +125,7 @@ impl Analyzer<'_> {
                 .functions_at(home, super::assignment::key()?)
                 .collect::<Vec<_>>()
         } else {
-            entity.declared_constructors.clone()
+            entity.class().declared_constructors.clone()
         };
         let mut members = Vec::new();
         // C++'s name index prepends declarations. Selection of a move's
@@ -133,9 +134,9 @@ impl Analyzer<'_> {
             let entity = self.graph.binding(binding).entity;
             let function = self.graph.entity(entity);
             let kind = if assignment {
-                function.assignment_kind
+                function.callable().assignment_kind
             } else {
-                function.copy_kind
+                function.callable().copy_kind
             };
             let Some(reference) = kind else {
                 continue;
@@ -158,14 +159,19 @@ impl Analyzer<'_> {
                 cv: *cv,
                 deleted: function.availability == FunctionAvailability::Deleted,
                 exceptions: if if assignment {
-                    function.assignment_origin == super::assignment::Origin::Implicit
+                    function.callable().assignment_origin == super::assignment::Origin::Implicit
                 } else {
-                    function.copy_origin == super::copy_construction::Origin::Implicit
+                    function.callable().copy_origin == super::copy_construction::Origin::Implicit
                 } {
                     MemberExceptions::Implicit(if assignment {
-                        function.assignment.as_ref().is_some_and(|p| p.nothrow)
+                        function
+                            .callable()
+                            .assignment
+                            .as_ref()
+                            .is_some_and(|p| p.nothrow)
                     } else {
                         function
+                            .special()
                             .copy_properties
                             .is_some_and(|id| self.graph.copy_properties.get(id).nothrow)
                     })
@@ -173,9 +179,14 @@ impl Analyzer<'_> {
                     MemberExceptions::Declared(entity)
                 },
                 trivial: if assignment {
-                    function.assignment.as_ref().is_some_and(|p| p.trivial)
+                    function
+                        .callable()
+                        .assignment
+                        .as_ref()
+                        .is_some_and(|p| p.trivial)
                 } else {
                     function
+                        .special()
                         .copy_properties
                         .is_some_and(|id| self.graph.copy_properties.get(id).trivial)
                 },
@@ -184,6 +195,7 @@ impl Analyzer<'_> {
         let copies = self
             .graph
             .entity(class)
+            .special()
             .implicit_copies
             .ok_or(Error::Invariant("copy trait candidates"))?;
         if !assignment {
@@ -259,11 +271,12 @@ impl Analyzer<'_> {
     fn trait_subobject_selection(&mut self, class: EntityId, kind: Kind) -> Result<bool, Error> {
         let entity = self.graph.entity(class);
         if !kind.nothrow
-            && (entity.polymorphism.is_dynamic() || entity.bases.iter().any(|edge| edge.is_virtual))
+            && (entity.class().polymorphism.is_dynamic()
+                || entity.class().bases.iter().any(|edge| edge.is_virtual))
         {
             return Ok(false);
         }
-        let count = entity.bases.len() + entity.members.len();
+        let count = entity.class().bases.len() + entity.class().members.len();
         for index in 0..count {
             let Some((child, _, _)) = self.graph.copy_child(class, index)? else {
                 continue;

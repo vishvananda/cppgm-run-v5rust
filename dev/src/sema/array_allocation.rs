@@ -131,7 +131,7 @@ impl Analyzer<'_> {
         let mut trailing = constant.is_none_or(|count| count > listed)
             || constant == Some(0) && array.prefix.is_none();
         if constant == Some(0) && array.prefix.is_some() {
-            trailing = if self.graph.entity(class).user_constructor.is_none() {
+            trailing = if self.graph.entity(class).class().user_constructor.is_none() {
                 true
             } else {
                 match self.default_constructor_binding(class, location) {
@@ -227,7 +227,7 @@ mod tests {
             )
             .entity;
         assert!(matches!(
-            graph.entity(unused).layout,
+            graph.entity(unused).class().layout,
             super::super::layout::LayoutState::NotStarted
         ));
     }
@@ -292,7 +292,7 @@ mod tests {
             )
             .entity;
         assert!(matches!(
-            graph.entity(unused).layout,
+            graph.entity(unused).class().layout,
             super::super::layout::LayoutState::NotStarted
         ));
     }

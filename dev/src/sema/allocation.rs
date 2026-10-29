@@ -597,7 +597,7 @@ impl Analyzer<'_> {
         let key = key(keyword, array);
         if !global
             && let Some(class) = class
-            && let Some(home) = self.graph.entity(class).scope
+            && let Some(home) = self.graph.entity(class).context().scope
         {
             let found = self
                 .qualified_result(home, key, Filter::Ordinary)
@@ -680,7 +680,7 @@ impl Analyzer<'_> {
     }
 
     fn sized_array_deallocation(&mut self, class: Option<EntityId>) -> Result<bool, Error> {
-        let Some(home) = class.and_then(|class| self.graph.entity(class).scope) else {
+        let Some(home) = class.and_then(|class| self.graph.entity(class).context().scope) else {
             return Ok(false);
         };
         let found = match self.qualified_result(home, key(Keyword::Delete, true), Filter::Ordinary)
@@ -865,7 +865,7 @@ mod tests {
                 panic!("direct operator call");
             };
             let selected = graph.entity(graph.binding(binding).entity);
-            assert!(selected.builtin.is_none());
+            assert!(selected.callable().builtin.is_none());
             assert_eq!(selected.home, Some(graph.global));
             assert_eq!(
                 graph
@@ -876,7 +876,7 @@ mod tests {
                 Some(binding)
             );
             assert!(matches!(
-                selected.exceptions,
+                selected.callable().exceptions,
                 super::super::exceptions::ExceptionState::Value(
                     super::super::exceptions::ExceptionSet::None
                 )
@@ -897,7 +897,7 @@ mod tests {
             .binding(graph.own(graph.global, unused, Filter::Elaborated).unwrap())
             .entity;
         assert!(matches!(
-            graph.entity(unused).layout,
+            graph.entity(unused).class().layout,
             super::super::layout::LayoutState::NotStarted
         ));
         let template = graph
@@ -905,6 +905,7 @@ mod tests {
             .find(|&binding| {
                 graph
                     .entity(graph.binding(binding).entity)
+                    .context()
                     .template_head
                     .is_some()
             })
@@ -968,7 +969,7 @@ mod tests {
             .binding(graph.own(graph.global, name, Filter::Elaborated).unwrap())
             .entity;
         assert!(matches!(
-            graph.entity(unused).layout,
+            graph.entity(unused).class().layout,
             super::super::layout::LayoutState::NotStarted
         ));
     }
@@ -1040,9 +1041,9 @@ mod tests {
         let unused = graph
             .binding(graph.own(graph.global, unused, Filter::Elaborated).unwrap())
             .entity;
-        assert!(graph.entity(unused).implicit_destructor.is_none());
+        assert!(graph.entity(unused).class().implicit_destructor.is_none());
         assert!(
-            graph.entity(unused).destruction_preparation
+            graph.entity(unused).special().destruction_preparation
                 == super::super::destruction::Preparation::Pending
         );
     }

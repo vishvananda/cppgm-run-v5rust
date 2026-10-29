@@ -36,7 +36,7 @@ impl Candidates {
             Self::Functions(set) => graph.overloads.get(set),
             Self::Constructors { class, .. }
             | Self::ConvertingMember(class)
-            | Self::ListConstructors(class) => &graph.entity(class).declared_constructors,
+            | Self::ListConstructors(class) => &graph.entity(class).class().declared_constructors,
         }
     }
     fn includes(self, graph: &super::graph::Graph, binding: BindingId) -> bool {
@@ -46,7 +46,10 @@ impl Candidates {
                 converting: true,
                 ..
             } | Self::ConvertingMember(_)
-        ) || graph.entity(graph.binding(binding).entity).explicitness
+        ) || graph
+            .entity(graph.binding(binding).entity)
+            .callable()
+            .explicitness
             != super::specifiers::Explicitness::Explicit
     }
 }
@@ -484,6 +487,7 @@ impl Analyzer<'_> {
             .filter(|&binding| {
                 self.graph
                     .entity(self.graph.binding(binding).entity)
+                    .context()
                     .template_head
                     .is_some()
             })
@@ -1205,6 +1209,7 @@ impl Analyzer<'_> {
         let has_templates = scratch.offered.iter().any(|&id| {
             self.graph
                 .entity(self.graph.binding(id).entity)
+                .context()
                 .template_head
                 .is_some()
         });
@@ -1233,6 +1238,7 @@ impl Analyzer<'_> {
             let templated = self
                 .graph
                 .entity(self.graph.binding(primary).entity)
+                .context()
                 .template_head
                 .is_some();
             if has_templates && templated != (visit >= total) {
@@ -1564,7 +1570,7 @@ impl Analyzer<'_> {
         self.graph.work.totals.candidates += bindings.len();
         for &binding in bindings {
             let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if entity.template_head.is_some() {
+            if entity.context().template_head.is_some() {
                 continue;
             }
             let ty = entity
@@ -1627,6 +1633,7 @@ impl Analyzer<'_> {
         if self
             .graph
             .entity(self.graph.binding(selected.binding).entity)
+            .callable()
             .member_function
             .is_some_and(|member| member.kind == super::graph::MemberKind::Constructor)
         {
@@ -2113,10 +2120,16 @@ mod tests {
                 .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
                 .entity;
             assert_eq!(
-                matches!(graph.entity(class).layout, LayoutState::Value { .. }),
+                matches!(
+                    graph.entity(class).class().layout,
+                    LayoutState::Value { .. }
+                ),
                 needed,
             );
-            assert_eq!(graph.entity(class).implicit_copies.is_some(), needed);
+            assert_eq!(
+                graph.entity(class).special().implicit_copies.is_some(),
+                needed
+            );
             if needed {
                 assert!(graph.lower_direct_class_parameter(class).unwrap());
             }

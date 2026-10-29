@@ -168,7 +168,7 @@ mod tests {
             )
             .entity;
         assert!(matches!(
-            graph.entity(unused).layout,
+            graph.entity(unused).class().layout,
             LayoutState::NotStarted
         ));
         assert_eq!(tree.expressions.mark(), expressions);
@@ -430,7 +430,7 @@ impl Analyzer<'_> {
         let mut tables = false;
         for index in 0..self.graph.constructors.get(constructor).bases.len() {
             let base = self.graph.constructors.get(constructor).bases[index];
-            let offset = self.graph.entity(class).bases[index]
+            let offset = self.graph.entity(class).class().bases[index]
                 .offset
                 .ok_or(Error::Invariant("static base without layout"))?;
             if base.forwards || offset != cursor {
@@ -462,7 +462,7 @@ impl Analyzer<'_> {
                 .filter(|sub| sub.member == member)
                 .copied();
             let ty = self.graph.lower_entity_type(member)?;
-            if self.graph.entity(member).bit_field.is_some()
+            if self.graph.entity(member).object().bit_field.is_some()
                 || matches!(self.graph.types.get(ty).kind, TypeKind::Class(child)
                     if self.graph.anonymous_member_storage(child).is_some())
             {
@@ -477,6 +477,7 @@ impl Analyzer<'_> {
             let offset = self
                 .graph
                 .entity(member)
+                .object()
                 .member_offset
                 .ok_or(Error::Invariant("static member without layout"))?;
             if offset < cursor {
@@ -530,13 +531,13 @@ impl Analyzer<'_> {
             return Ok(true);
         };
         if matches!(
-            self.graph.entity(entity).copy_origin,
+            self.graph.entity(entity).callable().copy_origin,
             super::copy_construction::Origin::Implicit
         ) {
             return Ok(true);
         }
         if let Some(super::special_members::SpecialDefinition::Defaulted { first, .. }) =
-            self.graph.entity(entity).special_definition
+            self.graph.entity(entity).callable().special_definition
         {
             return Ok(first);
         }
@@ -654,7 +655,7 @@ impl Analyzer<'_> {
         };
         let Some((index, (_, _, parameter))) = self
             .graph
-            .lower_parameters(self.graph.entity(function).scope)
+            .lower_parameters(self.graph.entity(function).context().scope)
             .enumerate()
             .find(|(_, (id, _, _))| *id == self.graph.binding(binding).entity)
         else {
@@ -669,6 +670,7 @@ impl Analyzer<'_> {
         let argument = arguments.get(index).copied().or_else(|| {
             self.graph
                 .entity(function)
+                .callable()
                 .defaults
                 .get(index)
                 .copied()

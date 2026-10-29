@@ -176,6 +176,7 @@ impl Analyzer<'_> {
                 .ok_or(Error::Invariant("special definition without binding"))?;
             self.graph
                 .entity_mut(self.graph.binding(binding).entity)
+                .callable_mut()
                 .function_definition = Some(id);
         }
         Ok(())
@@ -210,7 +211,10 @@ impl Analyzer<'_> {
             // The definition's parameter clause owns the names used by its
             // retained body. Instance signatures may already expand class
             // packs while that body still names the original parameter pack.
-            self.graph.entity_mut(function).function_parameters = info.parameters;
+            self.graph
+                .entity_mut(function)
+                .callable_mut()
+                .function_parameters = info.parameters;
         }
         if specs.inline == super::specifiers::InlinePreference::Inline
             || specs.constexpr
@@ -227,11 +231,12 @@ impl Analyzer<'_> {
                 )
             })
         {
-            self.graph.entity_mut(class).layout_category = super::layout::LayoutCategory::NonPod;
+            self.graph.entity_mut(class).class_mut().layout_category =
+                super::layout::LayoutCategory::NonPod;
         }
         let first = self.graph.function_origin(function)? == binding;
         if first && kind == MemberKind::Destructor {
-            self.graph.entity_mut(class).declared_destructor = Some(binding);
+            self.graph.entity_mut(class).class_mut().declared_destructor = Some(binding);
         }
         if kind == MemberKind::Constructor
             && !initializer.is_some_and(|init| {
@@ -242,7 +247,7 @@ impl Analyzer<'_> {
                     )
             })
         {
-            self.graph.entity_mut(class).aggregation =
+            self.graph.entity_mut(class).class_mut().aggregation =
                 super::aggregate_initialization::Aggregation::Ineligible;
         }
         if self.semantic() && self.template_depth != 0 {
@@ -265,18 +270,32 @@ impl Analyzer<'_> {
         }
         if kind != MemberKind::Constructor {
             self.graph.special_labels.insert(binding, name);
-            if self.graph.entity(function).special_name.is_none() {
-                self.graph.entity_mut(function).special_name = Some(name);
+            if self
+                .graph
+                .entity(function)
+                .callable()
+                .special_name
+                .is_none()
+            {
+                self.graph.entity_mut(function).callable_mut().special_name = Some(name);
             }
         }
         if first
-            || self.graph.entity(function).template_head.is_none()
+            || self
+                .graph
+                .entity(function)
+                .context()
+                .template_head
+                .is_none()
                 && !self.class_template_member_redeclaration(info)
         {
             self.record_function_exceptions(function, info, info.lookup, location, limit)?;
         }
         if first && self.semantic() && kind == MemberKind::Destructor {
-            self.graph.entity_mut(function).destructor_specification =
+            self.graph
+                .entity_mut(function)
+                .special_mut()
+                .destructor_specification =
                 if self.declarator_specifies_exceptions(Some(declarator)) {
                     super::exceptions::DestructorSpecification::Explicit
                 } else {
@@ -287,7 +306,7 @@ impl Analyzer<'_> {
         self.pure_specifier(function, initializer, info, specs, scope, location)?;
         if initializer.is_some_and(|init| matches!(init.kind, InitializerKind::Default)) {
             self.default_special_member(function, class, kind, info, location)?;
-            let old = self.graph.entity(function).special_definition;
+            let old = self.graph.entity(function).callable().special_definition;
             let old_body = match old {
                 Some(
                     SpecialDefinition::Body(body)
@@ -298,24 +317,31 @@ impl Analyzer<'_> {
                 _ => None,
             };
             self.graph.entity_mut(function).defined = true;
-            self.graph.entity_mut(function).special_definition =
-                Some(SpecialDefinition::Defaulted {
-                    first: first
-                        || matches!(old, Some(SpecialDefinition::Defaulted { first: true, .. })),
-                    body: old_body,
-                });
+            self.graph
+                .entity_mut(function)
+                .callable_mut()
+                .special_definition = Some(SpecialDefinition::Defaulted {
+                first: first
+                    || matches!(old, Some(SpecialDefinition::Defaulted { first: true, .. })),
+                body: old_body,
+            });
             if first
                 && kind == MemberKind::Constructor
                 && !self.declarator_specifies_exceptions(Some(declarator))
             {
-                self.graph.entity_mut(function).constructor_exceptions =
+                self.graph
+                    .entity_mut(function)
+                    .callable_mut()
+                    .constructor_exceptions =
                     super::construction::ConstructorExceptionSource::SubobjectPlan;
             }
             if first {
                 self.graph.entity_mut(function).inline =
                     super::specifiers::InlinePreference::Inline;
-                self.graph.entity_mut(function).definition_emission =
-                    super::function_demands::DefinitionEmission::Demanded;
+                self.graph
+                    .entity_mut(function)
+                    .callable_mut()
+                    .definition_emission = super::function_demands::DefinitionEmission::Demanded;
             } else if self.semantic() && self.template_depth == 0 {
                 self.defaulted_constructor_definition(function, class, kind, location)?;
                 if kind == MemberKind::Destructor
@@ -335,7 +361,10 @@ impl Analyzer<'_> {
         if initializer.is_some_and(|init| matches!(init.kind, InitializerKind::Delete)) {
             self.graph.entity_mut(function).availability =
                 super::graph::FunctionAvailability::Deleted;
-            self.graph.entity_mut(function).special_definition = Some(SpecialDefinition::Deleted);
+            self.graph
+                .entity_mut(function)
+                .callable_mut()
+                .special_definition = Some(SpecialDefinition::Deleted);
         }
         if kind == MemberKind::Constructor && implicit_type {
             let signature = self.graph.types.canonical_function(info.ty)?;
@@ -349,15 +378,17 @@ impl Analyzer<'_> {
                     ));
                 }
             }
-            self.graph.entity_mut(class).user_constructor = Some(binding);
+            self.graph.entity_mut(class).class_mut().user_constructor = Some(binding);
         }
         if let Some(body) = body {
-            self.graph.entity_mut(function).special_definition =
-                Some(SpecialDefinition::Body(body));
-            self.graph.entity_mut(function).definition_emission = if self
-                .graph
-                .entity(function)
-                .inline
+            self.graph
+                .entity_mut(function)
+                .callable_mut()
+                .special_definition = Some(SpecialDefinition::Body(body));
+            self.graph
+                .entity_mut(function)
+                .callable_mut()
+                .definition_emission = if self.graph.entity(function).inline
                 == super::specifiers::InlinePreference::Inline
             {
                 super::function_demands::DefinitionEmission::Demanded
@@ -506,6 +537,7 @@ impl Analyzer<'_> {
         let owner = self
             .graph
             .entity(class)
+            .context()
             .scope
             .ok_or(Error::Invariant("special member owner without scope"))?;
         if info.home.is_some()
@@ -656,33 +688,37 @@ impl Analyzer<'_> {
         self.graph.entity_mut(function).defined |= body.is_some() || deleted;
         self.graph.entity_mut(function).constexpr = specs.constexpr;
         self.record_explicit_condition(function, specs, scope)?;
-        self.graph.entity_mut(function).function = Some(super::graph::FunctionProperties {
-            effects: self
-                .graph
-                .entity(function)
-                .function
-                .map_or(super::graph::FunctionEffect::Default, |properties| {
-                    properties.effects
-                }),
-            no_inline: self
-                .graph
-                .entity(function)
-                .function
-                .is_some_and(|properties| properties.no_inline),
-            returns: self
-                .graph
-                .entity(function)
-                .function
-                .map_or(super::graph::FunctionReturn::MayReturn, |properties| {
-                    properties.returns
-                }),
-            language: super::linkage::Language::Cpp,
-            denotes: None,
-            internal_linkage: false,
-            is_static: specs.is_static,
-            special: None,
-            allocation: None,
-        });
+        self.graph.entity_mut(function).callable_mut().function =
+            Some(super::graph::FunctionProperties {
+                effects: self
+                    .graph
+                    .entity(function)
+                    .callable()
+                    .function
+                    .map_or(super::graph::FunctionEffect::Default, |properties| {
+                        properties.effects
+                    }),
+                no_inline: self
+                    .graph
+                    .entity(function)
+                    .callable()
+                    .function
+                    .is_some_and(|properties| properties.no_inline),
+                returns: self
+                    .graph
+                    .entity(function)
+                    .callable()
+                    .function
+                    .map_or(super::graph::FunctionReturn::MayReturn, |properties| {
+                        properties.returns
+                    }),
+                language: super::linkage::Language::Cpp,
+                denotes: None,
+                internal_linkage: false,
+                is_static: specs.is_static,
+                special: None,
+                allocation: None,
+            });
         let binding = self.graph.add_binding(
             owner,
             Some(info.home.unwrap_or(scope)),
@@ -730,6 +766,7 @@ impl Analyzer<'_> {
                 let other_static = self
                     .graph
                     .entity(self.graph.binding(binding).entity)
+                    .callable()
                     .function
                     .is_some_and(|facts| facts.is_static);
                 if other_static != is_static {
@@ -766,6 +803,7 @@ impl Analyzer<'_> {
                         && (0..count).all(|index| {
                             self.graph
                                 .entity(function)
+                                .callable()
                                 .defaults
                                 .get(index)
                                 .is_some_and(Option::is_some)
@@ -786,6 +824,7 @@ impl Analyzer<'_> {
             && self
                 .graph
                 .entity(function)
+                .callable()
                 .defaults
                 .iter()
                 .any(Option::is_some)

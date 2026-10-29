@@ -316,8 +316,9 @@ impl Analyzer<'_> {
             || !definition
             || info.home.is_none()
                 && (self.graph.entity(entity).inline != super::specifiers::InlinePreference::Inline
-                    || self.graph.entity(entity).template_head.is_some())
-            || self.graph.entity(entity).data_member != Some(super::graph::DataMemberKind::Static)
+                    || self.graph.entity(entity).context().template_head.is_some())
+            || self.graph.entity(entity).object().data_member
+                != Some(super::graph::DataMemberKind::Static)
         {
             return;
         }
@@ -386,8 +387,10 @@ impl Analyzer<'_> {
                 operand: None,
                 ..
             }
-        ) || matches!(self.graph.entity(entity).constant, ConstantState::None)
-            && self.integral_kind(ty).is_some()
+        ) || matches!(
+            self.graph.entity(entity).object().constant,
+            ConstantState::None
+        ) && self.integral_kind(ty).is_some()
             && self.graph.lower_cv(ty) & 1 != 0
         {
             self.instantiate_variable(entity)?;
@@ -430,8 +433,13 @@ impl Analyzer<'_> {
             // image (or dynamic dependencies) is followed only if it is used.
             if !self.graph.variable_instances.instance(initializing)
                 && !self.graph.ordinary_inline_member(initializing)
-                && self.graph.entity(initializing).template_head.is_none()
-                && self.graph.entity(initializing).data_member
+                && self
+                    .graph
+                    .entity(initializing)
+                    .context()
+                    .template_head
+                    .is_none()
+                && self.graph.entity(initializing).object().data_member
                     != Some(super::graph::DataMemberKind::Instance)
             {
                 self.graph
@@ -439,12 +447,14 @@ impl Analyzer<'_> {
                     .request_layout_use(initializing, owner);
             }
         } else if owner.is_some()
-            && !(matches!(self.graph.entity(entity).constant, ConstantState::Value(_))
-                && self
-                    .graph
-                    .entity(entity)
-                    .ty
-                    .is_some_and(|ty| self.integral_kind(ty).is_some() && !self.scoped_enum(ty)))
+            && !(matches!(
+                self.graph.entity(entity).object().constant,
+                ConstantState::Value(_)
+            ) && self
+                .graph
+                .entity(entity)
+                .ty
+                .is_some_and(|ty| self.integral_kind(ty).is_some() && !self.scoped_enum(ty)))
         {
             self.graph
                 .variable_instances
@@ -471,6 +481,7 @@ impl Analyzer<'_> {
                     let declarator = self
                         .graph
                         .entity(entity)
+                        .object()
                         .variable_definition
                         .ok_or(Error::Invariant("inline storage without declaration"))?;
                     self.tree.declarators.get(declarator).location
@@ -484,7 +495,12 @@ impl Analyzer<'_> {
                 let ty = self.graph.lower_entity_type(entity)?;
                 self.request_object_layout_for(ty, location, owner);
             }
-            if let Some(value) = self.graph.entity(entity).static_initializer {
+            if let Some(value) = self
+                .graph
+                .entity(entity)
+                .initialization()
+                .static_initializer
+            {
                 if let Value::Address(target, _) = value {
                     self.graph
                         .variable_instances
@@ -540,7 +556,7 @@ impl Analyzer<'_> {
         entity: EntityId,
     ) -> Result<Option<Constant>, Error> {
         let node = self.graph.entity(entity);
-        if matches!(node.constant, ConstantState::None)
+        if matches!(node.object().constant, ConstantState::None)
             && self.graph.variable_instances.instance(entity)
             && (node.constexpr
                 || node.ty.is_some_and(|ty| {
@@ -549,7 +565,7 @@ impl Analyzer<'_> {
         {
             self.instantiate_variable(entity)?;
         }
-        match self.graph.entity(entity).constant {
+        match self.graph.entity(entity).object().constant {
             ConstantState::Value(value) => Ok(Some(value)),
             _ => Ok(None),
         }
@@ -701,7 +717,7 @@ impl Analyzer<'_> {
         }
         if self.graph.ordinary_inline_member(entity) {
             let node = self.graph.entity(entity);
-            let initializer = node.member_initializer;
+            let initializer = node.initialization().member_initializer;
             let home = node
                 .home
                 .ok_or(Error::Invariant("inline member without owner"))?;
@@ -748,8 +764,11 @@ impl Analyzer<'_> {
                         )
                         .ok_or(Error::Invariant("static member without binding"))?;
                     analyzer.graph.entity_mut(entity).defined = true;
-                    analyzer.graph.entity_mut(entity).variable_definition =
-                        Some(pattern.declarator);
+                    analyzer
+                        .graph
+                        .entity_mut(entity)
+                        .object_mut()
+                        .variable_definition = Some(pattern.declarator);
                     let mut ty = analyzer
                         .graph
                         .entity(entity)
@@ -758,8 +777,11 @@ impl Analyzer<'_> {
                     ty = analyzer.instance_array_type(ty, pattern.ty, frame, &mut copy)?;
                     ty = analyzer.complete_initializer_array(ty, initializer)?;
                     analyzer.graph.complete_variable_type(binding, ty)?;
-                    let effective =
-                        initializer.or(analyzer.graph.entity(entity).member_initializer);
+                    let effective = initializer.or(analyzer
+                        .graph
+                        .entity(entity)
+                        .initialization()
+                        .member_initializer);
                     if let Some(initializer) = initializer {
                         analyzer.initialize_variable(
                             binding,
@@ -770,7 +792,7 @@ impl Analyzer<'_> {
                         analyzer.record_constant_initializer(entity, initializer, frame)?;
                     } else if effective.is_none()
                         && !matches!(
-                            analyzer.graph.entity(entity).constant,
+                            analyzer.graph.entity(entity).object().constant,
                             ConstantState::Value(_)
                         )
                         && !analyzer.graph.entity(entity).constexpr
@@ -848,7 +870,7 @@ mod tests {
             .class_of(analyzer.graph.binding(alias).ty.unwrap())
             .unwrap();
         assert!(analyzer.complete_class(class).unwrap());
-        let home = analyzer.graph.entity(class).scope.unwrap();
+        let home = analyzer.graph.entity(class).context().scope.unwrap();
         let members = [names[1], names[2]].map(|name| {
             let binding = analyzer.graph.own(home, name, Filter::Ordinary).unwrap();
             analyzer.graph.binding(binding).entity
@@ -861,13 +883,25 @@ mod tests {
         assert!(pattern.initializer.is_none());
         assert!(pattern.head.is_none());
         assert!(!pattern.qualified);
-        let initializer = analyzer.graph.entity(entity).member_initializer.unwrap();
+        let initializer = analyzer
+            .graph
+            .entity(entity)
+            .initialization()
+            .member_initializer
+            .unwrap();
         let ast::InitializerKind::Assign(expression) = initializer.kind else {
             panic!("assigned initializer");
         };
         assert!(analyzer.graph.expression_facts.get(expression).is_ok());
         assert!(analyzer.graph.entity(entity).defined);
-        assert!(analyzer.graph.entity(entity).variable_definition.is_some());
+        assert!(
+            analyzer
+                .graph
+                .entity(entity)
+                .object()
+                .variable_definition
+                .is_some()
+        );
         assert!(
             analyzer
                 .graph
@@ -930,14 +964,14 @@ mod tests {
             let [a, b, class] = entities;
             assert_eq!(graph.entity(a).inline == InlinePreference::Inline, lowering);
             assert_eq!(
-                graph.entity(a).variable.unwrap().internal_linkage,
+                graph.entity(a).object().variable.unwrap().internal_linkage,
                 !lowering
             );
             assert!(graph.entity(b).inline == InlinePreference::Unspecified);
-            assert!(!graph.entity(b).variable.unwrap().internal_linkage);
+            assert!(!graph.entity(b).object().variable.unwrap().internal_linkage);
             let binding = graph
                 .own(
-                    graph.entity(class).scope.unwrap(),
+                    graph.entity(class).context().scope.unwrap(),
                     names[3],
                     Filter::Ordinary,
                 )
@@ -946,11 +980,15 @@ mod tests {
             assert_eq!(graph.entity(member).defined, lowering);
             assert!(graph.lower_demanded_initializer(member).is_none());
             let class = graph.own(graph.global, names[4], Filter::Ordinary).unwrap();
-            let home = graph.entity(graph.binding(class).entity).scope.unwrap();
+            let home = graph
+                .entity(graph.binding(class).entity)
+                .context()
+                .scope
+                .unwrap();
             let binding = graph.own(home, names[5], Filter::Ordinary).unwrap();
             let unused = graph.binding(binding).entity;
             assert_eq!(graph.entity(unused).defined, lowering);
-            assert!(graph.entity(unused).constructor.is_none());
+            assert!(graph.entity(unused).initialization().constructor.is_none());
             assert_eq!(
                 graph.lower_omitted_variable_initialization(unused),
                 lowering
@@ -988,7 +1026,7 @@ mod tests {
             .class_of(analyzer.graph.binding(alias).ty.unwrap())
             .unwrap();
         assert!(analyzer.complete_class(class).unwrap());
-        let home = analyzer.graph.entity(class).scope.unwrap();
+        let home = analyzer.graph.entity(class).context().scope.unwrap();
         let binding = analyzer
             .graph
             .own(home, names[1], Filter::Ordinary)
@@ -1004,7 +1042,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(
-            matches!(analyzer.graph.entity(analyzer.graph.binding(element).entity).constant,
+            matches!(analyzer.graph.entity(analyzer.graph.binding(element).entity).object().constant,
             ConstantState::Value(value) if value.bits == 1)
         );
         let original = pattern.initializer.unwrap();
@@ -1087,7 +1125,14 @@ mod tests {
         assert!(!analyzer.graph.entity(entity).defined);
         analyzer.declaration(ids[4], global).unwrap();
         assert!(analyzer.graph.entity(entity).defined);
-        assert!(analyzer.graph.entity(entity).variable_definition.is_some());
+        assert!(
+            analyzer
+                .graph
+                .entity(entity)
+                .object()
+                .variable_definition
+                .is_some()
+        );
         assert!(analyzer.graph.variable_instances.states.is_empty());
         assert_eq!(analyzer.tree.expressions.mark(), expressions);
     }
@@ -1136,8 +1181,11 @@ mod tests {
         assert_eq!(variables.deferred_declarations.len(), 2);
         assert!(graph.entity(primary).defined);
         let pattern = variables.patterns[&primary];
-        assert_ne!(pattern.head, graph.entity(primary).template_head);
-        assert_ne!(pattern.head, graph.entity(partials[0].1).template_head);
+        assert_ne!(pattern.head, graph.entity(primary).context().template_head);
+        assert_ne!(
+            pattern.head,
+            graph.entity(partials[0].1).context().template_head
+        );
         // Heads of identical shape have canonical parameter positions, but
         // each definition retains its actual scope and initializer syntax.
         assert_ne!(pattern.scope, variables.patterns[&partials[0].1].scope);
@@ -1194,7 +1242,14 @@ mod tests {
                 )
                 .unwrap();
             let entity = analyzer.graph.binding(binding).entity;
-            assert!(analyzer.graph.entity(entity).template_head.is_some());
+            assert!(
+                analyzer
+                    .graph
+                    .entity(entity)
+                    .context()
+                    .template_head
+                    .is_some()
+            );
             assert!(!analyzer.graph.entity(entity).defined);
             let variables = &analyzer.graph.variable_instances;
             assert!(variables.partials.is_empty());

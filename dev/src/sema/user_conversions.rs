@@ -181,10 +181,10 @@ impl Analyzer<'_> {
         direct: bool,
         candidates: &mut Vec<UserCandidate>,
     ) -> Result<(), Error> {
-        for index in 0..self.graph.entity(class).declared_constructors.len() {
-            let binding = self.graph.entity(class).declared_constructors[index];
+        for index in 0..self.graph.entity(class).class().declared_constructors.len() {
+            let binding = self.graph.entity(class).class().declared_constructors[index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if entity.explicitness == Explicitness::Explicit && !direct {
+            if entity.callable().explicitness == Explicitness::Explicit && !direct {
                 continue;
             }
             let Some(binding) = self.deduce_function_call(binding, &[], false, Some(source))?
@@ -198,7 +198,7 @@ impl Analyzer<'_> {
                 crate::support::source::SourceOffset(0),
             )?;
             let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if entity.explicitness == Explicitness::Explicit && !direct {
+            if entity.callable().explicitness == Explicitness::Explicit && !direct {
                 continue;
             }
             let ty = entity
@@ -376,6 +376,7 @@ impl Analyzer<'_> {
         let class = self
             .graph
             .entity(self.graph.binding(binding).entity)
+            .callable()
             .member_function
             .ok_or(Error::Invariant("converting constructor without owner"))?
             .class;
@@ -512,8 +513,16 @@ mod tests {
             .reference(constant, RefKind::Lvalue)
             .unwrap();
         let facts = ExprFacts::new(source_type, ValueCategory::Lvalue);
-        let constructor = analyzer.graph.entity(target_class).declared_constructors[0];
-        let function = analyzer.graph.entity(source_class).declared_conversions[0];
+        let constructor = analyzer
+            .graph
+            .entity(target_class)
+            .class()
+            .declared_constructors[0];
+        let function = analyzer
+            .graph
+            .entity(source_class)
+            .class()
+            .declared_conversions[0];
         let demands = analyzer.graph.root_demands.as_slice().len();
         for _ in 0..3 {
             let value = analyzer
@@ -538,13 +547,21 @@ mod tests {
             analyzer
                 .graph
                 .entity(analyzer.graph.binding(constructor).entity)
+                .initialization()
                 .constructor
                 .is_none()
         );
         for class in [source_class, target_class, unused] {
-            assert!(analyzer.graph.entity(class).implicit_copies.is_none());
+            assert!(
+                analyzer
+                    .graph
+                    .entity(class)
+                    .special()
+                    .implicit_copies
+                    .is_none()
+            );
             assert!(matches!(
-                analyzer.graph.entity(class).layout,
+                analyzer.graph.entity(class).class().layout,
                 super::super::layout::LayoutState::NotStarted
             ));
         }
@@ -604,7 +621,7 @@ mod tests {
         let class = graph
             .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
             .entity;
-        let offered = &graph.entity(class).declared_constructors;
+        let offered = &graph.entity(class).class().declared_constructors;
         assert_eq!(offered.len(), 2);
         assert_eq!(
             graph.constructors.get(constructor).binding,
@@ -613,6 +630,7 @@ mod tests {
         assert!(
             graph
                 .entity(graph.binding(offered[1]).entity)
+                .initialization()
                 .constructor
                 .is_none()
         );

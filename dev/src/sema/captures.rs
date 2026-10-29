@@ -124,9 +124,12 @@ impl Analyzer<'_> {
         if frame.default.is_none() {
             return Ok(());
         }
-        if entity.data_member == Some(DataMemberKind::Instance)
+        if entity.object().data_member == Some(DataMemberKind::Instance)
             || self.graph.scope(owner).kind == ScopeKind::Class
-                && entity.function.is_some_and(|function| !function.is_static)
+                && entity
+                    .callable()
+                    .function
+                    .is_some_and(|function| !function.is_static)
         {
             if frame.object.is_some() {
                 self.capture_frames
@@ -138,7 +141,10 @@ impl Analyzer<'_> {
         }
         let automatic = binding.kind == BindingKind::Parameter
             || binding.kind == BindingKind::Variable
-                && entity.variable.is_some_and(|variable| variable.automatic)
+                && entity
+                    .object()
+                    .variable
+                    .is_some_and(|variable| variable.automatic)
                 && matches!(
                     self.graph.scope(owner).kind,
                     ScopeKind::Block | ScopeKind::Function
@@ -146,6 +152,7 @@ impl Analyzer<'_> {
         let class_scope = self
             .graph
             .entity(frame.class)
+            .context()
             .scope
             .ok_or(Error::Invariant("closure scan scope"))?;
         if automatic
@@ -153,6 +160,7 @@ impl Analyzer<'_> {
             && !self
                 .graph
                 .entity(call)
+                .context()
                 .scope
                 .is_some_and(|scope| self.graph.encloses(scope, owner))
         {
@@ -370,8 +378,11 @@ impl Analyzer<'_> {
                 let entity = self.graph.entity(binding.entity);
                 binding.kind == BindingKind::Parameter
                     || binding.kind == BindingKind::Variable
-                        && entity.variable.is_some_and(|variable| variable.automatic)
-                        && entity.data_member.is_none()
+                        && entity
+                            .object()
+                            .variable
+                            .is_some_and(|variable| variable.automatic)
+                        && entity.object().data_member.is_none()
                         && entity.home.is_some_and(|home| {
                             matches!(
                                 self.graph.scope(home).kind,
@@ -433,6 +444,7 @@ impl Analyzer<'_> {
             if self
                 .graph
                 .entity(function)
+                .context()
                 .scope
                 .is_some_and(|scope| self.graph.encloses(scope, owner))
             {
@@ -554,7 +566,8 @@ impl Analyzer<'_> {
             });
         }
         if frame.this_captured || !captures.is_empty() {
-            self.graph.entity_mut(class).layout_category = super::layout::LayoutCategory::NonPod;
+            self.graph.entity_mut(class).class_mut().layout_category =
+                super::layout::LayoutCategory::NonPod;
         }
         self.graph.closures.captures.insert(class, captures);
         Ok(())
@@ -597,6 +610,7 @@ impl Analyzer<'_> {
         let scope = self
             .graph
             .entity(closure)
+            .context()
             .scope
             .ok_or(Error::Invariant("capture context"))?;
         if let super::copy_initialization::CopyOrigin::Declared(binding) = selected.origin {
@@ -627,8 +641,11 @@ impl Analyzer<'_> {
         if !matches!(
             self.graph.scope(owner).kind,
             ScopeKind::Block | ScopeKind::Function
-        ) || record.variable.is_some_and(|variable| !variable.automatic)
-            || record.data_member.is_some()
+        ) || record
+            .object()
+            .variable
+            .is_some_and(|variable| !variable.automatic)
+            || record.object().data_member.is_some()
         {
             return Ok(ty);
         }
@@ -644,6 +661,7 @@ impl Analyzer<'_> {
             if self
                 .graph
                 .entity(function)
+                .context()
                 .scope
                 .is_some_and(|scope| self.graph.encloses(scope, owner))
             {
@@ -679,13 +697,18 @@ impl Analyzer<'_> {
         let scope = self
             .graph
             .entity(class)
+            .context()
             .scope
             .ok_or(Error::Invariant("capture class scope"))?;
         let member = self.graph.add_entity(Some(ty), None, Keyword::Int)?;
-        let entity = self.graph.entity_mut(member);
+        let mut entity = self.graph.entity_mut(member);
         entity.home = Some(scope);
-        entity.data_member = Some(DataMemberKind::Instance);
-        self.graph.entity_mut(class).members.push(member);
+        entity.object_mut().data_member = Some(DataMemberKind::Instance);
+        self.graph
+            .entity_mut(class)
+            .class_mut()
+            .members
+            .push(member);
         Ok(member)
     }
 }
@@ -772,7 +795,7 @@ mod tests {
                     ..
                 }
             ));
-            assert_eq!(graph.entity(class).members, [capture.member]);
+            assert_eq!(graph.entity(class).class().members, [capture.member]);
             assert!(closure.invoker.is_none());
         }
         assert_eq!(entities[0], entities[1]);
@@ -799,7 +822,10 @@ mod tests {
             let captures = graph.lower_closure_captures(class);
             counts.push(captures.len());
             if let Some(this) = closure.this_member {
-                assert_eq!(graph.entity(class).members, [this, captures[0].member]);
+                assert_eq!(
+                    graph.entity(class).class().members,
+                    [this, captures[0].member]
+                );
                 assert_eq!(graph.lower_member_offset(this).unwrap(), 0);
                 assert_eq!(graph.lower_member_offset(captures[0].member).unwrap(), 8);
             } else {
@@ -833,7 +859,7 @@ mod tests {
         let captures = graph.lower_closure_captures(class);
         assert_eq!(captures.len(), 4);
         assert_eq!(
-            graph.entity(class).members,
+            graph.entity(class).class().members,
             captures.iter().map(|c| c.member).collect::<Vec<_>>()
         );
         for (capture, name) in captures.iter().zip([b"x".as_slice(), b"ar", b"fn", b"obj"]) {

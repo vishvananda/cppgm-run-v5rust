@@ -51,7 +51,7 @@ impl Analyzer<'_> {
         for index in 0..count {
             let binding = visible.as_slice(&self.graph)[index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if entity.explicitness == Explicitness::Explicit {
+            if entity.callable().explicitness == Explicitness::Explicit {
                 continue;
             }
             let ty = entity
@@ -334,7 +334,7 @@ mod tests {
             })
         };
         assert!(demanded(selection.binding));
-        for &binding in &graph.entity(class).declared_conversions {
+        for &binding in &graph.entity(class).class().declared_conversions {
             assert_eq!(demanded(binding), binding == selection.binding);
         }
     }

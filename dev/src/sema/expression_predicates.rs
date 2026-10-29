@@ -493,7 +493,7 @@ impl Analyzer<'_> {
         }
         if let Some(class) = class
             && (!self.complete_class(class)?
-                || self.graph.entity(class).scope.is_none()
+                || self.graph.entity(class).context().scope.is_none()
                 || self.graph.virtuals.abstract_class(class))
         {
             return Ok(Properties::default());
@@ -589,9 +589,10 @@ impl Analyzer<'_> {
             properties.trivial = !self.graph.constructors.get(constructor).nontrivial();
             if let Some(binding) = self.graph.constructors.get(constructor).binding {
                 let function = self.graph.binding(binding).entity;
-                for index in count..self.graph.entity(function).defaults.len() {
+                for index in count..self.graph.entity(function).callable().defaults.len() {
                     if properties.nothrow
-                        && let Some(default) = self.graph.entity(function).defaults[index]
+                        && let Some(default) =
+                            self.graph.entity(function).callable().defaults[index]
                     {
                         properties.nothrow = !self.expression_may_throw(default.expression)?;
                     }
@@ -1025,6 +1026,7 @@ impl Analyzer<'_> {
             if let Some(CallTarget::Direct(binding)) = facts.call(&self.graph.expression_facts) {
                 self.graph
                     .entity(self.graph.binding(binding).entity)
+                    .callable()
                     .assignment
                     .as_ref()
                     .is_some_and(|facts| facts.trivial)

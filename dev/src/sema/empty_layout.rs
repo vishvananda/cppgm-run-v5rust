@@ -51,8 +51,9 @@ impl EmptyPlacement {
         virtual_bases: &[(EntityId, u64)],
     ) -> Result<Self, Error> {
         let mut record_limit = 0;
-        for base in &graph.entity(class).bases {
-            let LayoutState::Value { empty, size, .. } = graph.entity(base.class).layout else {
+        for base in &graph.entity(class).class().bases {
+            let LayoutState::Value { empty, size, .. } = graph.entity(base.class).class().layout
+            else {
                 return Err(Error::Invariant("empty placement before base layout"));
             };
             if empty {
@@ -60,7 +61,7 @@ impl EmptyPlacement {
             }
         }
         for &(base, _) in virtual_bases {
-            let LayoutState::Value { empty, size, .. } = graph.entity(base).layout else {
+            let LayoutState::Value { empty, size, .. } = graph.entity(base).class().layout else {
                 return Err(Error::Invariant(
                     "empty placement before virtual base layout",
                 ));
@@ -70,14 +71,14 @@ impl EmptyPlacement {
             }
         }
         if graph.entity(class).key != crate::lex::vocabulary::Keyword::Union {
-            for &member in &graph.entity(class).members {
+            for &member in &graph.entity(class).class().members {
                 let node = graph.entity(member);
-                if node.storage_attributes.overlapping
-                    && node.bit_field.is_none()
+                if node.attributes().storage_attributes.overlapping
+                    && node.object().bit_field.is_none()
                     && let Some(child) = node.ty.and_then(|ty| graph.class_of(ty))
                     && let LayoutState::Value {
                         empty: true, size, ..
-                    } = graph.entity(child).layout
+                    } = graph.entity(child).class().layout
                 {
                     record_limit = record_limit.max(size);
                 }
@@ -108,7 +109,7 @@ impl EmptyPlacement {
             empty,
             non_virtual_size,
             ..
-        } = graph.entity(class).layout
+        } = graph.entity(class).class().layout
         else {
             return Err(Error::Invariant("overlapping member before layout"));
         };
@@ -138,7 +139,7 @@ impl EmptyPlacement {
                 empty,
                 non_virtual_size,
                 ..
-            } = graph.entity(base).layout
+            } = graph.entity(base).class().layout
             else {
                 return Err(Error::Invariant(
                     "overlapping member virtual base before layout",
@@ -230,7 +231,7 @@ impl EmptyPlacement {
             contains_empty,
             size,
             ..
-        } = graph.entity(class).layout
+        } = graph.entity(class).class().layout
         else {
             return Err(Error::Invariant("member conflict before layout"));
         };
@@ -263,7 +264,7 @@ impl EmptyPlacement {
             contains_empty,
             size,
             ..
-        } = graph.entity(class).layout
+        } = graph.entity(class).class().layout
         else {
             return Err(Error::Invariant("member record before layout"));
         };
@@ -306,7 +307,7 @@ impl EmptyPlacement {
                 empty,
                 contains_empty,
                 ..
-            } = graph.entity(class).layout
+            } = graph.entity(class).class().layout
             else {
                 return Err(Error::Invariant("empty walk before layout"));
             };
@@ -327,7 +328,7 @@ impl EmptyPlacement {
                     self.maximum = self.maximum.max(at);
                 }
             }
-            for base in &graph.entity(class).bases {
+            for base in &graph.entity(class).class().bases {
                 if base.is_virtual {
                     continue;
                 }
@@ -347,7 +348,7 @@ impl EmptyPlacement {
                     self.work.push((base, at.wrapping_add(offset), false));
                 }
             }
-            for &member in &graph.entity(class).members {
+            for &member in &graph.entity(class).class().members {
                 let node = graph.entity(member);
                 let Some((element, count)) = class_elements(
                     graph,
@@ -360,7 +361,7 @@ impl EmptyPlacement {
                     size: bytes,
                     contains_empty: child_empty,
                     ..
-                } = graph.entity(element).layout
+                } = graph.entity(element).class().layout
                 else {
                     return Err(Error::Invariant("empty walk without member layout"));
                 };
@@ -368,7 +369,8 @@ impl EmptyPlacement {
                     continue;
                 }
                 let start = at.wrapping_add(
-                    node.member_offset
+                    node.object()
+                        .member_offset
                         .ok_or(Error::Invariant("empty walk without member offset"))?,
                 );
                 let mut index = first_outside_gap(start, bytes, 0, gap_begin, gap_end);

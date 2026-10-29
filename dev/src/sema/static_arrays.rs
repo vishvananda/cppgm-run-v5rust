@@ -480,7 +480,7 @@ impl Analyzer<'_> {
         if depth > 64 {
             return Ok(false);
         }
-        for &member in &self.graph.entity(class).members {
+        for &member in &self.graph.entity(class).class().members {
             let ty = self.graph.lower_entity_type(member)?;
             if !matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
                 && !self.zero_value_initialized(ty, depth + 1)?
@@ -567,13 +567,13 @@ impl Analyzer<'_> {
         let mut bits = [0u8; 8];
         let mut bit_bytes = 0;
         let mut unit_at = 0;
-        for index in 0..self.graph.entity(class).members.len() {
-            let member = self.graph.entity(class).members[index];
+        for index in 0..self.graph.entity(class).class().members.len() {
+            let member = self.graph.entity(class).class().members[index];
             if selected.is_some_and(|selected| member != selected) {
                 continue;
             }
             let ty = self.graph.lower_entity_type(member)?;
-            if let Some(field) = self.graph.entity(member).bit_field {
+            if let Some(field) = self.graph.entity(member).object().bit_field {
                 if self.graph.unnamed_bit_field(member) {
                     continue;
                 }
@@ -625,6 +625,7 @@ impl Analyzer<'_> {
             let offset = self
                 .graph
                 .entity(member)
+                .object()
                 .member_offset
                 .ok_or(Error::Invariant("static member without offset"))?;
             append_zero(
@@ -635,7 +636,7 @@ impl Analyzer<'_> {
             )?;
             let expr = list.get(*next).copied();
             if initialization.flexible
-                && index + 1 == self.graph.entity(class).members.len()
+                && index + 1 == self.graph.entity(class).class().members.len()
                 && matches!(
                     self.graph.types.get(ty).kind,
                     TypeKind::Array { bound: 0, .. }
@@ -755,7 +756,7 @@ impl Analyzer<'_> {
         }
         for (index, &(parameter, _, parameter_ty)) in parameters.iter().enumerate() {
             let (member, initializer) = self.graph.constructors.get(constructor).members[index];
-            if self.graph.entity(member).bit_field.is_some() {
+            if self.graph.entity(member).object().bit_field.is_some() {
                 return Ok(false);
             }
             let Some(ast::Initializer {

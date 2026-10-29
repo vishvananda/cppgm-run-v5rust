@@ -248,10 +248,11 @@ impl Analyzer<'_> {
         binding: BindingId,
     ) -> Result<Option<HeadId>, Error> {
         let entity = self.graph.entity(self.graph.binding(binding).entity);
-        let Some(head) = entity.template_head else {
+        let Some(head) = entity.context().template_head else {
             return Ok(None);
         };
         if entity
+            .callable()
             .function
             .and_then(|properties| properties.special)
             .is_some_and(|name| {
@@ -335,6 +336,7 @@ impl Analyzer<'_> {
             let Some(head) = self
                 .graph
                 .entity(self.graph.binding(binding).entity)
+                .context()
                 .template_head
             else {
                 continue;
@@ -346,11 +348,13 @@ impl Analyzer<'_> {
                     let a = self
                         .graph
                         .entity(a)
+                        .context()
                         .template_parameter
                         .ok_or(Error::Invariant("head without parameter"))?;
                     let b = self
                         .graph
                         .entity(b)
+                        .context()
                         .template_parameter
                         .ok_or(Error::Invariant("head without parameter"))?;
                     if !a.same_argument_kind(b) {
@@ -460,7 +464,11 @@ impl Analyzer<'_> {
         let TypeKind::TemplateParameter { entity, .. } = self.graph.types.get(ty).kind else {
             return None;
         };
-        self.graph.entity(entity).template_parameter?.index(depth)
+        self.graph
+            .entity(entity)
+            .context()
+            .template_parameter?
+            .index(depth)
     }
 
     pub(super) fn substitute_signature_type(
@@ -896,40 +904,43 @@ impl Analyzer<'_> {
             .record(entity, self.instantiation_depth);
         let old = self.graph.entity(origin.entity);
         let properties = (
-            old.function,
+            old.callable().function,
             old.availability,
             old.constexpr,
             old.home,
-            old.scope,
+            old.context().scope,
         );
         let old_inline = old.inline;
-        let special_name = old.special_name;
-        let parameters = old.function_parameters;
-        let member = old.member_function.map(|key| super::graph::MemberKey {
-            signature: ty,
-            shape: None,
-            ..key
-        });
-        let special_definition = old.special_definition;
-        let exceptions = old.exceptions.clone();
-        let exception_origin = old.exception_origin;
-        let specialized = self.graph.entity_mut(entity);
-        specialized.function = properties.0;
+        let special_name = old.callable().special_name;
+        let parameters = old.callable().function_parameters;
+        let member = old
+            .callable()
+            .member_function
+            .map(|key| super::graph::MemberKey {
+                signature: ty,
+                shape: None,
+                ..key
+            });
+        let special_definition = old.callable().special_definition;
+        let exceptions = old.callable().exceptions.clone();
+        let exception_origin = old.callable().exception_origin;
+        let mut specialized = self.graph.entity_mut(entity);
+        specialized.callable_mut().function = properties.0;
         specialized.availability = properties.1;
         specialized.constexpr = properties.2;
         specialized.home = properties.3;
-        specialized.scope = properties.4;
+        specialized.context_mut().scope = properties.4;
         specialized.inline = old_inline;
-        specialized.special_name = special_name;
-        specialized.member_function = member;
-        specialized.special_definition = special_definition;
+        specialized.callable_mut().special_name = special_name;
+        specialized.callable_mut().member_function = member;
+        specialized.callable_mut().special_definition = special_definition;
         // Declaration facts belong to the specialization's formation point.
         // A later primary redeclaration must not rename its prototype; a
         // demanded body installs its own copied parameters separately.
-        specialized.function_parameters = parameters;
-        specialized.exceptions = exceptions;
-        specialized.exception_origin = exception_origin;
-        specialized.definition_emission = DefinitionEmission::Demanded;
+        specialized.callable_mut().function_parameters = parameters;
+        specialized.callable_mut().exceptions = exceptions;
+        specialized.callable_mut().exception_origin = exception_origin;
+        specialized.callable_mut().definition_emission = DefinitionEmission::Demanded;
         // Formation owns its entity before the conditional-explicit check,
         // but publishes neither its signature nor memo if that check fails.
         let explicitness = match self.specialized_explicitness(primary, depth, &key.arguments) {
@@ -945,7 +956,7 @@ impl Analyzer<'_> {
         if self.graph.analysis.substitution.current().failure.is_some() {
             return Ok(None);
         }
-        self.graph.entity_mut(entity).explicitness = explicitness;
+        self.graph.entity_mut(entity).callable_mut().explicitness = explicitness;
         self.graph.types.declaration_signature(ty)?;
         self.specialization_defaults(entity, primary, pattern, ty)?;
         let binding = self.graph.function_handle(primary, entity, ty)?;
@@ -1241,8 +1252,8 @@ impl Analyzer<'_> {
         let mut found: Option<Vec<Option<TypeId>>> = None;
         let mut unique = true;
         while let Some(current) = work.pop() {
-            for index in 0..self.graph.entity(current).bases.len() {
-                let base = self.graph.entity(current).bases[index].class;
+            for index in 0..self.graph.entity(current).class().bases.len() {
+                let base = self.graph.entity(current).class().bases[index].class;
                 if !seen.insert(base) {
                     continue;
                 }
@@ -1392,6 +1403,7 @@ impl Analyzer<'_> {
             .any(|&parameter| {
                 self.graph
                     .entity(parameter)
+                    .context()
                     .template_parameter
                     .is_some_and(super::templates::ParameterInfo::is_pack)
             })
@@ -1520,6 +1532,7 @@ impl Analyzer<'_> {
             if self
                 .graph
                 .entity(self.graph.binding(function).entity)
+                .context()
                 .template_head
                 .is_some()
             {
@@ -1791,6 +1804,7 @@ impl Analyzer<'_> {
             // sequence on the owning class, separate from the injected name.
             self.graph
                 .entity(class)
+                .class()
                 .declared_constructors
                 .iter()
                 .rev()
@@ -2467,7 +2481,7 @@ mod tests {
         let mut constrained = 0;
         for (key, binding) in &graph.function_templates.signatures {
             let primary = graph.entity(key.primary);
-            let head = primary.template_head.unwrap();
+            let head = primary.context().template_head.unwrap();
             if primary.name != Some(f) || graph.templates.parameters(head).len() != 2 {
                 continue;
             }
@@ -2523,7 +2537,7 @@ mod tests {
             .own(global, a, super::super::lookup::Filter::Ordinary)
             .unwrap();
         let class = analyzer.graph.binding(class).entity;
-        let scope = analyzer.graph.entity(class).scope.unwrap();
+        let scope = analyzer.graph.entity(class).context().scope.unwrap();
         let member = analyzer.graph.functions_at(scope, f.into()).next().unwrap();
         let free = analyzer
             .graph
@@ -2637,11 +2651,16 @@ mod tests {
         else {
             panic!("ordering's unique type must stay dependent")
         };
-        let info = analyzer.graph.entity(entity).template_parameter.unwrap();
+        let info = analyzer
+            .graph
+            .entity(entity)
+            .context()
+            .template_parameter
+            .unwrap();
         assert_eq!(info.depth(), 0x7fff);
         assert_eq!(info.argument_index(), 0);
         assert!(info.value_type.is_none());
-        assert!(analyzer.graph.entity(entity).scope.is_none());
+        assert!(analyzer.graph.entity(entity).context().scope.is_none());
         assert!(analyzer.graph.dependent_type(ty));
         let const_type = analyzer.graph.types.qualify(ty, Cv(1)).unwrap();
         let depth = analyzer.graph.templates.depth(head);
@@ -2683,7 +2702,7 @@ mod tests {
         let TypeKind::Class(shell) = analyzer.graph.types.get(qualifier).kind else {
             panic!("member qualifier must be a class shell")
         };
-        assert!(analyzer.graph.entity(shell).scope.is_none());
+        assert!(analyzer.graph.entity(shell).context().scope.is_none());
         for _ in 0..3 {
             for form in [TemplateOrdering::Call(2), TemplateOrdering::FunctionType(2)] {
                 assert!(
@@ -2757,7 +2776,7 @@ mod tests {
         else {
             panic!("alias without class type");
         };
-        let scope = graph.entity(class).scope.unwrap();
+        let scope = graph.entity(class).context().scope.unwrap();
         for (spelling, expected) in [
             (b"before".as_slice(), Scalar::Basic(FundamentalType::Char)),
             (b"after", Scalar::Basic(FundamentalType::LongInt)),

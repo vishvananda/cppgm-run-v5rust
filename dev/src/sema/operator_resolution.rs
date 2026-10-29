@@ -243,6 +243,7 @@ impl Analyzer<'_> {
                     && self
                         .graph
                         .entity(self.graph.binding(primary).entity)
+                        .context()
                         .template_head
                         .is_none()
                 {

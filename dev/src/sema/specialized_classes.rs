@@ -84,7 +84,7 @@ impl Analyzer<'_> {
         scope: ScopeId,
     ) -> Result<TypeId, Error> {
         let entity = self.specialized_class(name, node.key, scope)?;
-        if self.graph.entity(entity).scope.is_some() {
+        if self.graph.entity(entity).context().scope.is_some() {
             return Err(Error::at(
                 self.tree.names.get(name).location,
                 "class redefinition",
@@ -108,12 +108,12 @@ impl Analyzer<'_> {
         self.specialization_mode = SpecializationMode::Ordinary;
         if self.graph.within_class_instance(owner)
             && self.active_template_head(scope).is_some()
-            && self.graph.entity(entity).template_head.is_some()
+            && self.graph.entity(entity).context().template_head.is_some()
         {
             self.graph.class_templates.definitions.specialize(entity);
             self.graph.class_templates.partials.replace_primary(entity);
-            let class = self.graph.entity_mut(entity);
-            class.scope = None;
+            let mut class = self.graph.entity_mut(entity);
+            class.context_mut().scope = None;
             class.defined = false;
             return Ok(());
         }
@@ -131,7 +131,7 @@ impl Analyzer<'_> {
             ));
         }
         if self.graph.class_templates.definitions.started(entity)
-            || self.graph.entity(entity).scope.is_some()
+            || self.graph.entity(entity).context().scope.is_some()
         {
             return Err(Error::at(
                 location,
@@ -206,9 +206,9 @@ mod tests {
         assert_ne!(i, c);
         assert!(analyzer.complete_class(i).unwrap());
         assert!(!analyzer.complete_class(c).unwrap());
-        assert!(analyzer.graph.entity(c).scope.is_none());
+        assert!(analyzer.graph.entity(c).context().scope.is_none());
         assert!(analyzer.graph.class_templates.definitions.explicit(c));
-        let scope = analyzer.graph.entity(i).scope.unwrap();
+        let scope = analyzer.graph.entity(i).context().scope.unwrap();
         assert!(!analyzer.graph.within_class_instance(scope));
         let nested = analyzer
             .graph
@@ -274,7 +274,7 @@ mod tests {
         assert!(graph.class_templates.definitions.explicit(member));
         assert!(graph.class_templates.definitions.source(member).is_some());
         assert!(graph.entity(member).complete);
-        let scope = graph.entity(member).scope.unwrap();
+        let scope = graph.entity(member).context().scope.unwrap();
         assert!(!graph.within_class_instance(scope));
         let nested = graph
             .binding(graph.own(scope, nested_name, Filter::Ordinary).unwrap())

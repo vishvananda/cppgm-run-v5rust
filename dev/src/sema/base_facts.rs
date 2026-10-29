@@ -56,7 +56,7 @@ impl Tables {
         let mut pending = vec![class];
         let mut simple = true;
         'walk: while let Some(class) = pending.pop() {
-            for edge in &graph.entity(class).bases {
+            for edge in &graph.entity(class).class().bases {
                 if edge.is_virtual || !seen.insert(edge.class) {
                     simple = false;
                     break 'walk;
@@ -74,7 +74,7 @@ impl Tables {
             return Some(Fact::one());
         }
         let mut bottom = derived;
-        while let [edge] = graph.entity(bottom).bases.as_slice() {
+        while let [edge] = graph.entity(bottom).class().bases.as_slice() {
             if edge.is_virtual {
                 break;
             }
@@ -98,7 +98,7 @@ impl Tables {
                 let mut facts = HashMap::from_iter([(bottom, Fact::one())]);
                 for &class in order.iter().rev() {
                     let above = facts[&class];
-                    for edge in &graph.entity(class).bases {
+                    for edge in &graph.entity(class).class().bases {
                         let below = facts.entry(edge.class).or_default();
                         below.receive(above, edge.is_virtual);
                     }
@@ -123,7 +123,7 @@ fn postorder(graph: &Graph, root: EntityId) -> Vec<EntityId> {
     let mut seen = HashSet::from_iter([root]);
     let mut pending = vec![(root, 0usize)];
     while let Some((class, next)) = pending.last_mut() {
-        if let Some(edge) = graph.entity(*class).bases.get(*next) {
+        if let Some(edge) = graph.entity(*class).class().bases.get(*next) {
             *next += 1;
             if seen.insert(edge.class) {
                 pending.push((edge.class, 0));
@@ -146,7 +146,7 @@ pub(super) fn leads_to_base(
     base: EntityId,
     memo: &mut HashMap<EntityId, bool>,
 ) -> bool {
-    if top == base || graph.entity(top).bases.is_empty() {
+    if top == base || graph.entity(top).class().bases.is_empty() {
         return top == base;
     }
     if let Some(&known) = memo.get(&top) {
@@ -165,9 +165,9 @@ pub(super) fn leads_to_base(
         let Some(frame) = pending.last_mut() else {
             return known.unwrap_or(false);
         };
-        if let Some(edge) = graph.entity(frame.bottom).bases.get(frame.next) {
+        if let Some(edge) = graph.entity(frame.bottom).class().bases.get(frame.next) {
             frame.next += 1;
-            known = if edge.class == base || graph.entity(edge.class).bases.is_empty() {
+            known = if edge.class == base || graph.entity(edge.class).class().bases.is_empty() {
                 Some(edge.class == base)
             } else if let Some(&known) = memo.get(&edge.class) {
                 Some(known)
@@ -191,13 +191,13 @@ fn leads_chain(
 ) -> Option<bool> {
     let mut class = top;
     while class != base {
-        let [edge] = graph.entity(class).bases.as_slice() else {
+        let [edge] = graph.entity(class).class().bases.as_slice() else {
             break;
         };
         graph.work.base_steps(1);
         class = edge.class;
     }
-    if class == base || graph.entity(class).bases.is_empty() {
+    if class == base || graph.entity(class).class().bases.is_empty() {
         let result = class == base;
         memo.insert(top, result);
         return Some(result);

@@ -71,6 +71,7 @@ impl Analyzer<'_> {
         }
         let enumeration = self.graph.entity(entity);
         let info = enumeration
+            .enumerated()
             .enumeration
             .ok_or(Error::Invariant("member enum metadata"))?;
         let Some(name) = enumeration.name else {
@@ -85,14 +86,21 @@ impl Analyzer<'_> {
             .instance(owner)
             .map(|instance| instance.primary)
             .or_else(|| self.graph.class_templates.definitions.source(owner));
-        let Some(scope) = source.and_then(|source| self.graph.entity(source).scope) else {
+        let Some(scope) = source.and_then(|source| self.graph.entity(source).context().scope)
+        else {
             return Ok(());
         };
         let Some(binding) = self.graph.own(scope, name, Filter::Elaborated) else {
             return Ok(());
         };
         let pattern = self.graph.binding(binding).entity;
-        if self.graph.entity(pattern).enumeration.is_none() {
+        if self
+            .graph
+            .entity(pattern)
+            .enumerated()
+            .enumeration
+            .is_none()
+        {
             return Ok(());
         }
         let defined = self
@@ -194,11 +202,13 @@ impl Analyzer<'_> {
         let info = self
             .graph
             .entity(entity)
+            .enumerated()
             .enumeration
             .ok_or(Error::Invariant("member enum metadata"))?;
         let lookup = if info.scoped {
             self.graph
                 .entity(entity)
+                .context()
                 .scope
                 .ok_or(Error::Invariant("member enum scope"))?
         } else {

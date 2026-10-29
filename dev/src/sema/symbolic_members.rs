@@ -145,8 +145,8 @@ impl Analyzer<'_> {
                 .map(|offset| offset.map(super::integral::signed));
         }
         self.note_incomplete_constant_layout();
-        for index in 0..self.graph.entity(derived).bases.len() {
-            let edge = self.graph.entity(derived).bases[index];
+        for index in 0..self.graph.entity(derived).class().bases.len() {
+            let edge = self.graph.entity(derived).class().bases[index];
             if edge.is_virtual {
                 continue;
             }
@@ -365,7 +365,7 @@ impl Analyzer<'_> {
                         "an access outside the designated object",
                     ));
                 }
-                match self.graph.entity(entity).constant {
+                match self.graph.entity(entity).object().constant {
                     ConstantState::MemberPointer(value) if self.graph.entity(entity).constexpr => {
                         return Ok(value);
                     }
@@ -500,7 +500,7 @@ impl Analyzer<'_> {
         initializer: ast::Initializer,
         scope: ScopeId,
     ) -> Result<(), Error> {
-        self.graph.entity_mut(entity).constant = ConstantState::Evaluating;
+        self.graph.entity_mut(entity).object_mut().constant = ConstantState::Evaluating;
         let outcome = self.with_observed_constant_query(|a| {
             let ty = a.graph.lower_entity_type(entity)?;
             let super::constant_addresses::TemporaryValue::MemberPointer(value) =
@@ -512,7 +512,7 @@ impl Analyzer<'_> {
             };
             Ok(value)
         });
-        self.graph.entity_mut(entity).constant = ConstantState::None;
+        self.graph.entity_mut(entity).object_mut().constant = ConstantState::None;
         if self.defer_observed_initializer(
             entity,
             super::deferred_constants::Initialization {
@@ -526,7 +526,8 @@ impl Analyzer<'_> {
         let result = outcome.result;
         match result {
             Ok(value) => {
-                self.graph.entity_mut(entity).constant = ConstantState::MemberPointer(value);
+                self.graph.entity_mut(entity).object_mut().constant =
+                    ConstantState::MemberPointer(value);
             }
             Err(Error::NonConstant {
                 location, message, ..
@@ -715,7 +716,7 @@ mod tests {
             analyzer.graph.binding(binding).entity
         });
         for entity in [base, leaf, derived] {
-            analyzer.graph.entity_mut(entity).layout = LayoutState::NotStarted;
+            analyzer.graph.entity_mut(entity).class_mut().layout = LayoutState::NotStarted;
         }
         assert_eq!(
             analyzer
@@ -731,11 +732,11 @@ mod tests {
         );
         for entity in [leaf, derived] {
             assert!(matches!(
-                analyzer.graph.entity(entity).layout,
+                analyzer.graph.entity(entity).class().layout,
                 LayoutState::NotStarted
             ));
         }
-        analyzer.graph.entity_mut(derived).layout = LayoutState::InProgress;
+        analyzer.graph.entity_mut(derived).class_mut().layout = LayoutState::InProgress;
         #[cfg(feature = "telemetry")]
         let before = analyzer.graph.work.snapshot().base_steps;
         assert!(
@@ -793,18 +794,21 @@ mod tests {
                 analyzer.graph.binding(binding).entity
             })
             .collect();
-        let ConstantState::MemberPointer(reverse) = analyzer.graph.entity(entities[1]).constant
+        let ConstantState::MemberPointer(reverse) =
+            analyzer.graph.entity(entities[1]).object().constant
         else {
             panic!("reverse member value");
         };
         assert_eq!(reverse.adjustment, 0);
-        let ConstantState::MemberPointer(null) = analyzer.graph.entity(entities[2]).constant else {
+        let ConstantState::MemberPointer(null) =
+            analyzer.graph.entity(entities[2]).object().constant
+        else {
             panic!("null member value");
         };
         assert!(null.member.is_none());
         assert_eq!(null.adjustment, 0);
-        let class_scope = analyzer.graph.entity(entities[0]).scope.unwrap();
-        let members: Vec<_> = analyzer.graph.entity(entities[0]).members.clone();
+        let class_scope = analyzer.graph.entity(entities[0]).context().scope.unwrap();
+        let members: Vec<_> = analyzer.graph.entity(entities[0]).class().members.clone();
         assert_eq!(members.len(), 1);
         let saved = analyzer.graph.aggregate_constants.get(entities[3]).unwrap();
         let values: Vec<_> = saved

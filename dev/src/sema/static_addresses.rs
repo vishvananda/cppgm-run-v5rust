@@ -104,7 +104,7 @@ impl Analyzer<'_> {
                     .member(&self.graph.expression_facts)
                     .ok_or(Error::Invariant("static member designation"))?;
                 let entity = self.graph.binding(member).entity;
-                if self.graph.entity(entity).data_member
+                if self.graph.entity(entity).object().data_member
                     != Some(super::graph::DataMemberKind::Instance)
                     || matches!(
                         self.graph
@@ -166,9 +166,18 @@ impl Analyzer<'_> {
         if let Some(&place) = self.static_addresses.references.get(&entity) {
             return Ok(place);
         }
-        if let Some(value) = self.graph.entity(entity).static_initializer
+        if let Some(value) = self
+            .graph
+            .entity(entity)
+            .initialization()
+            .static_initializer
             && matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
-            && self.graph.entity(entity).reference_temporary.is_none()
+            && self
+                .graph
+                .entity(entity)
+                .initialization()
+                .reference_temporary
+                .is_none()
         {
             return Self::static_image_place(
                 value,
@@ -187,10 +196,13 @@ impl Analyzer<'_> {
         // ask the interpreter for their stored referent.
         let node = self.graph.entity(entity);
         let designated = self.graph.expression_facts.get(id)?.ty;
-        let address = if node.function.is_some() {
+        let address = if node.callable().function.is_some() {
             Address::new(Root::Function(entity), designated)
-        } else if node.variable.is_some_and(|variable| !variable.automatic)
-            && node.data_member != Some(super::graph::DataMemberKind::Instance)
+        } else if node
+            .object()
+            .variable
+            .is_some_and(|variable| !variable.automatic)
+            && node.object().data_member != Some(super::graph::DataMemberKind::Instance)
             && !matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
             && self.graph.lower_binding_alias(entity).is_none()
             && self.graph.predefined_variables.text(entity).is_none()
@@ -495,7 +507,7 @@ impl Analyzer<'_> {
         let &(last, index) = edges
             .last()
             .ok_or(Error::Invariant("empty static base path"))?;
-        let to = self.graph.entity(last).bases[index].class;
+        let to = self.graph.entity(last).class().bases[index].class;
         self.class_layout(from, location)?;
         if place.address.root == Root::Null {
             return Ok(place);
@@ -649,18 +661,22 @@ mod tests {
             (b"array_reference", array, 104),
             (b"member_reference", holder, 32),
         ] {
-            assert!(matches!(graph.entity(entity(name)).static_initializer,
-                Some(Value::Address(found, at)) if found == root && at == offset));
+            assert!(
+                matches!(graph.entity(entity(name)).initialization().static_initializer,
+                Some(Value::Address(found, at)) if found == root && at == offset)
+            );
         }
         assert!(
             graph
                 .entity(entity(b"member_pointer"))
+                .initialization()
                 .static_initializer
                 .is_none()
         );
         assert!(
             graph
                 .entity(entity(b"dynamic_reference"))
+                .initialization()
                 .static_initializer
                 .is_none()
         );
@@ -669,22 +685,32 @@ mod tests {
             b"conditional_base",
             b"mutable_reference",
         ] {
-            assert!(graph.entity(entity(name)).static_initializer.is_none());
+            assert!(
+                graph
+                    .entity(entity(name))
+                    .initialization()
+                    .static_initializer
+                    .is_none()
+            );
         }
         let target = entity(b"target");
         assert!(
-            matches!(graph.entity(entity(b"constant_reference")).static_initializer,
+            matches!(graph.entity(entity(b"constant_reference")).initialization().static_initializer,
             Some(Value::Address(root, 0)) if root == target)
         );
         let single = entity(b"single");
         let reference = entity(b"cast_reference");
-        assert!(matches!(graph.entity(reference).static_initializer,
-            Some(Value::Address(root, 8)) if root == single));
+        assert!(
+            matches!(graph.entity(reference).initialization().static_initializer,
+            Some(Value::Address(root, 8)) if root == single)
+        );
         assert!(graph.constant_addresses.value(reference).is_none());
         let both = entity(b"both");
         for name in [&b"implicit"[..], b"explicit_cast"] {
-            assert!(matches!(graph.entity(entity(name)).static_initializer,
-                Some(Value::Address(root, 4)) if root == both));
+            assert!(
+                matches!(graph.entity(entity(name)).initialization().static_initializer,
+                Some(Value::Address(root, 4)) if root == both)
+            );
         }
         let from = graph
             .class_of(graph.lower_entity_type(object).unwrap())

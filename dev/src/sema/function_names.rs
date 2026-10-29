@@ -66,7 +66,11 @@ mod tests {
         let class = graph
             .own(global, class_name, super::super::lookup::Filter::Prefix)
             .unwrap();
-        let home = graph.entity(graph.binding(class).entity).scope.unwrap();
+        let home = graph
+            .entity(graph.binding(class).entity)
+            .context()
+            .scope
+            .unwrap();
         let constructors: Vec<_> = graph
             .functions_at(home, ValueKey::Special(SpecialName::Constructor))
             .collect();
@@ -91,6 +95,7 @@ mod tests {
             assert_eq!(
                 graph
                     .entity(graph.binding(binding).entity)
+                    .callable()
                     .member_function
                     .unwrap()
                     .kind,
@@ -136,7 +141,7 @@ mod tests {
         assert_eq!(entities.len(), 4);
         for (index, &binding) in functions.iter().enumerate() {
             let function = graph.binding(binding);
-            let head = graph.entity(function.entity).template_head;
+            let head = graph.entity(function.entity).context().template_head;
             assert_eq!(head.is_none(), index == 0);
             if let Some(head) = head {
                 assert_eq!(
@@ -155,9 +160,9 @@ mod tests {
         let defaults: Vec<_> = graph.functions_at(graph.global, g.into()).collect();
         assert_eq!(defaults.len(), 1);
         let function = graph.entity(graph.binding(defaults[0]).entity);
-        let latest = function.function_parameters.unwrap();
+        let latest = function.callable().function_parameters.unwrap();
         assert!(tree.parameters.get(latest.parameters)[1].default.is_none());
-        let default = function.defaults[1].unwrap().expression;
+        let default = function.callable().defaults[1].unwrap().expression;
         assert!(graph.expression_facts.get(default).is_err());
         assert!(graph.root_demands.as_slice().is_empty());
         assert_eq!(expression_count, tree.expressions.mark());
@@ -200,8 +205,8 @@ mod tests {
                 .next()
                 .unwrap();
             let entity = analyzer.graph.binding(binding).entity;
-            let head = analyzer.graph.entity(entity).template_head;
-            let default = analyzer.graph.entity(entity).defaults[1]
+            let head = analyzer.graph.entity(entity).context().template_head;
+            let default = analyzer.graph.entity(entity).callable().defaults[1]
                 .unwrap()
                 .expression;
             assert!(matches!(
@@ -213,9 +218,9 @@ mod tests {
             ));
             let functions: Vec<_> = analyzer.graph.functions_at(global, f.into()).collect();
             assert_eq!(functions, [binding]);
-            assert_eq!(analyzer.graph.entity(entity).template_head, head);
+            assert_eq!(analyzer.graph.entity(entity).context().template_head, head);
             assert_eq!(
-                analyzer.graph.entity(entity).defaults[1]
+                analyzer.graph.entity(entity).callable().defaults[1]
                     .unwrap()
                     .expression,
                 default
@@ -295,7 +300,7 @@ impl Analyzer<'_> {
             .entity(entity)
             .ty
             .ok_or(Error::Invariant("function without type"))?;
-        let previous = self.graph.entity(entity).template_head;
+        let previous = self.graph.entity(entity).context().template_head;
         if match (context.head, previous) {
             (Some(a), Some(b)) => !self.same_template_shape(a, b),
             (None, None) => false,
@@ -318,6 +323,7 @@ impl Analyzer<'_> {
             && self
                 .graph
                 .entity(entity)
+                .callable()
                 .function
                 .is_some_and(|props| !props.internal_linkage)
         {
@@ -328,8 +334,8 @@ impl Analyzer<'_> {
         }
         if self.graph.scope(context.home).kind == ScopeKind::Namespace
             && !context.qualified
-            && self.graph.entity(entity).builtin.is_none()
-            && let Some(properties) = self.graph.entity(entity).function
+            && self.graph.entity(entity).callable().builtin.is_none()
+            && let Some(properties) = self.graph.entity(entity).callable().function
         {
             self.agree_language(properties.language, location)?;
         }
@@ -408,7 +414,7 @@ impl Analyzer<'_> {
                     array,
                 };
                 let entity = self.graph.add_entity(Some(ty), None, Keyword::Int)?;
-                self.graph.entity_mut(entity).function = Some(FunctionProperties {
+                self.graph.entity_mut(entity).callable_mut().function = Some(FunctionProperties {
                     effects: super::graph::FunctionEffect::Default,
                     no_inline: false,
                     returns: super::graph::FunctionReturn::MayReturn,
@@ -419,7 +425,7 @@ impl Analyzer<'_> {
                     special: Some(name),
                     allocation: Some(AllocationOrigin::Predeclared),
                 });
-                self.graph.entity_mut(entity).exceptions =
+                self.graph.entity_mut(entity).callable_mut().exceptions =
                     super::exceptions::ExceptionState::Value(if keyword == Keyword::Delete {
                         super::exceptions::ExceptionSet::None
                     } else {
@@ -516,8 +522,8 @@ impl Analyzer<'_> {
                 .ok_or(Error::Invariant("special callable without source name"))?;
             self.graph.special_labels.insert(binding, name);
             let entity = self.graph.binding(binding).entity;
-            if self.graph.entity(entity).special_name.is_none() {
-                self.graph.entity_mut(entity).special_name = Some(name);
+            if self.graph.entity(entity).callable().special_name.is_none() {
+                self.graph.entity_mut(entity).callable_mut().special_name = Some(name);
             }
         }
         Ok(())
@@ -723,14 +729,17 @@ impl Analyzer<'_> {
                 if let TypeKind::Class(class) = self.graph.types.get(parameter).kind
                     && self.graph.scope(scope).owner == Some(class)
                 {
-                    self.graph.entity_mut(class).layout_category =
+                    self.graph.entity_mut(class).class_mut().layout_category =
                         super::layout::LayoutCategory::NonPod;
                 }
             }
         }
         let entity = self.graph.binding(binding).entity;
         if !self.graph.entity(entity).defined || definition == Definition::Body {
-            self.graph.entity_mut(entity).function_parameters = info.parameters;
+            self.graph
+                .entity_mut(entity)
+                .callable_mut()
+                .function_parameters = info.parameters;
         }
         if definition == Definition::Deleted {
             self.graph.entity_mut(entity).availability =
@@ -809,11 +818,14 @@ impl Analyzer<'_> {
         let mut next = 0;
         while let Some(binding) = self.graph.next_function(home, key, &mut next) {
             let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if entity.template_head.is_some() || entity.home != Some(home) {
+            if entity.context().template_head.is_some() || entity.home != Some(home) {
                 continue;
             }
             let other = entity.ty.ok_or(Error::Invariant("function without type"))?;
-            let is_static = entity.function.is_some_and(|props| props.is_static);
+            let is_static = entity
+                .callable()
+                .function
+                .is_some_and(|props| props.is_static);
             let other = self.graph.types.canonical_function(other)?;
             // An existing signature follows redeclare_function, retaining
             // its effective static property (an out-of-class definition does
@@ -930,7 +942,7 @@ impl Analyzer<'_> {
         };
         let entity = self.graph.binding(binding).entity;
         self.graph.entity_mut(entity).constexpr |= specs.constexpr;
-        if self.graph.entity(entity).template_head.is_none()
+        if self.graph.entity(entity).context().template_head.is_none()
             && !self.class_template_member_redeclaration(&info)
             && !checked_specialization
         {
@@ -945,6 +957,7 @@ impl Analyzer<'_> {
                 && self
                     .graph
                     .entity(entity)
+                    .callable()
                     .defaults
                     .iter()
                     .any(Option::is_some)
@@ -955,9 +968,15 @@ impl Analyzer<'_> {
                 ));
             }
             let first = self.graph.function_origin(entity)? == binding;
-            self.graph.entity_mut(entity).special_definition =
+            self.graph
+                .entity_mut(entity)
+                .callable_mut()
+                .special_definition =
                 Some(super::special_members::SpecialDefinition::Defaulted { first, body: None });
-            self.graph.entity_mut(entity).assignment_exceptions =
+            self.graph
+                .entity_mut(entity)
+                .callable_mut()
+                .assignment_exceptions =
                 if first && !self.declarator_specifies_exceptions(Some(init.declarator)) {
                     super::assignment::ExceptionSource::Subobjects
                 } else {
@@ -965,8 +984,10 @@ impl Analyzer<'_> {
                 };
             if first {
                 self.graph.entity_mut(entity).inline = super::specifiers::InlinePreference::Inline;
-                self.graph.entity_mut(entity).definition_emission =
-                    super::function_demands::DefinitionEmission::Demanded;
+                self.graph
+                    .entity_mut(entity)
+                    .callable_mut()
+                    .definition_emission = super::function_demands::DefinitionEmission::Demanded;
             }
             if self.semantic()
                 && self.template_depth == 0
@@ -985,6 +1006,7 @@ impl Analyzer<'_> {
                     && self
                         .graph
                         .entity(entity)
+                        .callable()
                         .assignment
                         .as_ref()
                         .is_some_and(|p| p.deleted)

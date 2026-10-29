@@ -76,7 +76,7 @@ impl Analyzer<'_> {
             .scope(function)
             .owner
             .ok_or(Error::Invariant("function without owner"))?;
-        if self.graph.entity(owner).function.is_none() {
+        if self.graph.entity(owner).callable().function.is_none() {
             return Ok(found);
         }
         let text = if name == self.predefined_names[2] {
@@ -118,7 +118,7 @@ impl Analyzer<'_> {
             Cv::default(),
         )?;
         let entity = self.graph.add_entity(Some(ty), Some(name), Keyword::Char)?;
-        self.graph.entity_mut(entity).variable = Some(VariableProperties {
+        self.graph.entity_mut(entity).object_mut().variable = Some(VariableProperties {
             is_extern: false,
             internal_linkage: false,
             language: super::linkage::Language::Cpp,
@@ -179,7 +179,7 @@ mod tests {
         let mut owners = HashSet::default();
         for (&entity, &text) in variables {
             let record = graph.entity(entity);
-            assert!(!record.variable.unwrap().automatic);
+            assert!(!record.object().variable.unwrap().automatic);
             let owner = record.home.unwrap();
             assert_eq!(graph.scope(owner).kind, ScopeKind::Function);
             assert_eq!(graph.scope(owner).bindings.len(), 0);

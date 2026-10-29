@@ -621,7 +621,7 @@ impl Analyzer<'_> {
             return None;
         };
         let name = self.graph.entity(member).name?;
-        let scope = self.graph.entity(class).scope?;
+        let scope = self.graph.entity(class).context().scope?;
         self.graph
             .own(scope, name, super::lookup::Filter::Ordinary)
             .map(|binding| self.graph.binding_access(binding))
@@ -632,8 +632,8 @@ impl Analyzer<'_> {
         offset: i64,
         location: SourceOffset,
     ) -> Result<Option<Subobject>, Error> {
-        for index in 0..self.graph.entity(class).bases.len() {
-            let base = self.graph.entity(class).bases[index];
+        for index in 0..self.graph.entity(class).class().bases.len() {
+            let base = self.graph.entity(class).class().bases[index];
             if self.graph.lower_class_empty(base.class)? {
                 continue;
             }
@@ -668,11 +668,11 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         if !self.graph.constant_member_spans.0.contains_key(&class) {
-            let mut spans = Vec::with_capacity(self.graph.entity(class).members.len());
+            let mut spans = Vec::with_capacity(self.graph.entity(class).class().members.len());
             let mut empty = crate::support::hash::HashSet::default();
-            for index in 0..self.graph.entity(class).members.len() {
-                let member = self.graph.entity(class).members[index];
-                if self.graph.entity(member).bit_field.is_some() {
+            for index in 0..self.graph.entity(class).class().members.len() {
+                let member = self.graph.entity(class).class().members[index];
+                if self.graph.entity(member).object().bit_field.is_some() {
                     continue;
                 }
                 if self.graph.lower_overlapping_empty_member(member)? {
@@ -683,12 +683,18 @@ impl Analyzer<'_> {
                 let start = integral::signed(
                     self.graph
                         .entity(member)
+                        .object()
                         .member_offset
                         .ok_or(Error::Invariant("ordered member without layout"))?,
                 );
                 let size = if matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. }) {
                     8
-                } else if self.graph.entity(member).storage_attributes.overlapping
+                } else if self
+                    .graph
+                    .entity(member)
+                    .attributes()
+                    .storage_attributes
+                    .overlapping
                     && let TypeKind::Class(child) = self.graph.types.get(ty).kind
                 {
                     integral::signed(self.graph.lower_nonvirtual_bytes(child)?).max(1)
@@ -702,7 +708,7 @@ impl Analyzer<'_> {
                     size,
                 });
             }
-            if self.graph.entity(class).members.len() > 8 {
+            if self.graph.entity(class).class().members.len() > 8 {
                 crate::support::ordering::sort_by(&mut spans, |a, b| a.start < b.start);
             }
             self.graph.constant_member_spans.0.insert(
@@ -710,7 +716,7 @@ impl Analyzer<'_> {
                 ClassSpans {
                     ordinary: spans,
                     empty,
-                    large: self.graph.entity(class).members.len() > 8,
+                    large: self.graph.entity(class).class().members.len() > 8,
                 },
             );
         }
@@ -869,9 +875,9 @@ impl Analyzer<'_> {
                 .map(|next| (next.ty, next.start)));
         }
         // Union alternatives retain declaration order at their shared offset.
-        for index in 0..self.graph.entity(class).members.len() {
-            let member = self.graph.entity(class).members[index];
-            if self.graph.entity(member).bit_field.is_some() {
+        for index in 0..self.graph.entity(class).class().members.len() {
+            let member = self.graph.entity(class).class().members[index];
+            if self.graph.entity(member).object().bit_field.is_some() {
                 continue;
             }
             let ty = self.graph.lower_entity_type(member)?;
@@ -881,6 +887,7 @@ impl Analyzer<'_> {
             let start = integral::signed(
                 self.graph
                     .entity(member)
+                    .object()
                     .member_offset
                     .ok_or(Error::Invariant("array bounds member without offset"))?,
             );

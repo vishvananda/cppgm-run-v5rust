@@ -72,7 +72,7 @@ impl Analyzer<'_> {
             self.graph
                 .scope(id)
                 .owner
-                .is_some_and(|owner| self.graph.entity(owner).template_head.is_some())
+                .is_some_and(|owner| self.graph.entity(owner).context().template_head.is_some())
         })
     }
 
@@ -208,7 +208,12 @@ impl Analyzer<'_> {
             if self.specializing()
                 && component.arguments.is_some()
                 && binding.kind == BindingKind::Type
-                && self.graph.entity(binding.entity).template_head.is_some()
+                && self
+                    .graph
+                    .entity(binding.entity)
+                    .context()
+                    .template_head
+                    .is_some()
                 && let Some(specialization) = self.class_template_id(found, component, scope)?
             {
                 let entity = self.graph.binding(specialization).entity;
@@ -218,7 +223,7 @@ impl Analyzer<'_> {
                     .instance(entity)
                     .is_some_and(|instance| !instance.dependent)
                     && self.complete_class(entity)?
-                    && let Some(next) = self.graph.entity(entity).scope
+                    && let Some(next) = self.graph.entity(entity).context().scope
                 {
                     // Under template<>, concrete qualifiers name instances;
                     // later dependent qualifiers belong to their own primaries.
@@ -228,7 +233,12 @@ impl Analyzer<'_> {
             }
             if component.arguments.is_some()
                 && binding.kind == BindingKind::Type
-                && self.graph.entity(binding.entity).template_head.is_some()
+                && self
+                    .graph
+                    .entity(binding.entity)
+                    .context()
+                    .template_head
+                    .is_some()
             {
                 if let Some(remaining) = &mut heads {
                     if *remaining == 0 {
@@ -254,7 +264,7 @@ impl Analyzer<'_> {
             } else {
                 binding.entity
             };
-            let Some(next) = self.graph.entity(entity).scope else {
+            let Some(next) = self.graph.entity(entity).context().scope else {
                 return Ok((owner, None));
             };
             prefix = Some(next);
@@ -311,7 +321,7 @@ impl Analyzer<'_> {
             if node.kind == ScopeKind::Class
                 && node
                     .owner
-                    .is_some_and(|owner| self.graph.entity(owner).template_head.is_some())
+                    .is_some_and(|owner| self.graph.entity(owner).context().template_head.is_some())
             {
                 count += 1;
             }
@@ -416,6 +426,7 @@ impl Analyzer<'_> {
                 if self
                     .graph
                     .entity(binding.entity)
+                    .context()
                     .template_parameter
                     .is_none()
                     || self.graph.own(bridge, name, Filter::Ordinary).is_some()
@@ -556,7 +567,12 @@ impl Analyzer<'_> {
             {
                 continue;
             }
-            let Some(info) = self.graph.entity(binding.entity).template_parameter else {
+            let Some(info) = self
+                .graph
+                .entity(binding.entity)
+                .context()
+                .template_parameter
+            else {
                 continue;
             };
             // A pack occupies one canonical argument slot just like a fixed
@@ -673,8 +689,18 @@ impl Analyzer<'_> {
             if source.kind == BindingKind::Function
                 && target.kind == BindingKind::Function
                 && source.entity != target.entity
-                && self.graph.entity(source.entity).template_head.is_some()
-                && self.graph.entity(target.entity).template_head.is_some()
+                && self
+                    .graph
+                    .entity(source.entity)
+                    .context()
+                    .template_head
+                    .is_some()
+                && self
+                    .graph
+                    .entity(target.entity)
+                    .context()
+                    .template_head
+                    .is_some()
                 && self
                     .graph
                     .entity(target.entity)
@@ -689,7 +715,7 @@ impl Analyzer<'_> {
             }
             if source.kind == BindingKind::Variable
                 && target.kind == BindingKind::Variable
-                && self.graph.entity(target.entity).data_member
+                && self.graph.entity(target.entity).object().data_member
                     == Some(super::graph::DataMemberKind::Static)
             {
                 self.graph
@@ -706,7 +732,12 @@ impl Analyzer<'_> {
                     .function_templates
                     .primary(target.entity)
                     .is_none()
-                && self.graph.entity(target.entity).template_head.is_none()
+                && self
+                    .graph
+                    .entity(target.entity)
+                    .context()
+                    .template_head
+                    .is_none()
                 && (self
                     .graph
                     .entity(target.entity)
@@ -718,8 +749,10 @@ impl Analyzer<'_> {
                     .function_templates
                     .bodies
                     .link_member(source.entity, target.entity);
-                self.graph.entity_mut(target.entity).definition_emission =
-                    super::function_demands::DefinitionEmission::Demanded;
+                self.graph
+                    .entity_mut(target.entity)
+                    .callable_mut()
+                    .definition_emission = super::function_demands::DefinitionEmission::Demanded;
                 self.graph
                     .instantiation_levels
                     .record(target.entity, self.instantiation_depth);
@@ -756,6 +789,7 @@ mod tests {
         let home = analyzer
             .graph
             .entity(analyzer.graph.binding(class).entity)
+            .context()
             .scope
             .unwrap();
         let function = analyzer
@@ -765,6 +799,7 @@ mod tests {
         let head = analyzer
             .graph
             .entity(analyzer.graph.binding(function).entity)
+            .context()
             .template_head
             .unwrap();
         let header = analyzer.graph.templates.parameter_scope(head);

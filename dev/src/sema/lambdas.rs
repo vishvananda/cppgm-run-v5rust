@@ -172,11 +172,11 @@ impl Analyzer<'_> {
             let call = self.graph.entity(closure.call);
             let home = call.home.ok_or(Error::Invariant("closure invoker home"))?;
             let old = call.ty.ok_or(Error::Invariant("closure invoker type"))?;
-            let body = call.analyzed_body;
-            let scope = call.scope;
-            let parameters = call.function_parameters;
-            let exception_origin = call.exception_origin;
-            let exceptions = match &call.exceptions {
+            let body = call.callable().analyzed_body;
+            let scope = call.context().scope;
+            let parameters = call.callable().function_parameters;
+            let exception_origin = call.callable().exception_origin;
+            let exceptions = match &call.callable().exceptions {
                 super::exceptions::ExceptionState::Value(value) => {
                     super::exceptions::ExceptionState::Value(value.clone())
                 }
@@ -206,9 +206,9 @@ impl Analyzer<'_> {
                 .intern(b"__invoke")
                 .map_err(|_| Error::Limit("closure invoker name"))?;
             let invoker = self.graph.add_entity(Some(ty), Some(name), Keyword::Int)?;
-            let function = self.graph.entity_mut(invoker);
+            let mut function = self.graph.entity_mut(invoker);
             function.home = Some(home);
-            function.function = Some(FunctionProperties {
+            function.callable_mut().function = Some(FunctionProperties {
                 effects: super::graph::FunctionEffect::Default,
                 no_inline: false,
                 returns: super::graph::FunctionReturn::MayReturn,
@@ -220,13 +220,14 @@ impl Analyzer<'_> {
                 allocation: None,
             });
             function.inline = super::specifiers::InlinePreference::Inline;
-            function.definition_emission = super::function_demands::DefinitionEmission::Demanded;
+            function.callable_mut().definition_emission =
+                super::function_demands::DefinitionEmission::Demanded;
             function.defined = true;
-            function.analyzed_body = body;
-            function.scope = scope;
-            function.function_parameters = parameters;
-            function.exceptions = exceptions;
-            function.exception_origin = exception_origin;
+            function.callable_mut().analyzed_body = body;
+            function.context_mut().scope = scope;
+            function.callable_mut().function_parameters = parameters;
+            function.callable_mut().exceptions = exceptions;
+            function.callable_mut().exception_origin = exception_origin;
             self.graph
                 .source_exceptions
                 .inherit_specification(invoker, closure.call);
@@ -264,9 +265,9 @@ impl Analyzer<'_> {
                 Cv::default(),
             )?;
             let conversion = self.graph.add_entity(Some(ty), None, Keyword::Int)?;
-            let function = self.graph.entity_mut(conversion);
+            let mut function = self.graph.entity_mut(conversion);
             function.home = Some(home);
-            function.function = Some(FunctionProperties {
+            function.callable_mut().function = Some(FunctionProperties {
                 effects: super::graph::FunctionEffect::Default,
                 no_inline: false,
                 returns: super::graph::FunctionReturn::MayReturn,
@@ -277,14 +278,14 @@ impl Analyzer<'_> {
                 special: None,
                 allocation: None,
             });
-            function.member_function = Some(super::graph::MemberKey {
+            function.callable_mut().member_function = Some(super::graph::MemberKey {
                 class,
                 kind: super::graph::MemberKind::Conversion,
                 signature: ty,
                 shape: None,
             });
             function.inline = super::specifiers::InlinePreference::Inline;
-            function.exceptions =
+            function.callable_mut().exceptions =
                 super::exceptions::ExceptionState::Value(super::exceptions::ExceptionSet::None);
             let binding = self.graph.add_binding(
                 home,
@@ -301,6 +302,7 @@ impl Analyzer<'_> {
                 .record_special_value(home, SpecialName::Conversion, binding)?;
             self.graph
                 .entity_mut(class)
+                .class_mut()
                 .declared_conversions
                 .push(binding);
             self.graph
@@ -349,10 +351,10 @@ impl Analyzer<'_> {
         let ordinal = self.graph.local_types;
         let class_scope = self.graph.add_scope(ScopeKind::Class, home, None, None)?;
         self.graph.scope_mut(class_scope).owner = Some(class);
-        self.graph.entity_mut(class).scope = Some(class_scope);
+        self.graph.entity_mut(class).context_mut().scope = Some(class_scope);
         self.graph.entity_mut(class).complete = true;
         self.graph.entity_mut(class).defined = true;
-        self.graph.entity_mut(class).aggregation =
+        self.graph.entity_mut(class).class_mut().aggregation =
             super::aggregate_initialization::Aggregation::Ineligible;
         let parameters = lambda.parameters.unwrap_or(ast::ParameterClause {
             location,
@@ -455,13 +457,15 @@ impl Analyzer<'_> {
                 }) = lambda.exception
             {
                 let nonthrowing = self.closure_noexcept_value(operand, scope)?;
-                let call = self.graph.entity_mut(call);
-                call.exception_origin = super::exceptions::SpecificationOrigin::Written;
-                call.exceptions = super::exceptions::ExceptionState::Value(if nonthrowing {
-                    super::exceptions::ExceptionSet::None
-                } else {
-                    super::exceptions::ExceptionSet::All
-                });
+                let mut call = self.graph.entity_mut(call);
+                call.callable_mut().exception_origin =
+                    super::exceptions::SpecificationOrigin::Written;
+                call.callable_mut().exceptions =
+                    super::exceptions::ExceptionState::Value(if nonthrowing {
+                        super::exceptions::ExceptionSet::None
+                    } else {
+                        super::exceptions::ExceptionSet::All
+                    });
             } else {
                 self.record_function_exceptions(
                     call,
@@ -566,7 +570,7 @@ impl Analyzer<'_> {
         };
         match self.initializing {
             Some(variable)
-                if self.graph.entity(variable).data_member
+                if self.graph.entity(variable).object().data_member
                     == Some(super::graph::DataMemberKind::Instance) =>
             {
                 ClosureContext::MemberSpecification(class)
@@ -593,7 +597,7 @@ impl Analyzer<'_> {
         }
         self.initializing
             .filter(|&variable| {
-                self.graph.entity(variable).data_member
+                self.graph.entity(variable).object().data_member
                     == Some(super::graph::DataMemberKind::Instance)
                     || self.graph.variable_instances.instance(variable)
             })
@@ -719,8 +723,8 @@ impl Analyzer<'_> {
             array: false,
         };
         let call = self.graph.add_entity(Some(ty), None, Keyword::Int)?;
-        let function = self.graph.entity_mut(call);
-        function.function = Some(FunctionProperties {
+        let mut function = self.graph.entity_mut(call);
+        function.callable_mut().function = Some(FunctionProperties {
             effects: super::graph::FunctionEffect::Default,
             no_inline: false,
             returns: super::graph::FunctionReturn::MayReturn,
@@ -732,9 +736,10 @@ impl Analyzer<'_> {
             allocation: None,
         });
         function.inline = super::specifiers::InlinePreference::Inline;
-        function.definition_emission = super::function_demands::DefinitionEmission::Demanded;
+        function.callable_mut().definition_emission =
+            super::function_demands::DefinitionEmission::Demanded;
         function.defined = true;
-        function.function_parameters = Some(parameters);
+        function.callable_mut().function_parameters = Some(parameters);
         for index in 0..self.tree.attributes.get(lambda.attributes).len() {
             let kind = self.tree.attributes.get(lambda.attributes)[index].kind;
             match kind {
@@ -811,14 +816,14 @@ mod tests {
         let (&class, closure) = graph.closures.records.iter().next().unwrap();
         assert!(closure.template.is_some());
         assert!(!closure.convertible);
-        assert!(graph.entity(closure.call).template_head.is_some());
+        assert!(graph.entity(closure.call).context().template_head.is_some());
         let captures = graph.lower_closure_captures(class);
         assert_eq!(captures.len(), 2);
         assert_ne!(captures[0].entity, captures[1].entity);
         let mut bodies = Vec::new();
         for &entity in graph.function_templates.arguments.keys() {
             if graph.lower_call_closure(entity) == Some(class) {
-                bodies.push(graph.entity(entity).analyzed_body.unwrap());
+                bodies.push(graph.entity(entity).callable().analyzed_body.unwrap());
             }
         }
         assert_eq!(bodies.len(), 2);
@@ -959,13 +964,20 @@ mod tests {
         assert_ne!(closures[0].0, closures[1].0);
         assert_ne!(closures[0].1.enclosing, closures[1].1.enclosing);
         assert_ne!(
-            graph.entity(closures[0].1.call).analyzed_body,
-            graph.entity(closures[1].1.call).analyzed_body
+            graph.entity(closures[0].1.call).callable().analyzed_body,
+            graph.entity(closures[1].1.call).callable().analyzed_body
         );
         for (_, closure) in closures {
             assert_eq!(closure.course_number, 0);
             assert!(closure.invoker.is_none());
-            assert_eq!(graph.entity(closure.call).parameter_entities.len(), 1);
+            assert_eq!(
+                graph
+                    .entity(closure.call)
+                    .callable()
+                    .parameter_entities
+                    .len(),
+                1
+            );
         }
     }
 
@@ -988,15 +1000,22 @@ mod tests {
         let invoker = closure.invoker.unwrap();
         assert_eq!(graph.closures.invocations.len(), 1);
         assert_eq!(
-            graph.entity(invoker).analyzed_body,
-            graph.entity(closure.call).analyzed_body
+            graph.entity(invoker).callable().analyzed_body,
+            graph.entity(closure.call).callable().analyzed_body
         );
         assert_eq!(
-            graph.entity(invoker).scope,
-            graph.entity(closure.call).scope
+            graph.entity(invoker).context().scope,
+            graph.entity(closure.call).context().scope
         );
-        assert!(graph.entity(invoker).function.unwrap().is_static);
-        assert!(!graph.entity(closure.call).function.unwrap().is_static);
+        assert!(graph.entity(invoker).callable().function.unwrap().is_static);
+        assert!(
+            !graph
+                .entity(closure.call)
+                .callable()
+                .function
+                .unwrap()
+                .is_static
+        );
     }
 
     #[test]
@@ -1039,11 +1058,16 @@ mod tests {
         let call = graph.entity(closure.call);
         let invoker = closure.invoker.unwrap();
         let function = graph.entity(invoker);
-        assert_eq!(function.analyzed_body, call.analyzed_body);
-        assert_eq!(function.scope, call.scope);
-        assert!(matches!((&function.exceptions, &call.exceptions),
+        assert_eq!(
+            function.callable().analyzed_body,
+            call.callable().analyzed_body
+        );
+        assert_eq!(function.context().scope, call.context().scope);
+        assert!(
+            matches!((&function.callable().exceptions, &call.callable().exceptions),
             (super::super::exceptions::ExceptionState::Value(first),
-             super::super::exceptions::ExceptionState::Value(second)) if first == second));
+             super::super::exceptions::ExceptionState::Value(second)) if first == second)
+        );
         let TypeKind::Function {
             result,
             parameters: ref invocation_parameters,

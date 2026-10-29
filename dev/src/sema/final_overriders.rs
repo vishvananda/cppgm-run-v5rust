@@ -113,12 +113,12 @@ impl Subobjects {
         let mut work = vec![(root, 0)];
         while let Some((parent, next)) = work.last_mut() {
             let cls = result.nodes[parent.index()].class;
-            let Some(edge) = graph.entity(cls).bases.get(*next) else {
+            let Some(edge) = graph.entity(cls).class().bases.get(*next) else {
                 work.pop();
                 continue;
             };
             *next += 1;
-            if !graph.entity(edge.class).polymorphism.is_dynamic() {
+            if !graph.entity(edge.class).class().polymorphism.is_dynamic() {
                 continue;
             }
             let known = edge
@@ -270,19 +270,23 @@ impl Graph {
     /// A class is grouped only when it has secondary dynamic subobjects or a
     /// virtual base. Ordinary primary chains keep the compact PA13 recipe.
     pub(super) fn needs_final_overriders(&self, class: EntityId) -> bool {
-        let bases = &self.entity(class).bases;
+        let bases = &self.entity(class).class().bases;
         bases
             .iter()
             .any(|base| base.is_virtual || self.virtuals.final_overriders.contains(base.class))
             || bases
                 .iter()
-                .filter(|base| self.entity(base.class).polymorphism.is_dynamic())
+                .filter(|base| self.entity(base.class).class().polymorphism.is_dynamic())
                 .count()
                 > 1
     }
 
     pub(super) fn virtual_signature(&self, function: EntityId) -> Result<VirtualSignature, Error> {
-        let member = self.entity(function).member_function.map(|key| key.kind);
+        let member = self
+            .entity(function)
+            .callable()
+            .member_function
+            .map(|key| key.kind);
         if member == Some(MemberKind::Destructor) {
             return Ok(VirtualSignature::Destructor);
         }
@@ -300,6 +304,7 @@ impl Graph {
         }
         let scope = self
             .entity(class)
+            .context()
             .scope
             .ok_or(Error::Invariant("virtual class scope"))?;
         let first = declarations.ordered.len();
@@ -329,9 +334,10 @@ impl Graph {
         // declarations can replace a final overrider, uniformly for a signature.
         let mut bases = self
             .entity(class)
+            .class()
             .bases
             .iter()
-            .filter(|base| self.entity(base.class).polymorphism.is_dynamic());
+            .filter(|base| self.entity(base.class).class().polymorphism.is_dynamic());
         let Some(base) = bases.next().map(|base| base.class) else {
             return Ok(false);
         };
@@ -445,12 +451,12 @@ mod tests {
         // may share. The semantic witness still demands no body or emission.
         if graph.has_virtual_primary_below(class) {
             assert!(matches!(
-                graph.entity(class).layout,
+                graph.entity(class).class().layout,
                 LayoutState::Value { .. }
             ));
         } else {
             assert!(matches!(
-                graph.entity(class).layout,
+                graph.entity(class).class().layout,
                 LayoutState::NotStarted
             ));
         }

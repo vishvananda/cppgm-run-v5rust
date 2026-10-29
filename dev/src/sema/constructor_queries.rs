@@ -37,6 +37,7 @@ impl Analyzer<'_> {
         let id = self
             .graph
             .entity(slot.function)
+            .initialization()
             .constructor
             .ok_or(Error::Invariant("default query without function facts"))?;
         Ok(Some(DefaultProperties {

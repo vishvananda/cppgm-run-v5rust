@@ -239,11 +239,11 @@ impl Analyzer<'_> {
             ));
         }
         let entity = self.graph.add_entity(Some(ty), Some(name), Keyword::Auto)?;
-        let properties = self.graph.entity(alias.object).variable;
-        let variable = self.graph.entity_mut(entity);
+        let properties = self.graph.entity(alias.object).object().variable;
+        let mut variable = self.graph.entity_mut(entity);
         variable.defined = true;
         variable.home = Some(home);
-        variable.variable = properties;
+        variable.object_mut().variable = properties;
         let binding = self.graph.add_binding(
             scope,
             Some(home),
@@ -304,10 +304,17 @@ impl Analyzer<'_> {
             if !seen.insert(current) {
                 continue;
             }
-            if self.graph.entity(current).members.iter().any(|&member| {
-                let member = self.graph.entity(member);
-                member.name.is_some() || member.bit_field.is_none()
-            }) {
+            if self
+                .graph
+                .entity(current)
+                .class()
+                .members
+                .iter()
+                .any(|&member| {
+                    let member = self.graph.entity(member);
+                    member.name.is_some() || member.object().bit_field.is_none()
+                })
+            {
                 if holder.is_some_and(|holder| holder != current) {
                     return Err(Error::at(
                         location,
@@ -319,6 +326,7 @@ impl Analyzer<'_> {
             pending.extend(
                 self.graph
                     .entity(current)
+                    .class()
                     .bases
                     .iter()
                     .map(|base| base.class),
@@ -337,11 +345,11 @@ impl Analyzer<'_> {
             Some(self.checked_base_path(class, holder, scope, location, true, false)?)
         };
         let mut count = 0;
-        for &member in &self.graph.entity(holder).members {
+        for &member in &self.graph.entity(holder).class().members {
             let member = self.graph.entity(member);
             if member.name.is_some() {
                 count += 1;
-            } else if member.bit_field.is_none() {
+            } else if member.object().bit_field.is_none() {
                 return Err(Error::at(
                     location,
                     "a structured binding of a class with an anonymous union member (11.5p4)",
@@ -355,8 +363,8 @@ impl Analyzer<'_> {
             ));
         }
         let mut index = 0;
-        for ordinal in 0..self.graph.entity(holder).members.len() {
-            let member = self.graph.entity(holder).members[ordinal];
+        for ordinal in 0..self.graph.entity(holder).class().members.len() {
+            let member = self.graph.entity(holder).class().members[ordinal];
             let variable = self.graph.entity(member);
             let Some(name) = variable.name else {
                 continue;
@@ -364,6 +372,7 @@ impl Analyzer<'_> {
             let home = self
                 .graph
                 .entity(holder)
+                .context()
                 .scope
                 .ok_or(Error::Invariant("member holder without scope"))?;
             if let Some(binding) = self.graph.own(home, name, Filter::Ordinary) {

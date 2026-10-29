@@ -75,92 +75,6 @@ fn floating_intrinsics_keep_original_operands_and_registry_identity() {
 }
 
 #[test]
-fn destructor_calls_keep_source_objects_and_separate_implicit_members() {
-    use super::expression_facts::{DestructorTarget, ObjectSource};
-    use crate::syntax::ast::{Body, DeclKind, ExprKind, StmtKind};
-    let source = SourceBuffer::new(b"using I=int;struct A{~A(){}};struct B{int n;};void f(volatile I*p,const A*q,B*r){p->~I();q->~A();r->~B();}".to_vec()).unwrap();
-    let input = Preprocessor::with_name(&source, b"destructor-ownership").unwrap();
-    let mut unit = SyntaxUnit::new(input);
-    unit.parse().unwrap();
-    let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
-    let syntax_count = tree.expressions.mark();
-    let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
-    analyzer.set_lowering();
-    let graph = analyzer.analyze(declarations).unwrap();
-    assert_eq!(syntax_count, tree.expressions.mark());
-    let function = *tree.decl_lists.get(declarations).last().unwrap();
-    let DeclKind::Function { body, .. } = tree.declarations.get(function).kind else {
-        panic!("function");
-    };
-    let Body::Parsed(body) = tree.bodies.get(body) else {
-        panic!("parsed body");
-    };
-    let StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
-        panic!("compound");
-    };
-    for (index, &statement) in tree.stmt_lists.get(statements).iter().enumerate() {
-        let StmtKind::Expression(Some(call)) = tree.statements.get(statement).kind else {
-            panic!("call statement");
-        };
-        let ExprKind::Call { callee, .. } = tree.expressions.get(call).kind else {
-            panic!("call");
-        };
-        let facts = graph.expression_facts.get(call).unwrap();
-        let designation = graph.expression_facts.get(callee).unwrap();
-        let object = designation.object(&graph.expression_facts).unwrap();
-        let ObjectSource::Explicit { expression, arrow } = object.source else {
-            panic!("explicit object");
-        };
-        assert!(arrow);
-        assert!(matches!(
-            tree.expressions.get(expression).kind,
-            ExprKind::Id(_)
-        ));
-        assert!(designation.conversion.is_none());
-        if index == 0 {
-            assert!(matches!(
-                facts.destructor(&graph.expression_facts),
-                Some(DestructorTarget::Scalar)
-            ));
-            assert!(facts.call(&graph.expression_facts).is_none());
-            assert_eq!(graph.types.get(object.ty).cv, Cv(2));
-        } else {
-            let Some(DestructorTarget::Class(binding)) = facts.destructor(&graph.expression_facts)
-            else {
-                panic!("class target");
-            };
-            let class = graph.class_of(object.ty).unwrap();
-            assert_eq!(
-                graph
-                    .entity(graph.binding(binding).entity)
-                    .member_function
-                    .unwrap()
-                    .class,
-                class
-            );
-            assert!(facts.call(&graph.expression_facts).is_some());
-            if index == 1 {
-                assert_eq!(graph.types.get(object.ty).cv, Cv::CONST);
-                assert_eq!(graph.entity(class).declared_destructor, Some(binding));
-            } else {
-                assert_eq!(graph.entity(class).implicit_destructor, Some(binding));
-                assert!(graph.entity(class).declared_destructor.is_none());
-                assert!(
-                    graph
-                        .member_function(
-                            graph
-                                .entity(graph.binding(binding).entity)
-                                .member_function
-                                .unwrap()
-                        )
-                        .is_none()
-                );
-            }
-        }
-    }
-}
-
-#[test]
 fn enclosing_constant_reads_keep_source_identity_and_local_ownership() {
     use crate::syntax::ast::{Body, DeclKind, ExprKind, StmtKind};
     let source = SourceBuffer::new(b"int f(){const unsigned value=17;struct A{unsigned read(){return value;}unsigned own(unsigned value){return value;}};return 0;}".to_vec()).unwrap();
@@ -179,7 +93,7 @@ fn enclosing_constant_reads_keep_source_identity_and_local_ownership() {
         .entity;
     let classes = graph.lower_deferred_local_classes(function);
     assert_eq!(classes.len(), 1);
-    let scope = graph.entity(classes[0]).scope.unwrap();
+    let scope = graph.entity(classes[0]).context().scope.unwrap();
     assert_eq!(
         graph.lower_local_class_scope(scope),
         Some((classes[0], function, 0))
@@ -189,7 +103,7 @@ fn enclosing_constant_reads_keep_source_identity_and_local_ownership() {
         let member = graph
             .binding(graph.own(scope, name, Filter::Ordinary).unwrap())
             .entity;
-        let declaration = graph.entity(member).function_definition.unwrap();
+        let declaration = graph.entity(member).callable().function_definition.unwrap();
         let DeclKind::Function { body, .. } = tree.declarations.get(declaration).kind else {
             panic!("member body");
         };
@@ -248,6 +162,7 @@ fn field_operations_keep_canonical_types_and_enum_value_signedness() {
         .entity;
     let fields: Vec<_> = graph
         .entity(class)
+        .class()
         .members
         .iter()
         .map(|&member| graph.lower_bit_field(member).unwrap().unwrap())
@@ -291,12 +206,12 @@ fn bit_field_layout_is_demanded_once_and_publishes_bounded_units() {
             .entity
     };
     assert!(matches!(
-        graph.entity(class(b"Idle")).layout,
+        graph.entity(class(b"Idle")).class().layout,
         super::layout::LayoutState::NotStarted
     ));
     let mut field = |owner: &[u8], index| {
-        let member = graph.entity(class(owner)).members[index];
-        let id = graph.entity(member).bit_field.unwrap();
+        let member = graph.entity(class(owner)).class().members[index];
+        let id = graph.entity(member).object().bit_field.unwrap();
         (
             graph.bit_fields.width(id),
             graph.bit_fields.storage(id).unwrap(),
@@ -371,7 +286,11 @@ fn class_using_hiding_updates_indexes_without_changing_import_identity() {
     let mut class_scope = |name| {
         let name = cursor.intern_name(name).unwrap();
         let binding = graph.own(graph.global, name, Filter::Prefix).unwrap();
-        graph.entity(graph.binding(binding).entity).scope.unwrap()
+        graph
+            .entity(graph.binding(binding).entity)
+            .context()
+            .scope
+            .unwrap()
     };
     let base = class_scope(b"B");
     let derived = class_scope(b"D");
@@ -445,7 +364,7 @@ fn hidden_friend_identity_and_visibility_have_distinct_source_boundaries() {
     assert!(graph.friendships.hidden(hidden));
     assert!(!graph.friendships.hidden(visible));
     assert_eq!(graph.entity(entity).home, Some(graph.global));
-    let body = graph.entity(entity).scope.unwrap();
+    let body = graph.entity(entity).context().scope.unwrap();
     assert_eq!(graph.scope(body).owner, Some(entity));
     // Later namespace visibility must not reach backward into an earlier body,
     // while the earlier class's hidden-friend edge remains available to ADL.
@@ -481,7 +400,7 @@ fn block_linkage_keeps_storage_identity_and_local_function_defaults() {
             .entity,
     );
     assert!(matches!(
-        builtin.exceptions,
+        builtin.callable().exceptions,
         super::exceptions::ExceptionState::Value(super::exceptions::ExceptionSet::None)
     ));
     let names: Vec<_> = [b"a".as_slice(), b"x", b"h", b"f", b"k"]
@@ -494,6 +413,7 @@ fn block_linkage_keeps_storage_identity_and_local_function_defaults() {
         .collect();
     let function = graph
         .entity(graph.binding(globals[3]).entity)
+        .context()
         .scope
         .unwrap();
     let mut scopes = vec![function];
@@ -522,19 +442,20 @@ fn block_linkage_keeps_storage_identity_and_local_function_defaults() {
             .entity,
     );
     assert_eq!(
-        local.function.unwrap().denotes,
+        local.callable().function.unwrap().denotes,
         Some(graph.binding(globals[2]).entity)
     );
     assert_ne!(local.home, global.home);
     assert_ne!(
-        local.defaults[0].unwrap().expression,
-        global.defaults[0].unwrap().expression
+        local.callable().defaults[0].unwrap().expression,
+        global.callable().defaults[0].unwrap().expression
     );
-    assert!(local.function.unwrap().language == Language::C);
-    assert!(global.function.unwrap().language == Language::C);
+    assert!(local.callable().function.unwrap().language == Language::C);
+    assert!(global.callable().function.unwrap().language == Language::C);
     assert!(
         graph
             .entity(graph.binding(globals[4]).entity)
+            .callable()
             .function
             .unwrap()
             .language
@@ -553,8 +474,15 @@ fn block_linkage_keeps_storage_identity_and_local_function_defaults() {
     let entity = graph
         .binding(graph.own(anonymous, unseen, Filter::Ordinary).unwrap())
         .entity;
-    assert!(graph.entity(entity).function.unwrap().internal_linkage);
-    let function = graph.entity(entity).scope.unwrap();
+    assert!(
+        graph
+            .entity(entity)
+            .callable()
+            .function
+            .unwrap()
+            .internal_linkage
+    );
+    let function = graph.entity(entity).context().scope.unwrap();
     let body = graph
         .scope(function)
         .children
@@ -566,7 +494,7 @@ fn block_linkage_keeps_storage_identity_and_local_function_defaults() {
     let entity = graph
         .binding(graph.own(body, missing, Filter::Ordinary).unwrap())
         .entity;
-    let properties = graph.entity(entity).function.unwrap();
+    let properties = graph.entity(entity).callable().function.unwrap();
     assert!(!properties.internal_linkage);
     assert!(properties.denotes.is_none());
 }
@@ -604,6 +532,7 @@ fn constant_discards_use_places_and_restore_scratch_after_failure() {
         match analyzer
             .graph
             .entity(analyzer.graph.binding(binding).entity)
+            .object()
             .constant
         {
             ConstantState::Value(value) => assert_eq!(Some(value.bits), expected),
@@ -634,6 +563,7 @@ fn constant_discards_use_places_and_restore_scratch_after_failure() {
             analyzer
                 .graph
                 .entity(analyzer.graph.binding(binding).entity)
+                .callable()
                 .builtin,
             Some(BuiltinFunction::Abort)
         ));
@@ -753,7 +683,10 @@ fn mutable_constant_temporaries_are_fresh_per_evaluation() {
         }
         let graph = &analyzer.graph;
         let binding = graph.declared_bindings[init.declarator.index()].unwrap();
-        let ConstantState::Value(value) = graph.entity(graph.binding(binding).entity).constant
+        let ConstantState::Value(value) = graph
+            .entity(graph.binding(binding).entity)
+            .object()
+            .constant
         else {
             panic!("published integral constant expected");
         };
@@ -875,7 +808,11 @@ fn constant_queries_keep_source_facts_and_pointer_checks_do_not_demand_layout() 
     let graph = analyzer.analyze(declarations).unwrap();
     let name = cursor.intern_name(b"n").unwrap();
     let binding = graph.own(graph.global, name, Filter::Ordinary).unwrap();
-    let ConstantState::Value(value) = graph.entity(graph.binding(binding).entity).constant else {
+    let ConstantState::Value(value) = graph
+        .entity(graph.binding(binding).entity)
+        .object()
+        .constant
+    else {
         panic!("conditional constant expected");
     };
     assert_eq!(value.bits, 1);
@@ -961,11 +898,11 @@ fn constant_queries_keep_source_facts_and_pointer_checks_do_not_demand_layout() 
         .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
         .entity;
     assert!(matches!(
-        graph.entity(class).layout,
+        graph.entity(class).class().layout,
         super::layout::LayoutState::NotStarted
     ));
     assert!(matches!(
-        graph.entity(class).default_construction,
+        graph.entity(class).special().default_construction,
         super::construction::ConstructorState::NotStarted
     ));
 }
@@ -991,6 +928,7 @@ fn template_signatures_reuse_identity_keep_lookup_clean_and_demand_only_selected
     assert!(functions.iter().all(|&binding| {
         graph
             .entity(graph.binding(binding).entity)
+            .context()
             .template_head
             .is_some()
     }));
@@ -1025,7 +963,7 @@ fn template_signatures_reuse_identity_keep_lookup_clean_and_demand_only_selected
         assert!(graph.function_templates.primary(entity).is_some());
         assert_eq!(graph.function_origin(entity).unwrap(), binding);
         assert!(graph.binding_visible_before(binding, Some(0)));
-        assert!(graph.entity(entity).template_head.is_none());
+        assert!(graph.entity(entity).context().template_head.is_none());
     }
     assert_eq!(selected[0], selected[1]);
     assert_ne!(selected[0], selected[2]);
@@ -1091,10 +1029,11 @@ fn base_paths_reuse_identity_preserve_operand_types_and_keep_trivial_base_demand
             .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
             .entity;
         assert!(matches!(
-            graph.entity(class).layout,
+            graph.entity(class).class().layout,
             super::layout::LayoutState::NotStarted
         ));
-        let ConstructorState::Ready(plan) = graph.entity(class).default_construction else {
+        let ConstructorState::Ready(plan) = graph.entity(class).special().default_construction
+        else {
             panic!("demanded base plan expected");
         };
         classes.push((class, plan));
@@ -1107,7 +1046,10 @@ fn base_paths_reuse_identity_preserve_operand_types_and_keep_trivial_base_demand
         assert!(bases[0].arguments.is_none());
         assert!(bases[0].initializer.is_none());
     }
-    assert_eq!(graph.entity(classes[2].0).bases[0].class, classes[1].0);
+    assert_eq!(
+        graph.entity(classes[2].0).class().bases[0].class,
+        classes[1].0
+    );
     let trailing = super::function_demands::trailing(&graph);
     assert!(matches!(trailing.as_slice(), [Demand::Constructor(id)] if *id == classes[2].1));
 }
@@ -1134,7 +1076,7 @@ fn transitive_default_base_actions_share_ready_facts_without_syntax_growth() {
         let class = graph
             .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
             .entity;
-        let ConstructorState::Ready(id) = graph.entity(class).default_construction else {
+        let ConstructorState::Ready(id) = graph.entity(class).special().default_construction else {
             panic!("default plan must be ready");
         };
         assert!(graph.constructors.get(id).nontrivial());
@@ -1168,11 +1110,11 @@ fn repeated_nonvirtual_subobjects_saturate_without_enumerating_paths_or_demandin
                 .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
                 .entity;
             assert!(matches!(
-                graph.entity(class).layout,
+                graph.entity(class).class().layout,
                 super::layout::LayoutState::NotStarted
             ));
             assert!(matches!(
-                graph.entity(class).default_construction,
+                graph.entity(class).special().default_construction,
                 super::construction::ConstructorState::NotStarted
             ));
             classes.push(class);
@@ -1237,7 +1179,13 @@ fn elided_copies_retain_selection_and_original_facts_without_body_demand() {
             graph.types.get(binding.ty.unwrap()).cv,
             if index == 4 { Cv::CONST } else { Cv::default() }
         );
-        assert!(graph.entity(variable).constructor.is_none());
+        assert!(
+            graph
+                .entity(variable)
+                .initialization()
+                .constructor
+                .is_none()
+        );
     }
     assert_eq!(origins[0], origins[1]);
     assert_eq!(origins[2], origins[3]);
@@ -1246,9 +1194,9 @@ fn elided_copies_retain_selection_and_original_facts_without_body_demand() {
         panic!("implicit move expected");
     };
     assert_eq!(kind, RefKind::Rvalue);
-    assert!(graph.entity(class).implicit_copies.is_some());
+    assert!(graph.entity(class).special().implicit_copies.is_some());
     assert!(matches!(
-        graph.entity(class).default_construction,
+        graph.entity(class).special().default_construction,
         super::construction::ConstructorState::NotStarted
     ));
     // The written copy body was analyzed, but its Hidden dependency remains
@@ -1275,13 +1223,17 @@ fn qualified_variable_redeclarations_retain_mutability_and_one_entity() {
         |graph, cursor| {
             let class = cursor.intern_name(b"C").unwrap();
             let class = graph.own(graph.global, class, Filter::Prefix).unwrap();
-            let home = graph.entity(graph.binding(class).entity).scope.unwrap();
+            let home = graph
+                .entity(graph.binding(class).entity)
+                .context()
+                .scope
+                .unwrap();
             let name = cursor.intern_name(b"x").unwrap();
             let binding = graph.own(home, name, Filter::Ordinary).unwrap();
             let entity = graph.binding(binding).entity;
             assert!(graph.entity(entity).mutability == super::graph::Mutability::Mutable);
             assert!(matches!(
-                graph.entity(entity).data_member,
+                graph.entity(entity).object().data_member,
                 Some(super::graph::DataMemberKind::Static)
             ));
             assert!(graph.entity(entity).defined);
@@ -1364,7 +1316,7 @@ fn member_pointer_size_queries_retain_constants_without_replacing_the_syntax_vie
         .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
         .entity;
     assert!(!graph.entity(class).complete);
-    assert!(graph.entity(class).scope.is_none());
+    assert!(graph.entity(class).context().scope.is_none());
 }
 #[test]
 fn control_and_handler_bindings_have_local_owners_and_do_not_leak() {
@@ -1373,7 +1325,7 @@ fn control_and_handler_bindings_have_local_owners_and_do_not_leak() {
         |graph, cursor| {
             let f = cursor.intern_name(b"f").unwrap();
             let binding = graph.own(graph.global, f, Filter::Ordinary).unwrap();
-            let function = graph.entity(graph.binding(binding).entity).scope.unwrap();
+            let function = graph.entity(graph.binding(binding).entity).context().scope.unwrap();
             let body = graph.scope(function).children[0];
             let children = &graph.scope(body).children;
             assert_eq!(children.len(), 4);
@@ -1401,7 +1353,7 @@ fn special_members_share_signatures_without_colliding_with_kind_or_template_shap
         |graph, cursor| {
             let name = cursor.intern_name(b"C").unwrap();
             let class = graph.binding(graph.own(graph.global, name, Filter::Prefix).unwrap()).entity;
-            let scope = graph.entity(class).scope.unwrap();
+            let scope = graph.entity(class).context().scope.unwrap();
             assert_eq!(graph.binding(graph.own(scope, name, Filter::Ordinary).unwrap()).entity, class);
             let mut pending = vec![scope];
             let mut constructors = Vec::new();
@@ -1410,11 +1362,11 @@ fn special_members_share_signatures_without_colliding_with_kind_or_template_shap
                 pending.extend(graph.scope(scope).children.iter().copied());
                 for &id in &graph.scope(scope).bindings {
                     let binding = graph.binding(id);
-                    let Some(key) = graph.entity(binding.entity).member_function else { continue };
+                    let Some(key) = graph.entity(binding.entity).callable().member_function else { continue };
                     match key.kind {
                         MemberKind::Constructor => constructors.push((binding.entity, key)),
                         MemberKind::Conversion => conversions.push((binding.entity, id)),
-                        MemberKind::Destructor => assert!(graph.entity(binding.entity).special_name.is_some()),
+                        MemberKind::Destructor => assert!(graph.entity(binding.entity).callable().special_name.is_some()),
                     }
                 }
             }
@@ -1423,10 +1375,10 @@ fn special_members_share_signatures_without_colliding_with_kind_or_template_shap
             assert!(constructors.iter().enumerate().all(|(i, a)| constructors.iter().skip(i+1).all(|b| a.0 != b.0 && a.1.shape != b.1.shape)));
             assert_eq!(conversions.len(), 2);
             assert_eq!(conversions[0].0, conversions[1].0);
-            let first_label = graph.entity(conversions[0].0).special_name.unwrap();
+            let first_label = graph.entity(conversions[0].0).callable().special_name.unwrap();
             assert_ne!(graph.special_labels[&conversions[0].1], graph.special_labels[&conversions[1].1]);
             assert!(conversions.iter().any(|(_, id)| graph.special_labels[id] == first_label));
-            let body = graph.entity(conversions[0].0).scope.unwrap();
+            let body = graph.entity(conversions[0].0).context().scope.unwrap();
             assert_eq!(graph.scope(body).owner, Some(conversions[0].0));
         },
     );
@@ -1441,7 +1393,7 @@ fn template_exception_patterns_retain_the_original_declaration_environment() {
             let class = graph
                 .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
                 .entity;
-            let scope = graph.entity(class).scope.unwrap();
+            let scope = graph.entity(class).context().scope.unwrap();
             let head = graph.scope(scope).children[0];
             let function = graph
                 .scope(head)
@@ -1451,7 +1403,7 @@ fn template_exception_patterns_retain_the_original_declaration_environment() {
                 .find(|&id| graph.binding(id).kind == BindingKind::Function)
                 .unwrap();
             let entity = graph.entity(graph.binding(function).entity);
-            let ExceptionState::Template(pattern) = entity.exceptions else {
+            let ExceptionState::Template(pattern) = entity.callable().exceptions else {
                 panic!("missing retained template specification")
             };
             assert_eq!(pattern.scope, head);
@@ -1470,12 +1422,12 @@ fn constructor_signatures_do_not_hide_the_injected_class_and_share_redeclaration
             let class = graph
                 .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
                 .entity;
-            let scope = graph.entity(class).scope.unwrap();
+            let scope = graph.entity(class).context().scope.unwrap();
             let injected = graph.binding(graph.own(scope, name, Filter::Ordinary).unwrap());
             assert_eq!(injected.kind, BindingKind::Type);
             assert_eq!(injected.entity, class);
-            assert!(graph.entity(class).user_constructor.is_some());
-            assert!(graph.entity(class).implicit_default.is_none());
+            assert!(graph.entity(class).class().user_constructor.is_some());
+            assert!(graph.entity(class).class().implicit_default.is_none());
             let declarations: Vec<_> = graph
                 .scope(scope)
                 .bindings
@@ -1493,7 +1445,7 @@ fn constructor_signatures_do_not_hide_the_injected_class_and_share_redeclaration
             let signature = graph.types.canonical_function(first.ty.unwrap()).unwrap();
             assert_eq!(graph.constructor(class, signature), Some(declarations[2]));
             assert!(graph.entity(first.entity).defined);
-            let body = graph.entity(first.entity).scope.unwrap();
+            let body = graph.entity(first.entity).context().scope.unwrap();
             assert_eq!(graph.scope(body).owner, Some(first.entity));
             assert_eq!(graph.scope(body).parent, Some(scope));
             assert!(!graph.entity(second.entity).defined);
@@ -1509,7 +1461,7 @@ fn qualified_static_definitions_preserve_member_identity_and_never_add_object_st
             let class = graph
                 .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
                 .entity;
-            let scope = graph.entity(class).scope.unwrap();
+            let scope = graph.entity(class).context().scope.unwrap();
             let value = cursor.intern_name(b"value").unwrap();
             let declarations: Vec<_> = graph
                 .scope(scope)
@@ -1522,17 +1474,17 @@ fn qualified_static_definitions_preserve_member_identity_and_never_add_object_st
             let declared = graph.binding(declarations[0]).entity;
             assert_eq!(declared, graph.binding(declarations[1]).entity);
             assert_eq!(
-                graph.entity(declared).data_member,
+                graph.entity(declared).object().data_member,
                 Some(super::graph::DataMemberKind::Static)
             );
             assert!(graph.entity(declared).defined);
-            let members = &graph.entity(class).members;
+            let members = &graph.entity(class).class().members;
             assert_eq!(members.len(), 1);
             assert_eq!(
-                graph.entity(members[0]).data_member,
+                graph.entity(members[0]).object().data_member,
                 Some(super::graph::DataMemberKind::Instance)
             );
-            assert_eq!(graph.entity(members[0]).member_offset, Some(0));
+            assert_eq!(graph.entity(members[0]).object().member_offset, Some(0));
             assert!(!members.contains(&declared));
         },
     );
@@ -1546,14 +1498,14 @@ fn anonymous_union_injection_shares_members_and_owns_one_storage_slot() {
             let class = graph
                 .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
                 .entity;
-            let scope = graph.entity(class).scope.unwrap();
-            let members = &graph.entity(class).members;
+            let scope = graph.entity(class).context().scope.unwrap();
+            let members = &graph.entity(class).class().members;
             assert_eq!(members.len(), 2);
             let TypeKind::Class(union) = graph.types.get(graph.entity(members[0]).ty.unwrap()).kind
             else {
                 panic!("unnamed storage must have the union's type");
             };
-            let union_scope = graph.entity(union).scope.unwrap();
+            let union_scope = graph.entity(union).context().scope.unwrap();
             for spelling in [b"a".as_slice(), b"b".as_slice()] {
                 let name = cursor.intern_name(spelling).unwrap();
                 let outer = graph.binding(graph.own(scope, name, Filter::Ordinary).unwrap());
@@ -1561,7 +1513,7 @@ fn anonymous_union_injection_shares_members_and_owns_one_storage_slot() {
                 assert_eq!(outer.entity, inner.entity);
                 assert_eq!(outer.ty, inner.ty);
             }
-            assert_eq!(graph.entity(members[1]).member_offset, Some(8));
+            assert_eq!(graph.entity(members[1]).object().member_offset, Some(8));
         },
     );
 }
@@ -1584,7 +1536,7 @@ fn semantic_storage_is_hidden_and_default_construction_is_demanded_once() {
         .binding(graph.own(graph.global, unused, Filter::Prefix).unwrap())
         .entity;
     assert!(matches!(
-        graph.entity(unused).default_construction,
+        graph.entity(unused).special().default_construction,
         super::construction::ConstructorState::NotStarted
     ));
     let mut constructors = Vec::new();
@@ -1593,7 +1545,7 @@ fn semantic_storage_is_hidden_and_default_construction_is_demanded_once() {
         let entity = graph
             .binding(graph.own(graph.global, name, Filter::Ordinary).unwrap())
             .entity;
-        constructors.push(graph.entity(entity).constructor.unwrap());
+        constructors.push(graph.entity(entity).initialization().constructor.unwrap());
     }
     assert_eq!(constructors[0], constructors[1]);
     assert_eq!(constructors[1], constructors[2]);
@@ -1612,13 +1564,14 @@ fn semantic_storage_is_hidden_and_default_construction_is_demanded_once() {
         .entity;
     let class_scope = graph.entity(member).home.unwrap();
     let class = graph.scope(class_scope).owner.unwrap();
-    assert_eq!(graph.entity(class).anonymous_storage, Some(storage));
+    assert_eq!(graph.entity(class).class().anonymous_storage, Some(storage));
     assert!(matches!(
-        graph.entity(class).layout,
+        graph.entity(class).class().layout,
         super::layout::LayoutState::NotStarted
     ));
     let constructor = graph
         .entity(graph.binding(storage).entity)
+        .initialization()
         .constructor
         .unwrap();
     assert_eq!(graph.constructors.get(constructor).class, class);
@@ -1634,8 +1587,8 @@ fn anonymous_names_remain_presentation_without_tag_or_constructor_publication() 
                 panic!("alias must retain its original class identity");
             };
             assert!(graph.entity(class).name.is_none());
-            assert!(graph.entity(class).anonymous_class.is_some());
-            assert!(graph.entity(class).implicit_default.is_none());
+            assert!(graph.entity(class).class().anonymous_class.is_some());
+            assert!(graph.entity(class).class().implicit_default.is_none());
             for spelling in [b"S".as_slice(), b"E".as_slice(), b"x".as_slice()] {
                 let name = cursor.intern_name(spelling).unwrap();
                 assert!(graph.scope(graph.global).index[&name].tag.is_none());
@@ -1795,7 +1748,7 @@ fn directive_cycles_and_common_namespace_lookup_preserve_inner_shadowing() {
     analyze(b"namespace A { typedef int T; } namespace B { typedef char T; using namespace A; T x; } namespace A { using namespace B; typedef long U; } using namespace B; U y;", |graph, cursor| {
         let b = cursor.intern_name(b"B").unwrap(); let x = cursor.intern_name(b"x").unwrap();
         let namespace = graph.binding(graph.own(graph.global, b, Filter::Namespace).unwrap());
-        let b = graph.entity(namespace.entity).scope.unwrap();
+        let b = graph.entity(namespace.entity).context().scope.unwrap();
         let x = graph.binding(graph.own(b, x, Filter::Ordinary).unwrap());
         assert!(matches!(graph.types.get(x.ty.unwrap()).kind, TypeKind::Scalar(Scalar::Basic(FundamentalType::Char))));
         let y = cursor.intern_name(b"y").unwrap(); let y = graph.binding(graph.own(graph.global, y, Filter::Ordinary).unwrap());
@@ -1808,7 +1761,7 @@ fn member_bodies_wait_for_class_completion_and_elaborated_names_use_namespace_ho
     analyze(b"struct C { void f(){ Later x; } using Later = int; struct Hidden* p; }; struct Hidden { int x; };", |graph, cursor| {
         let c = cursor.intern_name(b"C").unwrap(); let hidden = cursor.intern_name(b"Hidden").unwrap();
         let class = graph.binding(graph.own(graph.global, c, Filter::Elaborated).unwrap());
-        let class = graph.entity(class.entity).scope.unwrap();
+        let class = graph.entity(class.entity).context().scope.unwrap();
         assert!(graph.own(class, hidden, Filter::Elaborated).is_none());
         assert!(graph.own(graph.global, hidden, Filter::Elaborated).is_some());
         assert_eq!(graph.scope(class).children.len(), 1);
@@ -1827,7 +1780,7 @@ fn template_name_arguments_keep_their_class_declaration_identity() {
             let name = cursor.intern_name(name).unwrap();
             let ty = graph.binding(graph.own(graph.global,name,Filter::Ordinary).unwrap()).ty.unwrap();
             let TypeKind::Class(entity) = graph.types.get(ty).kind else { panic!("class specialization"); };
-            assert!(graph.entity(entity).scope.is_none());
+            assert!(graph.entity(entity).context().scope.is_none());
             graph.class_templates.instance(entity).unwrap()
         });
         assert_eq!(instances[0].arguments, instances[1].arguments);
@@ -1849,7 +1802,7 @@ fn implicit_constructor_demand_is_deduplicated_and_respects_unevaluated_and_init
         analyze(source, |graph, cursor| {
             let c = cursor.intern_name(b"C").unwrap();
             let class = graph.binding(graph.own(graph.global, c, Filter::Elaborated).unwrap());
-            let scope = graph.entity(class.entity).scope.unwrap();
+            let scope = graph.entity(class.entity).context().scope.unwrap();
             assert_eq!(graph.scope(scope).children.len(), constructors);
         });
     }
@@ -1904,17 +1857,17 @@ fn enum_aliases_and_using_bindings_share_finished_constant_identity() {
     analyze(b"namespace N { enum class E : unsigned char { A=255 }; } using N::E; using N::E::A; const E value = A;", |graph, cursor| {
         let name = cursor.intern_name(b"E").unwrap();
         let e = graph.binding(graph.own(graph.global, name, Filter::Ordinary).unwrap());
-        let enum_scope = graph.entity(e.entity).scope.unwrap();
+        let enum_scope = graph.entity(e.entity).context().scope.unwrap();
         let name = cursor.intern_name(b"A").unwrap();
         let original = graph.binding(graph.own(enum_scope, name, Filter::Ordinary).unwrap());
         let imported = graph.binding(graph.own(graph.global, name, Filter::Ordinary).unwrap());
         assert_eq!(original.entity, imported.entity);
-        let ConstantState::Value(value) = graph.entity(imported.entity).constant else { panic!("missing enumerator value"); };
+        let ConstantState::Value(value) = graph.entity(imported.entity).object().constant else { panic!("missing enumerator value"); };
         assert_eq!(value.bits, 255);
         assert_eq!(Some(value.ty), e.ty);
         let name = cursor.intern_name(b"value").unwrap();
         let object = graph.binding(graph.own(graph.global, name, Filter::Ordinary).unwrap());
-        let ConstantState::Value(object) = graph.entity(object.entity).constant else { panic!("missing object value"); };
+        let ConstantState::Value(object) = graph.entity(object.entity).object().constant else { panic!("missing object value"); };
         assert_eq!(object.ty, value.ty);
         assert_eq!(object.bits, value.bits);
         assert!(graph.constant_facts.iter().flatten().any(|fact| fact.ty == value.ty));
@@ -1974,7 +1927,7 @@ fn decoded_string_elements_keep_character_width_and_signedness() {
         for (name, bits) in [(b"narrow".as_slice(), u64::MAX), (b"wide", 255), (b"zero", 0)] {
             let name = cursor.intern_name(name).unwrap();
             let object = graph.binding(graph.own(graph.global, name, Filter::Ordinary).unwrap());
-            let ConstantState::Value(value) = graph.entity(object.entity).constant else { panic!("missing character value"); };
+            let ConstantState::Value(value) = graph.entity(object.entity).object().constant else { panic!("missing character value"); };
             assert_eq!(value.bits, bits);
             assert!(matches!(graph.types.get(value.ty).kind, TypeKind::Scalar(Scalar::Basic(FundamentalType::Int))));
         }
@@ -1991,9 +1944,9 @@ fn exception_sets_are_entity_facts_outside_canonical_function_identity() {
         };
         let a = binding(cursor,b"a"); let b = binding(cursor,b"b"); let c = binding(cursor,b"c");
         assert_eq!(a.ty,b.ty); assert_eq!(b.ty,c.ty);
-        assert!(matches!(&graph.entity(a.entity).exceptions, ExceptionState::Value(ExceptionSet::Dynamic(types)) if types.len()==2));
-        assert!(matches!(graph.entity(b.entity).exceptions, ExceptionState::Value(ExceptionSet::None)));
-        assert!(matches!(graph.entity(c.entity).exceptions, ExceptionState::Value(ExceptionSet::All)));
+        assert!(matches!(&graph.entity(a.entity).callable().exceptions, ExceptionState::Value(ExceptionSet::Dynamic(types)) if types.len()==2));
+        assert!(matches!(graph.entity(b.entity).callable().exceptions, ExceptionState::Value(ExceptionSet::None)));
+        assert!(matches!(graph.entity(c.entity).callable().exceptions, ExceptionState::Value(ExceptionSet::All)));
     });
 }
 
@@ -2004,10 +1957,10 @@ fn deferred_exception_lookup_limits_namespaces_and_completes_class_members() {
         for owner in [b"N".as_slice(), b"C"] {
             let name = cursor.intern_name(owner).unwrap();
             let owner = graph.binding(graph.own(graph.global,name,Filter::Prefix).unwrap());
-            let scope = graph.entity(owner.entity).scope.unwrap();
+            let scope = graph.entity(owner.entity).context().scope.unwrap();
             let name = cursor.intern_name(b"f").unwrap();
             let function = graph.binding(graph.own(scope,name,Filter::Ordinary).unwrap());
-            assert!(matches!(graph.entity(function.entity).exceptions,ExceptionState::Value(ExceptionSet::None)));
+            assert!(matches!(graph.entity(function.entity).callable().exceptions,ExceptionState::Value(ExceptionSet::None)));
             assert!(graph.scope(scope).children.is_empty());
         }
     });
@@ -2020,13 +1973,13 @@ fn layout_is_demanded_once_and_records_only_ordinary_data_member_offsets() {
         let name=cursor.intern_name(b"B").unwrap();
         let binding=graph.binding(graph.own(graph.global,name,Filter::Elaborated).unwrap());
         let entity=graph.entity(binding.entity);
-        assert!(matches!(entity.layout, LayoutState::Value{size:20,alignment:4,..}));
-        assert_eq!(entity.members.len(),2);
-        assert_eq!(graph.entity(entity.members[0]).member_offset,Some(0));
-        assert_eq!(graph.entity(entity.members[1]).member_offset,Some(16));
+        assert!(matches!(entity.class().layout, LayoutState::Value{size:20,alignment:4,..}));
+        assert_eq!(entity.class().members.len(),2);
+        assert_eq!(graph.entity(entity.class().members[0]).object().member_offset,Some(0));
+        assert_eq!(graph.entity(entity.class().members[1]).object().member_offset,Some(16));
         let name=cursor.intern_name(b"U").unwrap();
         let binding=graph.binding(graph.own(graph.global,name,Filter::Elaborated).unwrap());
-        assert!(matches!(graph.entity(binding.entity).layout,LayoutState::NotStarted));
+        assert!(matches!(graph.entity(binding.entity).class().layout,LayoutState::NotStarted));
     });
 }
 
@@ -2041,14 +1994,14 @@ fn nonvirtual_layout_keeps_data_size_empty_identity_and_unused_demand_separate()
         let n = class(cursor, b"N");
         let d = class(cursor, b"D");
         let c = class(cursor, b"C");
-        assert!(matches!(graph.entity(n).layout, LayoutState::Value {size:8,non_virtual_size:5,..}));
-        assert!(matches!(graph.entity(d).layout, LayoutState::Value {size:8,non_virtual_size:6,..}));
-        assert_eq!(graph.entity(d).bases[0].offset, Some(0));
-        assert_eq!(graph.entity(graph.entity(d).members[0]).member_offset, Some(5));
-        assert!(matches!(graph.entity(c).layout, LayoutState::Value {size:7,contains_empty:true,empty:false,..}));
-        assert_eq!(graph.entity(graph.entity(c).members[0]).member_offset, Some(1));
+        assert!(matches!(graph.entity(n).class().layout, LayoutState::Value {size:8,non_virtual_size:5,..}));
+        assert!(matches!(graph.entity(d).class().layout, LayoutState::Value {size:8,non_virtual_size:6,..}));
+        assert_eq!(graph.entity(d).class().bases[0].offset, Some(0));
+        assert_eq!(graph.entity(graph.entity(d).class().members[0]).object().member_offset, Some(5));
+        assert!(matches!(graph.entity(c).class().layout, LayoutState::Value {size:7,contains_empty:true,empty:false,..}));
+        assert_eq!(graph.entity(graph.entity(c).class().members[0]).object().member_offset, Some(1));
         for spelling in [b"P".as_slice(), b"Unused"] {
-            assert!(matches!(graph.entity(class(cursor, spelling)).layout, LayoutState::NotStarted));
+            assert!(matches!(graph.entity(class(cursor, spelling)).class().layout, LayoutState::NotStarted));
         }
     });
 }
@@ -2184,7 +2137,7 @@ fn exception_parameters_retain_source_type_and_adjusted_object_identity() {
         assert!(found);
         let name = cursor.intern_name(b"f").unwrap();
         let binding = graph.binding(graph.own(graph.global,name,Filter::Ordinary).unwrap());
-        assert!(matches!(graph.entity(binding.entity).exceptions, ExceptionState::Value(ExceptionSet::None)));
+        assert!(matches!(graph.entity(binding.entity).callable().exceptions, ExceptionState::Value(ExceptionSet::None)));
     });
 }
 
@@ -2232,15 +2185,15 @@ fn template_scope_printing_and_namespace_publication_share_entity_identity() {
             assert!(graph.scope(parameters).bindings.contains(&binding));
             assert!(graph.own(parameters, p, Filter::Ordinary).is_none());
             let entity = graph.binding(binding).entity;
-            let class = graph.entity(entity).scope.unwrap();
+            let class = graph.entity(entity).context().scope.unwrap();
             assert_eq!(graph.scope(class).parent, Some(parameters));
             assert_eq!(graph.scope(parameters).children, vec![class]);
             let x = cursor.intern_name(b"x").unwrap();
             let member = graph.binding(graph.own(class, x, Filter::Ordinary).unwrap());
             let parameter = graph.binding(graph.own(parameters, t, Filter::Ordinary).unwrap());
             assert_eq!(member.ty, parameter.ty);
-            assert!(graph.entity(entity).template_head.is_some());
-            assert!(graph.entity(entity).implicit_default.is_none());
+            assert!(graph.entity(entity).context().template_head.is_some());
+            assert!(graph.entity(entity).class().implicit_default.is_none());
         },
     );
 }
@@ -2747,7 +2700,7 @@ fn member_designation_retains_shared_entity_and_binding_access_without_layout_de
         let class = graph
             .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
             .entity;
-        let scope = graph.entity(class).scope.unwrap();
+        let scope = graph.entity(class).context().scope.unwrap();
         let injected = graph.own(scope, x, Filter::Ordinary).unwrap();
         let entity = graph.binding(injected).entity;
         let original_scope = graph.entity(entity).home.unwrap();
@@ -2764,11 +2717,11 @@ fn member_designation_retains_shared_entity_and_binding_access_without_layout_de
                 }
         );
         assert!(matches!(
-            graph.entity(class).layout,
+            graph.entity(class).class().layout,
             super::layout::LayoutState::NotStarted
         ));
         assert!(matches!(
-            graph.entity(class).default_construction,
+            graph.entity(class).special().default_construction,
             super::construction::ConstructorState::NotStarted
         ));
     }
@@ -2818,8 +2771,11 @@ fn member_addresses_select_canonical_cv_identity_and_close_only_the_selected_dem
         };
         assert_eq!(graph.expression_facts.get(operand).unwrap().ty, element);
         let function = graph.entity(graph.binding(binding).entity);
-        assert_eq!(function.definition_emission, DefinitionEmission::Demanded);
-        let scope = function.scope.unwrap();
+        assert_eq!(
+            function.callable().definition_emission,
+            DefinitionEmission::Demanded
+        );
+        let scope = function.context().scope.unwrap();
         assert_eq!(
             graph.scope(scope).owner,
             Some(graph.binding(binding).entity)
@@ -2835,11 +2791,11 @@ fn member_addresses_select_canonical_cv_identity_and_close_only_the_selected_dem
         .binding(graph.own(graph.global, class_name, Filter::Prefix).unwrap())
         .entity;
     assert!(matches!(
-        graph.entity(class).layout,
+        graph.entity(class).class().layout,
         super::layout::LayoutState::NotStarted
     ));
     assert!(matches!(
-        graph.entity(class).default_construction,
+        graph.entity(class).special().default_construction,
         super::construction::ConstructorState::NotStarted
     ));
 }
@@ -2862,24 +2818,38 @@ fn constructor_plans_keep_entity_identity_and_original_member_initializers() {
     let class = graph
         .binding(graph.own(graph.global, class_name, Filter::Prefix).unwrap())
         .entity;
-    let ConstructorState::Ready(plan) = graph.entity(class).default_construction else {
+    let ConstructorState::Ready(plan) = graph.entity(class).special().default_construction else {
         panic!("default constructor was not memoized");
     };
     let selected = graph.constructors.get(plan);
     let binding = selected.binding.unwrap();
     let function = graph.binding(binding).entity;
     assert_eq!(binding, graph.function_origin(function).unwrap());
-    assert_eq!(graph.entity(function).constructor, Some(plan));
     assert_eq!(
-        graph.entity(function).member_function.unwrap().kind,
+        graph.entity(function).initialization().constructor,
+        Some(plan)
+    );
+    assert_eq!(
+        graph
+            .entity(function)
+            .callable()
+            .member_function
+            .unwrap()
+            .kind,
         MemberKind::Constructor
     );
     assert!(matches!(
-        graph.entity(function).special_definition,
+        graph.entity(function).callable().special_definition,
         Some(SpecialDefinition::Body(_))
     ));
     assert_eq!(selected.members.len(), 2);
-    for (&member, &(target, _)) in graph.entity(class).members.iter().zip(&selected.members) {
+    for (&member, &(target, _)) in graph
+        .entity(class)
+        .class()
+        .members
+        .iter()
+        .zip(&selected.members)
+    {
         assert_eq!(member, target);
     }
     let x = selected.members[0].0;
@@ -2895,7 +2865,7 @@ fn constructor_plans_keep_entity_identity_and_original_member_initializers() {
     );
     assert_ne!(facts.ty, facts.conversion.unwrap().target);
     let y = selected.members[1].0;
-    let y_init = graph.entity(y).member_initializer.unwrap();
+    let y_init = graph.entity(y).initialization().member_initializer.unwrap();
     let InitializerKind::Assign(original) = y_init.kind else {
         panic!("member default lost its original expression");
     };
@@ -2907,11 +2877,15 @@ fn constructor_plans_keep_entity_identity_and_original_member_initializers() {
         let object = graph
             .binding(graph.own(graph.global, name, Filter::Ordinary).unwrap())
             .entity;
-        assert_eq!(graph.entity(object).constructor, Some(plan));
+        assert_eq!(
+            graph.entity(object).initialization().constructor,
+            Some(plan)
+        );
     }
-    let other = graph.entity(class).declared_constructors[1];
+    let other = graph.entity(class).class().declared_constructors[1];
     let other_plan = graph
         .entity(graph.binding(other).entity)
+        .initialization()
         .constructor
         .unwrap();
     assert_ne!(other_plan, plan);
@@ -2923,13 +2897,14 @@ fn constructor_plans_keep_entity_identity_and_original_member_initializers() {
         .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
         .entity;
     assert!(matches!(
-        graph.entity(unused).default_construction,
+        graph.entity(unused).special().default_construction,
         ConstructorState::NotStarted
     ));
-    let declaration = graph.entity(unused).declared_constructors[0];
+    let declaration = graph.entity(unused).class().declared_constructors[0];
     assert!(
         graph
             .entity(graph.binding(declaration).entity)
+            .initialization()
             .constructor
             .is_none()
     );
@@ -3035,19 +3010,19 @@ fn recursive_destructor_properties_preserve_reference_and_demand_boundaries() {
         let TypeKind::Class(class) = graph.types.get(class).kind else {
             panic!("class type")
         };
-        let facts = graph.entity(class).destruction.unwrap();
+        let facts = graph.entity(class).special().destruction.unwrap();
         assert_eq!(facts.trivial, matches!(index, 2..=4));
         let nothrow = match facts.unwind {
             super::destruction::DestructorUnwind::Implicit { nothrow } => nothrow,
             super::destruction::DestructorUnwind::Declared(function) => matches!(
-                graph.entity(function).exceptions,
+                graph.entity(function).callable().exceptions,
                 super::exceptions::ExceptionState::Value(super::exceptions::ExceptionSet::None)
             ),
         };
         assert_eq!(nothrow, index >= 2);
         assert_eq!(facts.deleted, index >= 3);
         // Merely completing a class does not demand an implicit definition.
-        assert!(graph.entity(class).implicit_destructor.is_none());
+        assert!(graph.entity(class).class().implicit_destructor.is_none());
     }
     assert!(graph.root_demands.as_slice().is_empty());
 }

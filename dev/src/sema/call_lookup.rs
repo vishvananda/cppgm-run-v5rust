@@ -230,7 +230,7 @@ impl Analyzer<'_> {
                         classes.push(identity);
                     }
                     if entity.complete {
-                        for base in &entity.bases {
+                        for base in &entity.class().bases {
                             types.push((
                                 self.graph
                                     .entity(base.class)
@@ -240,7 +240,7 @@ impl Analyzer<'_> {
                             ));
                         }
                     }
-                    let owner = if let Some(enumeration) = entity.enumeration {
+                    let owner = if let Some(enumeration) = entity.enumerated().enumeration {
                         Some(enumeration.owner)
                     } else {
                         entity.home

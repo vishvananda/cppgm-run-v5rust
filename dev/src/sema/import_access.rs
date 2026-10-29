@@ -61,7 +61,7 @@ impl<'a> MemberPaths<'a> {
         let mut path = Access::Public;
         while class != self.declaring {
             graph.work.base_steps(1);
-            let bases = &graph.entity(class).bases;
+            let bases = &graph.entity(class).class().bases;
             let Some(base) = bases.first() else {
                 return Chain::Known(None);
             };
@@ -108,7 +108,13 @@ impl<'a> MemberPaths<'a> {
         }
         let mut known = None;
         while let Some(frame) = self.work.last() {
-            let Some(base) = graph.entity(frame.bottom).bases.get(frame.next).copied() else {
+            let Some(base) = graph
+                .entity(frame.bottom)
+                .class()
+                .bases
+                .get(frame.next)
+                .copied()
+            else {
                 let done = self.work.pop()?;
                 let access = done
                     .best
@@ -123,7 +129,7 @@ impl<'a> MemberPaths<'a> {
             if known.is_none() {
                 known = if base.class == self.declaring {
                     Some(Some(self.declared))
-                } else if graph.entity(base.class).bases.is_empty()
+                } else if graph.entity(base.class).class().bases.is_empty()
                     || self.blocked.contains(&base.class)
                 {
                     Some(None)
@@ -179,12 +185,20 @@ impl Analyzer<'_> {
             if let Some(declaration) = self
                 .graph
                 .entity(class)
+                .context()
                 .scope
                 .and_then(|scope| self.graph.own_member_declaration(scope, binding))
             {
                 declarations.push((class, declaration));
             } else {
-                work.extend(self.graph.entity(class).bases.iter().map(|edge| edge.class));
+                work.extend(
+                    self.graph
+                        .entity(class)
+                        .class()
+                        .bases
+                        .iter()
+                        .map(|edge| edge.class),
+                );
             }
         }
         declarations
@@ -232,7 +246,7 @@ impl Analyzer<'_> {
                     continue;
                 }
                 AccessTask::Bases(class, index) => {
-                    let Some(base) = self.graph.entity(class).bases.get(index) else {
+                    let Some(base) = self.graph.entity(class).class().bases.get(index) else {
                         continue;
                     };
                     work.push(AccessTask::Bases(class, index + 1));
@@ -261,7 +275,7 @@ impl Analyzer<'_> {
             let mut bottom = naming;
             let (mut edges, mut private, mut restricted) = (0usize, 0usize, 0usize);
             while bottom != paths.declaring {
-                let [base] = self.graph.entity(bottom).bases.as_slice() else {
+                let [base] = self.graph.entity(bottom).class().bases.as_slice() else {
                     break;
                 };
                 edges += 1;
@@ -314,7 +328,7 @@ impl Analyzer<'_> {
                     return Some(GrantedAccess::Protected(context));
                 }
                 if level != edges {
-                    let base = self.graph.entity(class).bases.first()?;
+                    let base = self.graph.entity(class).class().bases.first()?;
                     if !self.imported_base_accessible(class, base.access, scope, context) {
                         continue 'query;
                     }
@@ -422,7 +436,7 @@ impl Analyzer<'_> {
             return Some(AccessFailure::Inaccessible);
         };
         let member = self.graph.entity(self.graph.binding(binding).entity);
-        let nonstatic = member.data_member == Some(DataMemberKind::Instance)
+        let nonstatic = member.object().data_member == Some(DataMemberKind::Instance)
             || self.member_function_owner(binding).is_some();
         if nonstatic
             && let GrantedAccess::Protected(via) = via
@@ -471,12 +485,12 @@ mod tests {
                 .binding(analyzer.graph.own(scope, name, Filter::Prefix).unwrap())
                 .entity
         });
-        let friend_scope = analyzer.graph.entity(friend).scope.unwrap();
-        let derived_scope = analyzer.graph.entity(derived).scope.unwrap();
+        let friend_scope = analyzer.graph.entity(friend).context().scope.unwrap();
+        let derived_scope = analyzer.graph.entity(derived).context().scope.unwrap();
         let binding = analyzer
             .graph
             .functions_at(
-                analyzer.graph.entity(base).scope.unwrap(),
+                analyzer.graph.entity(base).context().scope.unwrap(),
                 super::super::allocation::key(crate::lex::vocabulary::Keyword::Delete, false),
             )
             .next()
@@ -563,7 +577,7 @@ struct SU : S { protected: using S::f; }; struct SD : SU {};
             static_using,
             static_derived,
         ] = classes;
-        let scope = |class| analyzer.graph.entity(class).scope.unwrap();
+        let scope = |class| analyzer.graph.entity(class).context().scope.unwrap();
         for class in [left, right] {
             let binding = analyzer
                 .class_lookup(scope(class), type_key.into(), Filter::Prefix)
@@ -632,11 +646,9 @@ struct SU : S { protected: using S::f; }; struct SD : SU {};
         );
         assert_eq!(expressions, analyzer.tree.expressions.mark());
         assert!(analyzer.graph.root_demands.as_slice().is_empty());
-        assert!(
-            classes.into_iter().all(|class| matches!(
-                analyzer.graph.entity(class).layout,
-                LayoutState::NotStarted
-            ))
-        );
+        assert!(classes.into_iter().all(|class| matches!(
+            analyzer.graph.entity(class).class().layout,
+            LayoutState::NotStarted
+        )));
     }
 }

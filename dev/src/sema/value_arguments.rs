@@ -287,6 +287,7 @@ impl Analyzer<'_> {
         let info = self
             .graph
             .entity(parameter)
+            .context()
             .template_parameter
             .ok_or(Error::Invariant("argument without parameter"))?;
         let argument = self.graph.types.canonical_function(argument)?;
@@ -431,11 +432,12 @@ impl Analyzer<'_> {
             } else if let TypeKind::Value { ty, bits } = self.graph.types.get(argument).kind {
                 let entity = self.graph.add_entity(Some(ty), binding.name, binding.key)?;
                 let value = self.integral_value(ty, bits);
-                self.graph.entity_mut(entity).constant = ConstantState::Value(value);
+                self.graph.entity_mut(entity).object_mut().constant = ConstantState::Value(value);
                 (BindingKind::Enumerator, entity, ty)
             } else if self
                 .graph
                 .entity(binding.entity)
+                .context()
                 .template_parameter
                 .is_some_and(|info| info.value_type.is_some())
             {
@@ -466,6 +468,7 @@ impl Analyzer<'_> {
             let declared = self
                 .graph
                 .entity(binding.entity)
+                .context()
                 .template_parameter
                 .and_then(|info| info.value_type);
             self.graph.set_binding_dependence(
@@ -492,6 +495,7 @@ impl Analyzer<'_> {
             let declared = self
                 .graph
                 .entity(parameter)
+                .context()
                 .template_parameter
                 .ok_or(Error::Invariant("deduction without parameter"))?
                 .value_type;
@@ -547,6 +551,7 @@ impl Analyzer<'_> {
                     };
                     self.graph
                         .entity(entity)
+                        .context()
                         .template_parameter
                         .filter(|info| info.value_type.is_some())
                         .and_then(|info| info.index(depth))
@@ -712,7 +717,12 @@ mod tests {
         analyzer.declarations(declarations, global).unwrap();
         let binding = analyzer.graph.own(global, name, Filter::Ordinary).unwrap();
         let alias = analyzer.graph.binding(binding).entity;
-        let head = analyzer.graph.entity(alias).template_head.unwrap();
+        let head = analyzer
+            .graph
+            .entity(alias)
+            .context()
+            .template_head
+            .unwrap();
         let pattern = analyzer.graph.entity(alias).ty.unwrap();
         let unique = analyzer.unique_partial_arguments(head).unwrap();
         let mut substitution = analyzer.substitution(analyzer.graph.templates.depth(head), &unique);
@@ -732,17 +742,18 @@ mod tests {
             analyzer
                 .graph
                 .entity(invented)
+                .context()
                 .template_parameter
                 .unwrap()
                 .depth(),
             0x7fff
         );
-        assert!(analyzer.graph.entity(invented).scope.is_none());
+        assert!(analyzer.graph.entity(invented).context().scope.is_none());
         assert!(analyzer.graph.dependent_type(substituted));
         let TypeKind::Class(shell) = analyzer.graph.types.get(substituted).kind else {
             panic!("substituted class shell")
         };
-        assert!(analyzer.graph.entity(shell).scope.is_none());
+        assert!(analyzer.graph.entity(shell).context().scope.is_none());
         assert_eq!(analyzer.graph.entity(alias).ty, Some(pattern));
         assert!(analyzer.graph.root_demands.as_slice().is_empty());
     }
@@ -772,7 +783,7 @@ mod tests {
             let TypeKind::Class(entity) = graph.types.get(lookup(name)).kind else {
                 panic!("class shell")
             };
-            assert!(graph.entity(entity).scope.is_none());
+            assert!(graph.entity(entity).context().scope.is_none());
         }
         assert!(graph.root_demands.as_slice().is_empty());
     }
@@ -796,20 +807,26 @@ mod tests {
         let primary = graph
             .binding(graph.own(graph.global, name, Filter::Ordinary).unwrap())
             .entity;
-        let head = graph.entity(primary).template_head.unwrap();
+        let head = graph.entity(primary).context().template_head.unwrap();
         let parameter = graph.templates.parameters(head)[0];
         assert!(matches!(
-            graph.entity(parameter).constant,
+            graph.entity(parameter).object().constant,
             ConstantState::None
         ));
         let name = cursor.intern_name(b"N").unwrap();
         let source = graph.templates.parameter_scope(head);
         let pattern = graph.binding(graph.own(source, name, Filter::Ordinary).unwrap());
         assert_eq!(pattern.entity, parameter);
-        assert!(graph.entity(pattern.entity).template_parameter.is_some());
+        assert!(
+            graph
+                .entity(pattern.entity)
+                .context()
+                .template_parameter
+                .is_some()
+        );
         let mut values = Vec::new();
         for &entity in graph.function_templates.arguments.keys() {
-            let Some(scope) = graph.entity(entity).scope else {
+            let Some(scope) = graph.entity(entity).context().scope else {
                 continue;
             };
             let Some(binding) = ({
@@ -827,9 +844,15 @@ mod tests {
                 continue;
             };
             let binding = graph.binding(binding);
-            if let ConstantState::Value(value) = graph.entity(binding.entity).constant {
+            if let ConstantState::Value(value) = graph.entity(binding.entity).object().constant {
                 assert_ne!(binding.entity, parameter);
-                assert!(graph.entity(binding.entity).template_parameter.is_none());
+                assert!(
+                    graph
+                        .entity(binding.entity)
+                        .context()
+                        .template_parameter
+                        .is_none()
+                );
                 values.push(value.bits);
             }
         }

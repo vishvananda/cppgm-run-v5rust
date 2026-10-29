@@ -43,6 +43,7 @@ impl super::graph::Graph {
         let entity = self.entity(entity);
         entity.name.is_some()
             || entity
+                .enumerated()
                 .enumeration
                 .is_some_and(|info| info.head == EnumHead::TypeOperator)
     }
@@ -71,6 +72,7 @@ impl Analyzer<'_> {
         let info = self
             .graph
             .entity(entity)
+            .enumerated()
             .enumeration
             .ok_or(Error::Invariant("unnamed enum metadata"))?;
         if self.graph.type_has_source_name(entity) || info.anonymous_ordinal.is_some() {
@@ -84,7 +86,7 @@ impl Analyzer<'_> {
                 .anonymous_enums
                 .checked_add(1)
                 .ok_or(Error::Limit("anonymous enumeration count"))?;
-            self.graph.entity_mut(entity).enumeration = Some(EnumInfo {
+            self.graph.entity_mut(entity).enumerated_mut().enumeration = Some(EnumInfo {
                 anonymous_ordinal: Some(self.graph.anonymous_enums),
                 ..info
             });
@@ -330,6 +332,7 @@ impl Analyzer<'_> {
             let enum_scope = self
                 .graph
                 .entity(entity)
+                .context()
                 .scope
                 .ok_or(Error::Invariant("enum without scope"))?;
             let mut declaration_binding = self
@@ -441,6 +444,7 @@ impl Analyzer<'_> {
             let print = if scoped {
                 self.graph
                     .entity(entity)
+                    .context()
                     .scope
                     .ok_or(Error::Invariant("scoped enumeration without scope"))?
             } else {
@@ -461,12 +465,17 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<EntityId, Error> {
         let entity = self.graph.binding(binding).entity;
-        let info = self.graph.entity(entity).enumeration.ok_or_else(|| {
-            Error::at(
-                location,
-                "enumeration name redeclared as a different kind of type",
-            )
-        })?;
+        let info = self
+            .graph
+            .entity(entity)
+            .enumerated()
+            .enumeration
+            .ok_or_else(|| {
+                Error::at(
+                    location,
+                    "enumeration name redeclared as a different kind of type",
+                )
+            })?;
         let underlying_matches = match (info.underlying, expected) {
             (Some(previous), Some(expected)) => {
                 self.graph.types.canonical_function(previous)?
@@ -505,9 +514,9 @@ impl Analyzer<'_> {
             name,
         )?;
         self.graph.entity_mut(entity).ty = Some(ty);
-        self.graph.entity_mut(entity).scope = Some(scope);
+        self.graph.entity_mut(entity).context_mut().scope = Some(scope);
         self.graph.scope_mut(scope).owner = Some(entity);
-        self.graph.entity_mut(entity).enumeration = Some(info);
+        self.graph.entity_mut(entity).enumerated_mut().enumeration = Some(info);
         let binding = self.graph.add_binding(
             info.owner,
             Some(print),
@@ -532,6 +541,7 @@ impl Analyzer<'_> {
         let info = self
             .graph
             .entity(entity)
+            .enumerated()
             .enumeration
             .ok_or(Error::Invariant("enum metadata"))?;
         let enum_ty = self
@@ -542,6 +552,7 @@ impl Analyzer<'_> {
         let enum_scope = self
             .graph
             .entity(entity)
+            .context()
             .scope
             .ok_or(Error::Invariant("enum scope"))?;
         let lookup = if info.scoped { enum_scope } else { info.owner };
@@ -652,7 +663,7 @@ impl Analyzer<'_> {
             let constant =
                 self.graph
                     .add_entity(Some(enum_ty), Some(enumerator.name), Keyword::Enum)?;
-            self.graph.entity_mut(constant).constant = ConstantState::Value(value);
+            self.graph.entity_mut(constant).object_mut().constant = ConstantState::Value(value);
             let binding = Binding {
                 kind: BindingKind::Enumerator,
                 name: Some(enumerator.name),
@@ -672,7 +683,7 @@ impl Analyzer<'_> {
                 let kind = IntegralKind::of(Scalar::Basic(candidate))
                     .ok_or(Error::Invariant("enum candidate kind"))?;
                 if values.iter().all(|&id| {
-                    if let ConstantState::Value(value) = self.graph.entity(id).constant {
+                    if let ConstantState::Value(value) = self.graph.entity(id).object().constant {
                         self.integral_kind(value.ty)
                             .is_some_and(|from| kind.represents(value.bits, from))
                     } else {
@@ -686,13 +697,13 @@ impl Analyzer<'_> {
             self.graph.types.scalar(Scalar::Basic(selected))?
         };
         let negative = values.iter().any(|&id| {
-            let ConstantState::Value(value) = self.graph.entity(id).constant else {
+            let ConstantState::Value(value) = self.graph.entity(id).object().constant else {
                 return false;
             };
             self.integral_kind(value.ty)
                 .is_some_and(|kind| kind.signed && super::integral::signed(value.bits) < 0)
         });
-        self.graph.entity_mut(entity).enumeration = Some(EnumInfo {
+        self.graph.entity_mut(entity).enumerated_mut().enumeration = Some(EnumInfo {
             negative,
             underlying: Some(underlying),
             ..info
@@ -707,11 +718,11 @@ impl Analyzer<'_> {
                 .ok_or(Error::Invariant("final enum kind"))?
         };
         for id in values {
-            let ConstantState::Value(value) = self.graph.entity(id).constant else {
+            let ConstantState::Value(value) = self.graph.entity(id).object().constant else {
                 return Err(Error::Invariant("missing enum value"));
             };
             let value = self.integral_value(enum_ty, kind.convert(value.bits));
-            self.graph.entity_mut(id).constant = ConstantState::Value(value);
+            self.graph.entity_mut(id).object_mut().constant = ConstantState::Value(value);
         }
         Ok(())
     }

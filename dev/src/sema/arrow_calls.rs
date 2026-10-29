@@ -38,6 +38,7 @@ impl Analyzer<'_> {
             let home = self
                 .graph
                 .entity(class)
+                .context()
                 .scope
                 .filter(|_| self.graph.entity(class).complete)
                 .ok_or(Error::at(

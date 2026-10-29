@@ -342,7 +342,7 @@ mod tests {
             )
             .unwrap();
         assert!(matches!(
-            graph.entity(graph.binding(binding).entity).layout,
+            graph.entity(graph.binding(binding).entity).class().layout,
             super::super::layout::LayoutState::NotStarted
         ));
         assert_eq!(tree.expressions.mark(), expressions);

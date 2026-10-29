@@ -108,8 +108,8 @@ impl Analyzer<'_> {
         }
         match self.graph.types.get(target).kind {
             TypeKind::Class(class) => {
-                for index in 0..self.graph.entity(class).bases.len() {
-                    let base = &self.graph.entity(class).bases[index];
+                for index in 0..self.graph.entity(class).class().bases.len() {
+                    let base = &self.graph.entity(class).class().bases[index];
                     let offset = base
                         .offset
                         .ok_or(Error::Invariant("static zero base without offset"))?;
@@ -122,13 +122,13 @@ impl Analyzer<'_> {
                     }
                 }
                 let union = self.graph.entity(class).key == crate::lex::vocabulary::Keyword::Union;
-                for index in 0..self.graph.entity(class).members.len() {
-                    let member = self.graph.entity(class).members[index];
+                for index in 0..self.graph.entity(class).class().members.len() {
+                    let member = self.graph.entity(class).class().members[index];
                     if self.graph.unnamed_bit_field(member) {
                         continue;
                     }
                     let ty = self.graph.lower_entity_type(member)?;
-                    if let Some(field) = self.graph.entity(member).bit_field {
+                    if let Some(field) = self.graph.entity(member).object().bit_field {
                         let storage = self.graph.bit_fields.storage(field)?;
                         for (offset, size) in super::evaluated_data::bit_units(
                             storage,
@@ -143,6 +143,7 @@ impl Analyzer<'_> {
                         let offset = self
                             .graph
                             .entity(member)
+                            .object()
                             .member_offset
                             .ok_or(Error::Invariant("static zero member without offset"))?;
                         let at = origin

@@ -211,7 +211,7 @@ impl Analyzer<'_> {
             .as_ref()
             .and_then(|body| body.function)
             .ok_or(Error::Invariant("return eligibility without body function"))?;
-        let Some(function_scope) = self.graph.entity(function).scope else {
+        let Some(function_scope) = self.graph.entity(function).context().scope else {
             return Err(Error::Invariant(
                 "return eligibility without function scope",
             ));
@@ -225,7 +225,10 @@ impl Analyzer<'_> {
         Ok(binding.kind == BindingKind::Parameter
             || binding.kind == BindingKind::Variable
                 && self.graph.scope(home).kind == ScopeKind::Block
-                && entity.variable.is_some_and(|variable| variable.automatic))
+                && entity
+                    .object()
+                    .variable
+                    .is_some_and(|variable| variable.automatic))
     }
     pub(super) fn semantic_jump(&mut self, id: ast::StmtId) -> Result<(), Error> {
         let body = self

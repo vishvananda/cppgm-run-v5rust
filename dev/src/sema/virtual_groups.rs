@@ -21,6 +21,7 @@ impl Analyzer<'_> {
         if let Some(edge) = self
             .graph
             .entity(class)
+            .class()
             .bases
             .iter()
             .find(|edge| !edge.is_virtual && self.graph.lower_dynamic(edge.class))
@@ -36,6 +37,7 @@ impl Analyzer<'_> {
         let mut work: Vec<_> = self
             .graph
             .entity(class)
+            .class()
             .bases
             .iter()
             .map(|edge| edge.class)
@@ -50,7 +52,14 @@ impl Analyzer<'_> {
                     indirect.extend(facts.primary);
                 }
             }
-            work.extend(self.graph.entity(base).bases.iter().map(|edge| edge.class));
+            work.extend(
+                self.graph
+                    .entity(base)
+                    .class()
+                    .bases
+                    .iter()
+                    .map(|edge| edge.class),
+            );
         }
         let mut first = None;
         for base in bases {
@@ -59,7 +68,7 @@ impl Analyzer<'_> {
             }
             self.class_layout(base, location)?;
             if !matches!(
-                self.graph.entity(base).layout,
+                self.graph.entity(base).class().layout,
                 LayoutState::Value {
                     non_virtual_size: 8,
                     ..
@@ -85,6 +94,7 @@ impl Graph {
     ) -> Result<Option<EntityId>, Error> {
         Ok(self.lower_virtual_class(class)?.primary.filter(|&primary| {
             self.entity(class)
+                .class()
                 .bases
                 .iter()
                 .any(|edge| !edge.is_virtual && edge.class == primary)
@@ -99,8 +109,8 @@ impl Graph {
     pub(super) fn complete_virtual_group(&mut self, class: EntityId) -> Result<(), Error> {
         let primary = self.nonvirtual_table_primary(class)?;
         self.demand_virtual_slots(class)?;
-        for index in 0..self.entity(class).bases.len() {
-            let edge = self.entity(class).bases[index];
+        for index in 0..self.entity(class).class().bases.len() {
+            let edge = self.entity(class).class().bases[index];
             if !edge.is_virtual && Some(edge.class) != primary && self.lower_dynamic(edge.class) {
                 self.demand_virtual_chain(edge.class, true)?;
             }
@@ -114,7 +124,7 @@ impl Graph {
         let mut group = VtableGroup::default();
         let root = group.push(class, SegmentId(0), None, false)?;
         group.slots(self, Some(class), class, root)?;
-        for (index, edge) in self.entity(class).bases.iter().enumerate() {
+        for (index, edge) in self.entity(class).class().bases.iter().enumerate() {
             if edge.is_virtual || !self.lower_dynamic(edge.class) {
                 continue;
             }
@@ -182,7 +192,7 @@ impl Graph {
                 let slot = slot.ok_or(Error::Invariant("unfilled level slot"))?;
                 let base_slot =
                     index - usize::from(matches!(slot.kind, SlotKind::DeletingDestructor));
-                let own = self.entity(slot.function).home == self.entity(class).scope
+                let own = self.entity(slot.function).home == self.entity(class).context().scope
                     && self
                         .lower_virtual_slot(slot.function)
                         .is_some_and(|slot| slot.index().is_ok_and(|index| index == base_slot));
@@ -338,7 +348,7 @@ impl VtableGroup {
                     .edge
                     .ok_or(Error::Invariant("sharing without edge"))?;
                 offsets[segment.parent.index()].wrapping_add(
-                    graph.entity(owner).bases[edge as usize]
+                    graph.entity(owner).class().bases[edge as usize]
                         .offset
                         .ok_or(Error::Invariant("sharing before base layout"))?,
                 )
@@ -487,7 +497,7 @@ mod tests {
             let entry = group.entries[shared.1.entries.start];
             assert_eq!(entry.overrider,SegmentId(1));
             assert_eq!(graph.lower_function(entry.function).unwrap().object,Some(group.segments[1].class));
-            assert!(matches!(graph.entity(class).layout,LayoutState::NotStarted));
+            assert!(matches!(graph.entity(class).class().layout,LayoutState::NotStarted));
         });
     }
     #[test]
@@ -499,7 +509,7 @@ mod tests {
                 assert!(graph.lower_virtual_slots(base).is_err());
                 next = graph.lower_virtual_class(base).unwrap().primary;
             }
-            assert!(matches!(graph.entity(class).layout,LayoutState::NotStarted));
+            assert!(matches!(graph.entity(class).class().layout,LayoutState::NotStarted));
         });
     }
     #[test]
@@ -508,7 +518,7 @@ mod tests {
             let root = graph.lower_virtual_slots(class).unwrap()[0].unwrap().function;
             assert!(!graph.function_templates.bodies.started(root));
             assert_eq!(graph.lower_vtable_group(class).unwrap().segments.len(),2);
-            assert!(matches!(graph.entity(class).layout,LayoutState::Value{..}));
+            assert!(matches!(graph.entity(class).class().layout,LayoutState::Value{..}));
         });
     }
 }

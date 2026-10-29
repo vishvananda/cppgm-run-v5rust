@@ -33,7 +33,12 @@ impl Analyzer<'_> {
         let value = self.graph.binding(binding);
         if value.kind == BindingKind::Alias {
             if self.graph.entity(value.entity).key == Keyword::Typedef
-                && self.graph.entity(value.entity).template_head.is_some()
+                && self
+                    .graph
+                    .entity(value.entity)
+                    .context()
+                    .template_head
+                    .is_some()
             {
                 return self
                     .graph
@@ -54,6 +59,7 @@ impl Analyzer<'_> {
         if self
             .graph
             .entity(value.entity)
+            .context()
             .template_parameter
             .is_some_and(|info| info.inner.is_some())
         {
@@ -64,7 +70,8 @@ impl Analyzer<'_> {
         };
         if !injected
             && (self.graph.class_templates.instance(value.entity).is_some()
-                || self.graph.entity(value.entity).scope == Some(self.graph.binding_scope(binding)))
+                || self.graph.entity(value.entity).context().scope
+                    == Some(self.graph.binding_scope(binding)))
         {
             return Ok(None);
         }
@@ -176,6 +183,7 @@ impl Analyzer<'_> {
             TypeKind::BoundPack { parameter, .. } => self
                 .graph
                 .entity(parameter)
+                .context()
                 .template_parameter
                 .is_some_and(|info| info.inner.is_some()),
             _ => false,
@@ -184,7 +192,7 @@ impl Analyzer<'_> {
 
     fn template_name_head(&self, ty: TypeId) -> Option<HeadId> {
         match self.graph.types.get(ty).kind {
-            TypeKind::Template(entity) => self.graph.entity(entity).template_head,
+            TypeKind::Template(entity) => self.graph.entity(entity).context().template_head,
             TypeKind::TemplateParameter {
                 entity,
                 template: true,
@@ -194,6 +202,7 @@ impl Analyzer<'_> {
             } => self
                 .graph
                 .entity(entity)
+                .context()
                 .template_parameter
                 .and_then(|info| info.inner),
             _ => None,
@@ -232,6 +241,7 @@ impl Analyzer<'_> {
                     && self
                         .graph
                         .entity(entity)
+                        .context()
                         .template_parameter
                         .is_some_and(|info| info.depth() == depth && info.value_type.is_none())
             } else {
@@ -260,8 +270,9 @@ impl Analyzer<'_> {
         let Some((x, y)) = self
             .graph
             .entity(*x)
+            .context()
             .template_parameter
-            .zip(self.graph.entity(*y).template_parameter)
+            .zip(self.graph.entity(*y).context().template_parameter)
         else {
             return Ok(false);
         };
@@ -288,11 +299,13 @@ impl Analyzer<'_> {
             let p = self
                 .graph
                 .entity(p)
+                .context()
                 .template_parameter
                 .ok_or(Error::Invariant("template head without parameter"))?;
             let a = self
                 .graph
                 .entity(a)
+                .context()
                 .template_parameter
                 .ok_or(Error::Invariant("template head without parameter"))?;
             if !self.template_parameters_match(p, a)? || (a.is_pack() && !p.is_pack()) {
@@ -426,6 +439,7 @@ impl Analyzer<'_> {
         let own = self
             .graph
             .entity(self.graph.binding(found).entity)
+            .context()
             .template_parameter
             .and_then(|info| info.inner)
             .filter(|_| !written);
@@ -500,6 +514,7 @@ impl Analyzer<'_> {
                 if let Some(ty) = self
                     .graph
                     .entity(parameter)
+                    .context()
                     .template_parameter
                     .and_then(|info| info.value_type)
                     && !self.graph.dependent_type(ty)
@@ -596,7 +611,7 @@ mod tests {
                 TypeKind::Pointer(element) if element == instance.arguments[1])
             );
             assert!(!analyzer.graph.entity(entity).complete);
-            assert!(analyzer.graph.entity(entity).scope.is_none());
+            assert!(analyzer.graph.entity(entity).context().scope.is_none());
         }
         assert!(analyzer.graph.root_demands.as_slice().is_empty());
         assert!(analyzer.graph.lookup_limit.is_none());
@@ -640,7 +655,7 @@ mod tests {
                 panic!("class result");
             };
             assert!(!analyzer.graph.entity(entity).complete);
-            assert!(analyzer.graph.entity(entity).scope.is_none());
+            assert!(analyzer.graph.entity(entity).context().scope.is_none());
             let instance = analyzer.graph.class_templates.instance(entity).unwrap();
             assert!(
                 matches!(analyzer.graph.types.get(instance.arguments[1]).kind,TypeKind::Scalar(super::super::types::Scalar::Basic(kind)) if kind == expected)

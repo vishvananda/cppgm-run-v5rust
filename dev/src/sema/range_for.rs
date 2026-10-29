@@ -392,7 +392,7 @@ impl Analyzer<'_> {
         let Some(class) = self.graph.scope(home).owner else {
             return Ok(None);
         };
-        let Some(properties) = function.function else {
+        let Some(properties) = function.callable().function else {
             return Ok(None);
         };
         let TypeKind::Function { cv, .. } = self
@@ -454,10 +454,11 @@ impl Analyzer<'_> {
         if bound.kind != BindingKind::Variable || self.graph.dependent_type(ty) {
             return Ok(None);
         }
-        let instance = variable.data_member == Some(super::graph::DataMemberKind::Instance);
+        let instance =
+            variable.object().data_member == Some(super::graph::DataMemberKind::Instance);
         if instance
             && (properties.is_static
-                || variable.bit_field.is_some()
+                || variable.object().bit_field.is_some()
                 || owner != class && !self.graph.is_base_of(owner, class))
         {
             return Ok(None);
@@ -521,6 +522,7 @@ impl Analyzer<'_> {
             let class_scope = self
                 .graph
                 .entity(class)
+                .context()
                 .scope
                 .ok_or(Error::Invariant("range class without scope"))?;
             let begin_name = self
@@ -571,7 +573,7 @@ impl Analyzer<'_> {
                     let bound = self.graph.binding(binding);
                     matches!(bound.kind, BindingKind::Variable | BindingKind::Parameter)
                         && !anonymous
-                        && self.graph.entity(bound.entity).data_member
+                        && self.graph.entity(bound.entity).object().data_member
                             != Some(super::graph::DataMemberKind::Instance)
                 })
                 .map(|_| source)
@@ -619,7 +621,7 @@ impl Analyzer<'_> {
         let ty = typed.ty;
         let dependent = self.dependent_uses.get() != uses;
         let builtin = self.graph.class_of(ty).filter(|&class| {
-            self.graph.entity(class).representation
+            self.graph.entity(class).class().representation
                 == crate::sema::graph::ClassRepresentation::BuiltinInitializerList
         });
         let (begin, end, condition, increment, element) = if let Some(class) = builtin {
@@ -627,7 +629,7 @@ impl Analyzer<'_> {
                 .graph
                 .types
                 .scalar(Scalar::Basic(crate::types::FundamentalType::Int))?;
-            let [first, second] = self.graph.entity(class).members.as_slice() else {
+            let [first, second] = self.graph.entity(class).class().members.as_slice() else {
                 return Err(Error::Invariant("builtin list member count"));
             };
             let member_entities = [*first, *second];
@@ -706,6 +708,7 @@ impl Analyzer<'_> {
             let class_scope = self
                 .graph
                 .entity(class)
+                .context()
                 .scope
                 .ok_or(Error::Invariant("range class without scope"))?;
             let begin_name = self

@@ -102,7 +102,8 @@ impl Analyzer<'_> {
                         .type_size(ty, crate::support::source::SourceOffset(0))?
                         .1
             {
-                let attributes = &mut self.graph.entity_mut(binding.entity).storage_attributes;
+                let mut record = self.graph.entity_mut(binding.entity);
+                let attributes = &mut record.attributes_mut().storage_attributes;
                 attributes.alignment = attributes.alignment.max(aligned);
             }
         }

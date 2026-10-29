@@ -740,7 +740,7 @@ impl Analyzer<'_> {
                         "an access outside the designated object",
                     ));
                 }
-                return match self.graph.entity(entity).constant {
+                return match self.graph.entity(entity).object().constant {
                     ConstantState::Floating(id) => Ok(self.graph.floating_constants.get(id)),
                     ConstantState::Evaluating => Err(nonconstant(
                         location,
@@ -795,7 +795,7 @@ impl Analyzer<'_> {
         scope: ScopeId,
     ) -> Result<(), Error> {
         let ty = self.graph.lower_entity_type(entity)?;
-        self.graph.entity_mut(entity).constant = ConstantState::Evaluating;
+        self.graph.entity_mut(entity).object_mut().constant = ConstantState::Evaluating;
         let result = (|| {
             let value = self.with_fresh_constant_query(|analyzer| {
                 analyzer.initialized_scalar_value(ty, initializer, scope)
@@ -811,10 +811,11 @@ impl Analyzer<'_> {
             }
             self.graph.floating_constants.insert(value)
         })();
-        self.graph.entity_mut(entity).constant = ConstantState::None;
+        self.graph.entity_mut(entity).object_mut().constant = ConstantState::None;
         match result {
             Ok(value) => {
-                self.graph.entity_mut(entity).constant = ConstantState::Floating(value);
+                self.graph.entity_mut(entity).object_mut().constant =
+                    ConstantState::Floating(value);
                 Ok(())
             }
             Err(error @ Error::NonConstant { .. }) => {
@@ -880,7 +881,8 @@ mod tests {
                 super::super::constant_addresses::ScalarState::Value,
             ),
         ] {
-            let ConstantState::Floating(id) = analyzer.graph.entity(entity).constant else {
+            let ConstantState::Floating(id) = analyzer.graph.entity(entity).object().constant
+            else {
                 panic!("stored floating declaration");
             };
             assert_eq!(analyzer.graph.floating_constants.get(id).state, expected);

@@ -75,6 +75,7 @@ mod destructor_expressions;
 mod dump;
 mod dynamic_casts;
 mod empty_layout;
+mod entity_records;
 mod enum_instances;
 mod enumerations;
 mod evaluated_data;

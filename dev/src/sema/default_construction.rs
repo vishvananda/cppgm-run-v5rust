@@ -92,7 +92,7 @@ impl Analyzer<'_> {
                 declared: Some(binding),
             },
             Lookup::Ambiguous => return Ok((None, None)),
-            Lookup::Absent if self.graph.entity(class).user_constructor.is_some() => {
+            Lookup::Absent if self.graph.entity(class).class().user_constructor.is_some() => {
                 return Ok((None, None));
             }
             Lookup::Absent => DefaultFunction {
@@ -103,12 +103,20 @@ impl Analyzer<'_> {
         self.graph.constructors.retain_default_function(class, slot);
         let implicit = slot.declared.is_none();
         let defaulted = matches!(
-            self.graph.entity(slot.function).special_definition,
+            self.graph
+                .entity(slot.function)
+                .callable()
+                .special_definition,
             Some(SpecialDefinition::Defaulted { first: true, .. })
         );
         let closure = implicit && self.graph.closure_call(class).is_some();
         let id = if implicit || defaulted {
-            if let Some(id) = self.graph.entity(slot.function).constructor {
+            if let Some(id) = self
+                .graph
+                .entity(slot.function)
+                .initialization()
+                .constructor
+            {
                 id
             } else {
                 self.default_header(class, Some(slot))?
@@ -119,7 +127,10 @@ impl Analyzer<'_> {
                     .ok_or(Error::Invariant("declared default without binding"))?,
             )?
         };
-        self.graph.entity_mut(class).default_construction = ConstructorState::Ready(id);
+        self.graph
+            .entity_mut(class)
+            .special_mut()
+            .default_construction = ConstructorState::Ready(id);
         if closure {
             self.graph.entity_mut(slot.function).availability = FunctionAvailability::Deleted;
             self.graph.constructors.mark_default_deleted(id);
@@ -140,7 +151,7 @@ impl Analyzer<'_> {
         function: EntityId,
         class: EntityId,
     ) -> Result<ConstructorId, Error> {
-        let id = if let Some(id) = self.graph.entity(function).constructor {
+        let id = if let Some(id) = self.graph.entity(function).initialization().constructor {
             id
         } else {
             let binding = self.graph.function_origin(function)?;
@@ -181,22 +192,25 @@ impl Analyzer<'_> {
         let scope = self
             .graph
             .entity(class)
+            .context()
             .scope
             .ok_or(Error::Invariant("default plan without class scope"))?;
         if self.graph.constructors.get(id).binding.is_none()
             || matches!(
-                self.graph.entity(function).special_definition,
+                self.graph.entity(function).callable().special_definition,
                 Some(SpecialDefinition::Defaulted { first: true, .. })
             )
         {
             let seed = self.graph.function_nothrow_value(function);
             let pending = self.pending_constructor_noexcept(function);
             self.graph.constructors.set_nothrow(id, seed);
-            self.graph.entity_mut(function).constructor_exceptions =
-                ConstructorExceptionSource::ComputedDefault {
-                    constructor: id,
-                    pending,
-                };
+            self.graph
+                .entity_mut(function)
+                .callable_mut()
+                .constructor_exceptions = ConstructorExceptionSource::ComputedDefault {
+                constructor: id,
+                pending,
+            };
         }
         let state = self.graph.analysis.substitution.clone();
         let pending = state.current().failure;
@@ -243,7 +257,7 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<ConstructorId, Error> {
         let function = self.graph.binding(binding).entity;
-        let id = if let Some(id) = self.graph.entity(function).constructor {
+        let id = if let Some(id) = self.graph.entity(function).initialization().constructor {
             id
         } else {
             self.default_header(
@@ -260,6 +274,7 @@ impl Analyzer<'_> {
         let scope = self
             .graph
             .entity(class)
+            .context()
             .scope
             .ok_or(Error::Invariant("inherited plan without class scope"))?;
         let forwarded = self
@@ -304,7 +319,10 @@ impl Analyzer<'_> {
             .default_function(class)
             .is_some_and(|slot| Some(slot.function) == self.graph.constructors.get(id).declaration)
         {
-            self.graph.entity_mut(class).default_construction = state;
+            self.graph
+                .entity_mut(class)
+                .special_mut()
+                .default_construction = state;
         }
     }
 
@@ -318,7 +336,7 @@ impl Analyzer<'_> {
         let nothrow =
             declaration.is_some_and(|function| self.graph.function_nothrow_value(function));
         let trivial = declaration
-            .and_then(|function| self.graph.entity(function).copy_properties)
+            .and_then(|function| self.graph.entity(function).special().copy_properties)
             .is_some_and(|facts| self.graph.copy_properties.get(facts).trivial);
         let record = Constructor {
             facts: ConstructorFacts::Declaration,
@@ -355,6 +373,7 @@ impl Analyzer<'_> {
             let bases = if function {
                 self.graph
                     .entity(class)
+                    .class()
                     .bases
                     .iter()
                     .map(|edge| Self::empty_default_base(edge.class))
@@ -373,6 +392,7 @@ impl Analyzer<'_> {
             let members = self
                 .graph
                 .entity(class)
+                .class()
                 .members
                 .iter()
                 .map(|&member| (member, None))
@@ -545,11 +565,14 @@ impl Analyzer<'_> {
                 if let Some(source) = frame.forwarded.filter(|&binding| {
                     self.graph
                         .entity(self.graph.binding(binding).entity)
+                        .callable()
                         .member_function
                         .is_some_and(|member| member.class == class)
                 }) {
                     let function = self.graph.binding(source).entity;
-                    let constructor = if let Some(id) = self.graph.entity(function).constructor {
+                    let constructor = if let Some(id) =
+                        self.graph.entity(function).initialization().constructor
+                    {
                         id
                     } else {
                         self.default_header(
@@ -572,11 +595,13 @@ impl Analyzer<'_> {
                 let member = self.graph.constructors.get(owner).members[index].0;
                 self.request_member_initializer(member)?;
                 let variable = self.graph.entity(member);
-                if let Some(initializer) = variable.member_initializer {
-                    let action = variable.constructor.map(|constructor| MemberConstruction {
-                        member,
-                        constructor,
-                        arguments: variable.constructor_arguments,
+                if let Some(initializer) = variable.initialization().member_initializer {
+                    let action = variable.initialization().constructor.map(|constructor| {
+                        MemberConstruction {
+                            member,
+                            constructor,
+                            arguments: variable.initialization().constructor_arguments,
+                        }
                     });
                     self.graph.constructors.set_default_member(
                         owner,
@@ -627,6 +652,7 @@ impl Analyzer<'_> {
             Some(
                 self.graph
                     .entity(slot.function)
+                    .initialization()
                     .constructor
                     .ok_or(Error::Invariant("default subobject without record"))?,
             )
@@ -713,7 +739,12 @@ mod tests {
                     analyzer.emit_substitution_failure(SourceOffset(7), "earlier operand", true)?;
                     let outer = analyzer.graph.analysis.substitution.current();
                     let good_fn = analyzer.implicit_constructor_function(good)?.unwrap();
-                    let good_id = analyzer.graph.entity(good_fn.function).constructor.unwrap();
+                    let good_id = analyzer
+                        .graph
+                        .entity(good_fn.function)
+                        .initialization()
+                        .constructor
+                        .unwrap();
                     assert!(!analyzer.graph.constructors.get(good_id).deleted);
                     assert!(!analyzer.graph.constructors.get(good_id).nontrivial());
                     assert_eq!(
@@ -721,7 +752,12 @@ mod tests {
                         outer.failure
                     );
                     let bad_fn = analyzer.queried_default_constructor_function(bad)?.unwrap();
-                    let bad_id = analyzer.graph.entity(bad_fn.function).constructor.unwrap();
+                    let bad_id = analyzer
+                        .graph
+                        .entity(bad_fn.function)
+                        .initialization()
+                        .constructor
+                        .unwrap();
                     assert!(analyzer.graph.constructors.get(bad_id).deleted);
                     assert!(analyzer.graph.constructors.get(bad_id).nontrivial());
                     assert_eq!(
@@ -772,7 +808,12 @@ mod tests {
                         })
                     ));
                     let slot = analyzer.graph.constructors.default_function(hard).unwrap();
-                    let id = analyzer.graph.entity(slot.function).constructor.unwrap();
+                    let id = analyzer
+                        .graph
+                        .entity(slot.function)
+                        .initialization()
+                        .constructor
+                        .unwrap();
                     let record = analyzer.graph.constructors.get(id);
                     assert!(record.facts == ConstructorFacts::PlanPublished);
                     assert_eq!(record.members.len(), 1);

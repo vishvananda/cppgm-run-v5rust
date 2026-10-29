@@ -79,7 +79,7 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("default facts without function"))?;
         if self.graph.constructors.get(id).binding.is_some()
             && !matches!(
-                self.graph.entity(function).special_definition,
+                self.graph.entity(function).callable().special_definition,
                 Some(SpecialDefinition::Defaulted { first: true, .. })
             )
         {
@@ -184,6 +184,7 @@ impl Analyzer<'_> {
         let id = self
             .graph
             .entity(slot.function)
+            .initialization()
             .constructor
             .ok_or(Error::Invariant("default function facts without record"))?;
         Ok(!self.graph.constructors.get(id).nontrivial())
@@ -197,7 +198,7 @@ impl Analyzer<'_> {
                 let class = self.graph.constructors.get(*id).class;
                 deleted |= self.graph.entity(class).key == Keyword::Union
                     && *nontrivial
-                    && self.graph.entity(class).initialized_members == 0;
+                    && self.graph.entity(class).class().initialized_members == 0;
                 let child = *nontrivial;
                 work.pop();
                 if let Some((_, _, parent)) = work.last_mut() {
@@ -228,7 +229,12 @@ impl Analyzer<'_> {
             } else {
                 None
             };
-            *nontrivial |= self.graph.entity(member).member_initializer.is_some()
+            *nontrivial |= self
+                .graph
+                .entity(member)
+                .initialization()
+                .member_initializer
+                .is_some()
                 || child_class.is_some() && !self.default_function_trivial(constructor)?;
         }
         Ok((result, deleted))

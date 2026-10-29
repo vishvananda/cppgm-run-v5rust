@@ -148,7 +148,7 @@ impl super::graph::Graph {
     // it must not independently demand a pending specification (notably in U).
     pub(super) fn function_nothrow_value(&self, function: EntityId) -> bool {
         let entity = self.entity(function);
-        if entity.builtin.is_some() {
+        if entity.callable().builtin.is_some() {
             return true;
         }
         if let super::construction::ConstructorExceptionSource::ComputedDefault {
@@ -157,18 +157,22 @@ impl super::graph::Graph {
         }
         | super::construction::ConstructorExceptionSource::InheritedPlan {
             constructor, ..
-        } = entity.constructor_exceptions
+        } = entity.callable().constructor_exceptions
         {
             return self.constructors.get(constructor).nothrow;
         }
-        if entity.constructor_exceptions
+        if entity.callable().constructor_exceptions
             == super::construction::ConstructorExceptionSource::SubobjectPlan
         {
             return entity
+                .initialization()
                 .constructor
                 .is_some_and(|id| self.constructors.get(id).nothrow);
         }
-        matches!(entity.exceptions, ExceptionState::Value(ExceptionSet::None))
+        matches!(
+            entity.callable().exceptions,
+            ExceptionState::Value(ExceptionSet::None)
+        )
     }
 
     pub(super) fn publish_constructor_noexcept(&mut self, function: EntityId, nothrow: bool) {
@@ -178,7 +182,7 @@ impl super::graph::Graph {
         }
         | super::construction::ConstructorExceptionSource::InheritedPlan {
             constructor, ..
-        } = self.entity(function).constructor_exceptions
+        } = self.entity(function).callable().constructor_exceptions
         {
             self.constructors.set_nothrow(constructor, nothrow);
         }
@@ -201,19 +205,19 @@ impl super::graph::Graph {
         | super::construction::ConstructorExceptionSource::InheritedPlan {
             constructor,
             pending: false,
-        } = entity.constructor_exceptions
+        } = entity.callable().constructor_exceptions
         {
             return Ok(self.constructors.get(constructor).nothrow);
         }
-        if entity.constructor_exceptions
+        if entity.callable().constructor_exceptions
             == super::construction::ConstructorExceptionSource::SubobjectPlan
         {
-            if let Some(constructor) = entity.constructor {
+            if let Some(constructor) = entity.initialization().constructor {
                 return Ok(self.constructors.get(constructor).nothrow);
             }
         } else {
             let pending = matches!(
-                entity.constructor_exceptions,
+                entity.callable().constructor_exceptions,
                 super::construction::ConstructorExceptionSource::ComputedDefault {
                     pending: true,
                     ..
@@ -221,7 +225,7 @@ impl super::graph::Graph {
                     pending: true,
                     ..
                 }
-            ) || match entity.exceptions {
+            ) || match entity.callable().exceptions {
                 ExceptionState::Pending(id) => !matches!(
                     self.specifications.get(id).qualifier,
                     Some(Qualifier { kind: QualifierKind::Throw(types), .. }) if !types.is_empty()
@@ -231,7 +235,7 @@ impl super::graph::Graph {
             };
             if !pending {
                 return Ok(matches!(
-                    entity.exceptions,
+                    entity.callable().exceptions,
                     ExceptionState::Value(ExceptionSet::None)
                 ));
             }
@@ -287,7 +291,7 @@ impl Analyzer<'_> {
         else {
             return Ok(());
         };
-        let Some(head) = self.graph.entity(primary).template_head else {
+        let Some(head) = self.graph.entity(primary).context().template_head else {
             return Ok(());
         };
         let arguments = self
@@ -329,7 +333,7 @@ impl Analyzer<'_> {
     }
 
     pub(super) fn pending_virtual_noexcept(&self, function: EntityId) -> bool {
-        matches!(self.graph.entity(function).exceptions, ExceptionState::Pending(id)
+        matches!(self.graph.entity(function).callable().exceptions, ExceptionState::Pending(id)
             if matches!(self.graph.specifications.get(id).qualifier, Some(Qualifier { kind: QualifierKind::Noexcept(Some(_)), .. })))
     }
 
@@ -339,24 +343,27 @@ impl Analyzer<'_> {
     }
 
     pub(super) fn pending_dynamic_throw(&self, function: EntityId) -> bool {
-        matches!(self.graph.entity(function).exceptions, ExceptionState::Pending(id)
+        matches!(self.graph.entity(function).callable().exceptions, ExceptionState::Pending(id)
             if matches!(self.graph.specifications.get(id).qualifier,
                 Some(Qualifier { kind: QualifierKind::Throw(types), .. }) if !types.is_empty()))
     }
 
     pub(super) fn function_may_throw(&mut self, entity: EntityId) -> Result<bool, Error> {
-        if self.graph.entity(entity).builtin.is_some() {
+        if self.graph.entity(entity).callable().builtin.is_some() {
             return Ok(false);
         }
         if let super::construction::ConstructorExceptionSource::InheritedPlan {
             constructor,
             pending,
-        } = self.graph.entity(entity).constructor_exceptions
+        } = self.graph.entity(entity).callable().constructor_exceptions
         {
-            if pending && self.graph.entity(entity).template_head.is_none() {
+            if pending && self.graph.entity(entity).context().template_head.is_none() {
                 // Consume before any subobject/default-expression query. Failure
                 // and recursive reads retain the prior source function seed.
-                self.graph.entity_mut(entity).constructor_exceptions =
+                self.graph
+                    .entity_mut(entity)
+                    .callable_mut()
+                    .constructor_exceptions =
                     super::construction::ConstructorExceptionSource::InheritedPlan {
                         constructor,
                         pending: false,
@@ -369,10 +376,10 @@ impl Analyzer<'_> {
         if let super::construction::ConstructorExceptionSource::ComputedDefault {
             constructor,
             pending,
-        } = self.graph.entity(entity).constructor_exceptions
+        } = self.graph.entity(entity).callable().constructor_exceptions
         {
             if pending {
-                match self.graph.entity(entity).exceptions.clone() {
+                match self.graph.entity(entity).callable().exceptions.clone() {
                     ExceptionState::Pending(id) => self.resolve_specification(id)?,
                     ExceptionState::Template(_) => self.resolve_specialization_exception(entity)?,
                     _ => {
@@ -387,7 +394,7 @@ impl Analyzer<'_> {
             // Class completion still owns publication of its adjusted types.
             return Ok(true);
         }
-        if self.graph.entity(entity).constructor_exceptions
+        if self.graph.entity(entity).callable().constructor_exceptions
             == super::construction::ConstructorExceptionSource::SubobjectPlan
         {
             let binding = self.graph.function_origin(entity)?;
@@ -396,23 +403,23 @@ impl Analyzer<'_> {
         }
         if self.graph.function_templates.primary(entity).is_some()
             && matches!(
-                self.graph.entity(entity).exceptions,
+                self.graph.entity(entity).callable().exceptions,
                 ExceptionState::Template(_)
             )
         {
             self.resolve_specialization_exception(entity)?;
         }
-        if let ExceptionState::Pending(id) = self.graph.entity(entity).exceptions {
+        if let ExceptionState::Pending(id) = self.graph.entity(entity).callable().exceptions {
             self.resolve_specification(id)?;
         }
         Ok(!matches!(
-            self.graph.entity(entity).exceptions,
+            self.graph.entity(entity).callable().exceptions,
             ExceptionState::Value(ExceptionSet::None)
         ))
     }
 
     pub(super) fn pending_constructor_noexcept(&self, entity: EntityId) -> bool {
-        match self.graph.entity(entity).exceptions {
+        match self.graph.entity(entity).callable().exceptions {
             ExceptionState::Pending(id) => {
                 let pending = self.graph.specifications.get(id);
                 !pending.done
@@ -434,12 +441,15 @@ impl Analyzer<'_> {
         if let super::construction::ConstructorExceptionSource::ComputedDefault {
             constructor,
             pending,
-        } = self.graph.entity(entity).constructor_exceptions
+        } = self.graph.entity(entity).callable().constructor_exceptions
         {
             if !pending {
                 return false;
             }
-            self.graph.entity_mut(entity).constructor_exceptions =
+            self.graph
+                .entity_mut(entity)
+                .callable_mut()
+                .constructor_exceptions =
                 super::construction::ConstructorExceptionSource::ComputedDefault {
                     constructor,
                     pending: false,
@@ -501,13 +511,19 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         // Reserved builtins keep the registry's implicit exception facts;
         // explicit declarations need not repeat those facts (GCC's rule).
-        if self.graph.entity(entity).builtin.is_some() {
+        if self.graph.entity(entity).callable().builtin.is_some() {
             return Ok(());
         }
         let mut qualifier = self.function_exception_qualifier(info);
-        let first = matches!(self.graph.entity(entity).exceptions, ExceptionState::Absent);
+        let first = matches!(
+            self.graph.entity(entity).callable().exceptions,
+            ExceptionState::Absent
+        );
         if first {
-            self.graph.entity_mut(entity).exception_origin = if qualifier.is_some() {
+            self.graph
+                .entity_mut(entity)
+                .callable_mut()
+                .exception_origin = if qualifier.is_some() {
                 SpecificationOrigin::Written
             } else {
                 SpecificationOrigin::Omitted
@@ -520,16 +536,20 @@ impl Analyzer<'_> {
                 && self
                     .graph
                     .entity(entity)
+                    .callable()
                     .function
                     .is_some_and(|props| props.language == super::linkage::Language::C)
                 && self.positions.in_system_header(location);
-            self.graph.entity_mut(entity).exception_omission = if inherit {
+            self.graph
+                .entity_mut(entity)
+                .callable_mut()
+                .exception_omission = if inherit {
                 OmittedSpecification::InheritSystemNothrow
             } else {
                 OmittedSpecification::Compare
             };
         } else if qualifier.is_none()
-            && self.graph.entity(entity).exception_omission
+            && self.graph.entity(entity).callable().exception_omission
                 == OmittedSpecification::InheritSystemNothrow
         {
             // The first specification remains in force for calls and emission.
@@ -538,11 +558,18 @@ impl Analyzer<'_> {
         let special = self
             .graph
             .entity(entity)
+            .callable()
             .function
             .and_then(|props| props.special);
-        if self.graph.entity(entity).function.is_some_and(|props| {
-            props.allocation == Some(super::function_names::AllocationOrigin::Predeclared)
-        }) {
+        if self
+            .graph
+            .entity(entity)
+            .callable()
+            .function
+            .is_some_and(|props| {
+                props.allocation == Some(super::function_names::AllocationOrigin::Predeclared)
+            })
+        {
             if matches!(
                 qualifier,
                 Some(Qualifier {
@@ -555,6 +582,7 @@ impl Analyzer<'_> {
             }
             self.graph
                 .entity_mut(entity)
+                .callable_mut()
                 .function
                 .as_mut()
                 .ok_or(Error::Invariant("allocation facts lost"))?
@@ -582,9 +610,9 @@ impl Analyzer<'_> {
         }
         if !first
             && self.template_depth != 0
-            && self.graph.entity(entity).template_head.is_none()
+            && self.graph.entity(entity).context().template_head.is_none()
             && matches!(
-                self.graph.entity(entity).exceptions,
+                self.graph.entity(entity).callable().exceptions,
                 ExceptionState::Template(_)
             )
         {
@@ -628,7 +656,7 @@ impl Analyzer<'_> {
         if !first
             && self.template_depth != 0
             && matches!(
-                self.graph.entity(entity).exceptions,
+                self.graph.entity(entity).callable().exceptions,
                 ExceptionState::Template(_)
             )
         {
@@ -643,6 +671,7 @@ impl Analyzer<'_> {
                 || self
                     .graph
                     .entity(entity)
+                    .callable()
                     .member_function
                     .is_some_and(|key| key.kind == super::graph::MemberKind::Destructor));
         if implicit_destructor && !self.semantic() {
@@ -671,38 +700,7 @@ impl Analyzer<'_> {
         if operand.is_some()
             && let Some(clause) = info.parameters
         {
-            let prototype =
-                self.graph
-                    .add_scope(super::graph::ScopeKind::Function, scope, None, None)?;
-            let count = self.graph.types.function_parameter_count(info.ty)?;
-            for (index, &parameter) in self
-                .tree
-                .parameters
-                .get(clause.parameters)
-                .iter()
-                .take(count)
-                .enumerate()
-            {
-                let ty = self.graph.types.function_parameter(info.ty, index)?;
-                if let Some(name) = self.declarator_name(parameter.declarator)? {
-                    let adjusted = self.graph.types.parameter_object(ty)?;
-                    let entity = self
-                        .graph
-                        .add_entity(Some(adjusted), Some(name), Keyword::Int)?;
-                    self.graph.add_binding(
-                        prototype,
-                        None,
-                        super::graph::Binding {
-                            kind: super::graph::BindingKind::Parameter,
-                            name: Some(name),
-                            entity,
-                            ty: Some(ty),
-                            key: Keyword::Int,
-                        },
-                    )?;
-                }
-            }
-            scope = prototype;
+            scope = self.exception_parameter_scope(info, clause, scope)?;
         }
         let id = self.graph.specifications.push(PendingSpecification {
             entity,
@@ -712,7 +710,7 @@ impl Analyzer<'_> {
             location,
             first,
             done: false,
-            schedule: if self.graph.entity(entity).template_head.is_none()
+            schedule: if self.graph.entity(entity).context().template_head.is_none()
                 && self.graph.class_templates.definitions.active_depth() == 0
             {
                 SpecificationSchedule::Unit
@@ -721,7 +719,8 @@ impl Analyzer<'_> {
             },
             mode: if implicit_destructor && self.semantic() {
                 SpecificationMode::ImplicitDestructor
-            } else if self.template_depth == 0 && self.graph.entity(entity).template_head.is_none()
+            } else if self.template_depth == 0
+                && self.graph.entity(entity).context().template_head.is_none()
             {
                 SpecificationMode::Ordinary
             } else {
@@ -729,7 +728,7 @@ impl Analyzer<'_> {
             },
         })?;
         if first {
-            self.graph.entity_mut(entity).exceptions = ExceptionState::Pending(id);
+            self.graph.entity_mut(entity).callable_mut().exceptions = ExceptionState::Pending(id);
         }
         let member_throw = self.defers_member_throw(entity, info)
             && qualifier.is_some_and(
@@ -744,6 +743,45 @@ impl Analyzer<'_> {
         }
         Ok(())
     }
+    fn exception_parameter_scope(
+        &mut self,
+        info: &DeclaratorInfo,
+        clause: ast::ParameterClause,
+        scope: ScopeId,
+    ) -> Result<ScopeId, Error> {
+        let prototype =
+            self.graph
+                .add_scope(super::graph::ScopeKind::Function, scope, None, None)?;
+        let count = self.graph.types.function_parameter_count(info.ty)?;
+        for (index, &parameter) in self
+            .tree
+            .parameters
+            .get(clause.parameters)
+            .iter()
+            .take(count)
+            .enumerate()
+        {
+            let ty = self.graph.types.function_parameter(info.ty, index)?;
+            if let Some(name) = self.declarator_name(parameter.declarator)? {
+                let adjusted = self.graph.types.parameter_object(ty)?;
+                let entity = self
+                    .graph
+                    .add_entity(Some(adjusted), Some(name), Keyword::Int)?;
+                self.graph.add_binding(
+                    prototype,
+                    None,
+                    super::graph::Binding {
+                        kind: super::graph::BindingKind::Parameter,
+                        name: Some(name),
+                        entity,
+                        ty: Some(ty),
+                        key: Keyword::Int,
+                    },
+                )?;
+            }
+        }
+        Ok(prototype)
+    }
     fn defers_member_throw(&self, entity: EntityId, info: &DeclaratorInfo) -> bool {
         let declaration = self.graph.entity(entity);
         self.class_depth != 0
@@ -751,7 +789,7 @@ impl Analyzer<'_> {
             && declaration
                 .home
                 .is_some_and(|home| self.graph.scope(home).kind == super::graph::ScopeKind::Class)
-            && declaration.template_head.is_none()
+            && declaration.context().template_head.is_none()
     }
 
     fn true_operand(&self, mut expr: ast::ExprId) -> bool {
@@ -769,7 +807,8 @@ impl Analyzer<'_> {
             return Ok(());
         }
         if matches!(pending.mode, SpecificationMode::TemplateExpression) {
-            let ExceptionState::Template(pattern) = self.graph.entity(pending.entity).exceptions
+            let ExceptionState::Template(pattern) =
+                self.graph.entity(pending.entity).callable().exceptions
             else {
                 return Err(Error::Invariant("missing template exception pattern"));
             };
@@ -795,7 +834,10 @@ impl Analyzer<'_> {
             self.graph.specifications.complete(id);
         }
         if pending.first {
-            self.graph.entity_mut(pending.entity).exceptions = ExceptionState::Entered;
+            self.graph
+                .entity_mut(pending.entity)
+                .callable_mut()
+                .exceptions = ExceptionState::Entered;
         }
         let saved_limit = self.graph.lookup_limit;
         self.graph.lookup_limit = Some(pending.limit);
@@ -831,7 +873,10 @@ impl Analyzer<'_> {
             Ok(result) => result,
             Err(error) => {
                 if pending.first && !written_operand {
-                    self.graph.entity_mut(pending.entity).exceptions = ExceptionState::Pending(id);
+                    self.graph
+                        .entity_mut(pending.entity)
+                        .callable_mut()
+                        .exceptions = ExceptionState::Pending(id);
                 }
                 return Err(error);
             }
@@ -841,20 +886,24 @@ impl Analyzer<'_> {
                 self.graph
                     .publish_constructor_noexcept(pending.entity, value == ExceptionSet::None);
             }
-            self.graph.entity_mut(pending.entity).exceptions = ExceptionState::Value(value);
+            self.graph
+                .entity_mut(pending.entity)
+                .callable_mut()
+                .exceptions = ExceptionState::Value(value);
         }
         self.graph.specifications.complete(id);
         Ok(())
     }
     fn specification_nonthrowing(&mut self, pending: PendingSpecification) -> Result<bool, Error> {
         if matches!(pending.mode, SpecificationMode::ImplicitDestructor) {
-            let member =
-                self.graph
-                    .entity(pending.entity)
-                    .member_function
-                    .ok_or(Error::Invariant(
-                        "implicit destructor specification without member",
-                    ))?;
+            let member = self
+                .graph
+                .entity(pending.entity)
+                .callable()
+                .member_function
+                .ok_or(Error::Invariant(
+                    "implicit destructor specification without member",
+                ))?;
             return self.implicit_destructor_nothrow(member.class);
         }
         match pending.qualifier.map(|qualifier| qualifier.kind) {
@@ -914,7 +963,12 @@ impl Analyzer<'_> {
         }
         if nonthrowing
             || !matches!(pending.mode, SpecificationMode::Ordinary)
-            || self.graph.entity(pending.entity).template_head.is_some()
+            || self
+                .graph
+                .entity(pending.entity)
+                .context()
+                .template_head
+                .is_some()
             || self
                 .graph
                 .function_templates
@@ -947,6 +1001,7 @@ impl Analyzer<'_> {
             || !self
                 .graph
                 .entity(entity)
+                .callable()
                 .function
                 .filter(|function| function.allocation.is_some())
                 .and_then(|function| function.special)
@@ -983,16 +1038,20 @@ impl Analyzer<'_> {
         location: SourceOffset,
         limit: usize,
     ) -> Result<(), Error> {
-        if !matches!(self.graph.entity(entity).exceptions, ExceptionState::Absent) {
+        if !matches!(
+            self.graph.entity(entity).callable().exceptions,
+            ExceptionState::Absent
+        ) {
             if matches!(
-                self.graph.entity(entity).exceptions,
+                self.graph.entity(entity).callable().exceptions,
                 ExceptionState::Value(_)
             ) {
                 // C++ has no expression-equivalence key when the first
                 // declaration wrote no pending operand. Its facts stay.
                 return Ok(());
             }
-            let ExceptionState::Template(first) = self.graph.entity(entity).exceptions else {
+            let ExceptionState::Template(first) = self.graph.entity(entity).callable().exceptions
+            else {
                 return Err(Error::Invariant("unexpected template exception state"));
             };
             let second = super::template_exceptions::TemplateException {
@@ -1023,7 +1082,7 @@ impl Analyzer<'_> {
             ty: info.ty,
             limit,
         };
-        self.graph.entity_mut(entity).exceptions = ExceptionState::Template(pattern);
+        self.graph.entity_mut(entity).callable_mut().exceptions = ExceptionState::Template(pattern);
         let id = self.graph.specifications.push(PendingSpecification {
             entity,
             qualifier: None,
@@ -1036,7 +1095,7 @@ impl Analyzer<'_> {
             schedule: SpecificationSchedule::Demand,
         })?;
         // Keep the queue's source order shared with ordinary specifications.
-        if self.graph.entity(entity).template_head.is_none() {
+        if self.graph.entity(entity).context().template_head.is_none() {
             // A class template's ordinary member waits for instantiation;
             // its specification's original typed syntax is retained only.
             self.graph.specifications.complete(id);
@@ -1113,9 +1172,14 @@ impl Analyzer<'_> {
             let object = home
                 .and_then(|home| self.graph.scope(home).owner)
                 .filter(|_| {
-                    implicit_object && !entity.function.is_some_and(|function| function.is_static)
+                    implicit_object
+                        && !entity
+                            .callable()
+                            .function
+                            .is_some_and(|function| function.is_static)
                 });
             let constructor = entity
+                .callable()
                 .member_function
                 .is_some_and(|member| member.kind == super::graph::MemberKind::Constructor);
             // The frozen specification reads the outer Type::cv; constructors
@@ -1295,7 +1359,7 @@ impl Analyzer<'_> {
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
-        match &self.graph.entity(entity).exceptions {
+        match &self.graph.entity(entity).callable().exceptions {
             ExceptionState::Value(ExceptionSet::None) => {
                 return Err(Error::at(
                     location,
@@ -1312,12 +1376,12 @@ impl Analyzer<'_> {
         }
         // A class template's ordinary member waits for its instantiation;
         // a function template records its written adjusted types immediately.
-        let set = if self.graph.entity(entity).template_head.is_some() {
+        let set = if self.graph.entity(entity).context().template_head.is_some() {
             self.exception_set_context(qualifier, scope, false, Some(entity))?
         } else {
             ExceptionSet::All
         };
-        self.graph.entity_mut(entity).exceptions = ExceptionState::Value(set);
+        self.graph.entity_mut(entity).callable_mut().exceptions = ExceptionState::Value(set);
         Ok(())
     }
     fn check_complete_throw_type(
@@ -1443,7 +1507,7 @@ impl Analyzer<'_> {
                 _ => false,
             };
             if nothrow {
-                self.graph.entity_mut(entity).target_unwind = TargetUnwind::NoThrow;
+                self.graph.entity_mut(entity).callable_mut().target_unwind = TargetUnwind::NoThrow;
             }
         }
         Ok(())
@@ -1486,7 +1550,7 @@ impl Analyzer<'_> {
         initializer: ast::Initializer,
     ) -> Result<(), Error> {
         use crate::lex::pp_lexer::Punctuator as P;
-        if self.graph.entity(entity).target_unwind != TargetUnwind::NoThrow {
+        if self.graph.entity(entity).callable().target_unwind != TargetUnwind::NoThrow {
             return Ok(());
         }
         let Some(expr) = self.single_initializer(initializer) else {
@@ -1501,7 +1565,7 @@ impl Analyzer<'_> {
         let Some(source) = self.designated_entity(expr)? else {
             return Ok(());
         };
-        let allows = if self.graph.entity(source).function.is_some() {
+        let allows = if self.graph.entity(source).callable().function.is_some() {
             self.function_may_throw(source)?
         } else {
             let source_type = self.graph.entity(source).ty.ok_or(Error::Invariant(
@@ -1516,7 +1580,7 @@ impl Analyzer<'_> {
             matches!(
                 self.graph.types.get(source_type).kind,
                 TypeKind::Function { .. }
-            ) && self.graph.entity(source).target_unwind != TargetUnwind::NoThrow
+            ) && self.graph.entity(source).callable().target_unwind != TargetUnwind::NoThrow
         };
         if allows {
             return Err(Error::at(
@@ -1576,7 +1640,11 @@ mod tests {
             assert!(analyzer.graph.function_nothrow_value(function));
             assert!(analyzer.graph.lower_function(function).unwrap().nothrow);
             assert!(matches!(
-                analyzer.graph.entity(function).constructor_exceptions,
+                analyzer
+                    .graph
+                    .entity(function)
+                    .callable()
+                    .constructor_exceptions,
                 super::super::construction::ConstructorExceptionSource::ComputedDefault {
                     pending: true,
                     ..
@@ -1589,7 +1657,11 @@ mod tests {
                 assert!(result.unwrap());
             }
             assert!(matches!(
-                analyzer.graph.entity(function).constructor_exceptions,
+                analyzer
+                    .graph
+                    .entity(function)
+                    .callable()
+                    .constructor_exceptions,
                 super::super::construction::ConstructorExceptionSource::ComputedDefault {
                     pending: false,
                     ..
@@ -1612,7 +1684,7 @@ mod tests {
                         .unwrap(),
                 )
                 .entity;
-            let scope = analyzer.graph.entity(b).scope.unwrap();
+            let scope = analyzer.graph.entity(b).context().scope.unwrap();
             let ordinary = analyzer
                 .graph
                 .binding(
@@ -1652,12 +1724,12 @@ mod tests {
         let mut graph = analyzer.analyze(declarations).unwrap();
         let binding = graph.own(graph.global, value, Filter::Ordinary).unwrap();
         let class = graph.class_of(graph.binding(binding).ty.unwrap()).unwrap();
-        let scope = graph.entity(class).scope.unwrap();
+        let scope = graph.entity(class).context().scope.unwrap();
         let function = graph
             .binding(graph.own(scope, f, Filter::Ordinary).unwrap())
             .entity;
         assert!(matches!(
-            graph.entity(function).exceptions,
+            graph.entity(function).callable().exceptions,
             ExceptionState::Pending(_)
         ));
         let mut resumed =
@@ -1670,7 +1742,7 @@ mod tests {
         assert!(!resumed.function_may_throw(function).unwrap());
         assert_eq!(resumed.graph.work().constant_evaluations, work);
         assert!(matches!(
-            resumed.graph.entity(function).exceptions,
+            resumed.graph.entity(function).callable().exceptions,
             ExceptionState::Value(ExceptionSet::None)
         ));
     }
@@ -1697,7 +1769,7 @@ mod tests {
         let mut graph = analyzer.analyze(declarations).unwrap();
         let binding = graph.own(graph.global, value, Filter::Ordinary).unwrap();
         let class = graph.class_of(graph.binding(binding).ty.unwrap()).unwrap();
-        let scope = graph.entity(class).scope.unwrap();
+        let scope = graph.entity(class).context().scope.unwrap();
         let bad = graph
             .binding(graph.own(scope, bad_name, Filter::Ordinary).unwrap())
             .entity;
@@ -1712,7 +1784,7 @@ mod tests {
         assert!(matches!(error, Error::InstantiationDiagnostic { .. }));
         assert!(graph.specifications.unit_closed());
         assert!(matches!(
-            graph.entity(bad).exceptions,
+            graph.entity(bad).callable().exceptions,
             ExceptionState::Entered
         ));
         let failed_evaluations = graph.work().constant_evaluations;
@@ -1771,7 +1843,7 @@ mod tests {
                 .own(global, name, super::super::lookup::Filter::Ordinary)
                 .unwrap();
             let class = analyzer.graph.binding(class).entity;
-            let scope = analyzer.graph.entity(class).scope.unwrap();
+            let scope = analyzer.graph.entity(class).context().scope.unwrap();
             let key = super::super::function_names::SpecialName::Operator {
                 token: crate::lex::vocabulary::SimpleToken::keyword(Keyword::Delete),
                 array: false,
@@ -1782,7 +1854,9 @@ mod tests {
                 .next()
                 .unwrap();
             let function = analyzer.graph.binding(binding).entity;
-            let ExceptionState::Template(first) = analyzer.graph.entity(function).exceptions else {
+            let ExceptionState::Template(first) =
+                analyzer.graph.entity(function).callable().exceptions
+            else {
                 panic!("class member lost its deferred specification");
             };
             let result =
@@ -1793,8 +1867,10 @@ mod tests {
                 assert!(matches!(result, Err(Error::Diagnostic { message, .. })
                     if message == "redeclaration with an incompatible exception-specification"));
             }
-            assert!(matches!(analyzer.graph.entity(function).exceptions,
-                ExceptionState::Template(saved) if saved.operand == first.operand));
+            assert!(
+                matches!(analyzer.graph.entity(function).callable().exceptions,
+                ExceptionState::Template(saved) if saved.operand == first.operand)
+            );
             assert!(analyzer.graph.root_demands.as_slice().is_empty());
             assert_eq!(analyzer.tree.expressions.mark(), expressions);
             assert_eq!(analyzer.template_depth, 0);
@@ -1823,9 +1899,13 @@ mod tests {
         let p = graph.entity(entity(b"p"));
         let q = graph.entity(entity(b"q"));
         assert_eq!(p.ty, q.ty);
-        assert!(p.target_unwind == TargetUnwind::NoThrow);
-        assert!(q.target_unwind == TargetUnwind::MayThrow);
-        let declaration = graph.entity(entity(b"main")).function_definition.unwrap();
+        assert!(p.callable().target_unwind == TargetUnwind::NoThrow);
+        assert!(q.callable().target_unwind == TargetUnwind::MayThrow);
+        let declaration = graph
+            .entity(entity(b"main"))
+            .callable()
+            .function_definition
+            .unwrap();
         let ast::DeclKind::Function { body, .. } = tree.declarations.get(declaration).kind else {
             panic!("main is not a function");
         };

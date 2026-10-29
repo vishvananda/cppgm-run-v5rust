@@ -147,11 +147,12 @@ impl Analyzer<'_> {
             parameters.last().filter(|&&parameter| {
                 self.graph
                     .entity(parameter)
+                    .context()
                     .template_parameter
                     .is_some_and(super::templates::ParameterInfo::is_pack)
             })
         })?;
-        self.graph.entity(*parameter).template_parameter
+        self.graph.entity(*parameter).context().template_parameter
     }
 
     pub(super) fn argument_parameter_pack(&self, head: HeadId, index: usize) -> bool {
@@ -162,6 +163,7 @@ impl Analyzer<'_> {
             .is_some_and(|&parameter| {
                 self.graph
                     .entity(parameter)
+                    .context()
                     .template_parameter
                     .is_some_and(super::templates::ParameterInfo::is_pack)
             })
@@ -265,6 +267,7 @@ impl Analyzer<'_> {
             let info = self
                 .graph
                 .entity(parameter)
+                .context()
                 .template_parameter
                 .ok_or(Error::Invariant("argument without parameter"))?;
             if info.is_pack() {
@@ -395,6 +398,7 @@ impl Analyzer<'_> {
             } => {
                 self.graph
                     .entity(entity)
+                    .context()
                     .template_parameter
                     .is_some_and(|info| info.value_type.is_some())
                     || self
@@ -426,6 +430,7 @@ impl Analyzer<'_> {
         let info = self
             .graph
             .entity(binding.entity)
+            .context()
             .template_parameter
             .ok_or(Error::Invariant("pack binding without parameter"))?;
         let levels = self.graph.instance_levels(self.graph.scope(scope).parent)?;
@@ -530,6 +535,7 @@ impl Analyzer<'_> {
             let binding = self.graph.binding(id);
             self.graph
                 .entity(binding.entity)
+                .context()
                 .template_parameter
                 .is_some_and(super::templates::ParameterInfo::is_pack)
                 || binding.kind == BindingKind::Parameter
@@ -609,7 +615,7 @@ mod tests {
         assert_eq!(classes[3], classes[4]);
         assert_ne!(classes[3], classes[5]);
         for &class in &classes {
-            assert!(analyzer.graph.entity(class).scope.is_none());
+            assert!(analyzer.graph.entity(class).context().scope.is_none());
         }
         let instance = analyzer.graph.class_templates.instance(classes[0]).unwrap();
         assert_eq!(instance.arguments.len(), 2);
@@ -620,15 +626,16 @@ mod tests {
         let head = analyzer
             .graph
             .entity(instance.primary)
+            .context()
             .template_head
             .unwrap();
         let parameter = analyzer.graph.templates.parameters(head)[1];
         let parameter_ty = analyzer.graph.entity(parameter).ty;
         assert!(analyzer.complete_class(classes[0]).unwrap());
         assert!(analyzer.complete_class(classes[0]).unwrap());
-        assert!(analyzer.graph.entity(classes[2]).scope.is_none());
+        assert!(analyzer.graph.entity(classes[2]).context().scope.is_none());
         assert_eq!(analyzer.graph.entity(parameter).ty, parameter_ty);
-        let class_scope = analyzer.graph.entity(classes[0]).scope.unwrap();
+        let class_scope = analyzer.graph.entity(classes[0]).context().scope.unwrap();
         let frame = analyzer.graph.scope(class_scope).parent.unwrap();
         let bound = analyzer
             .graph
@@ -651,7 +658,7 @@ mod tests {
             .own(class_scope, names[8], Filter::Ordinary)
             .unwrap();
         assert!(
-            matches!(analyzer.graph.entity(analyzer.graph.binding(count).entity).constant,
+            matches!(analyzer.graph.entity(analyzer.graph.binding(count).entity).object().constant,
             super::super::constants::ConstantState::Value(value) if value.bits == 2)
         );
         assert!(analyzer.graph.root_demands.as_slice().is_empty());
