@@ -201,7 +201,12 @@ impl Function<'_, '_, '_, '_> {
             .checked_add(width)
             .ok_or(crate::lowir::Error::Limit)?;
         let mut value = [0u8; 8];
-        if let Some(unit) = self.cursor.spellings.get(literal.data).get(offset..end) {
+        if let Some(unit) = self
+            .cursor
+            .spellings
+            .get(literal.data(&self.cursor.spellings))
+            .get(offset..end)
+        {
             value[..unit.len()].copy_from_slice(unit);
         }
         Ok(u64::from_le_bytes(value))
@@ -362,7 +367,7 @@ impl Function<'_, '_, '_, '_> {
         };
         let literal = self.without_parentheses(literal);
         let units = if let ExprKind::Literal(literal) = self.tree.expressions.get(literal).kind
-            && let PostTokenKind::String { ty, .. } = literal.kind
+            && let PostTokenKind::String { ty, .. } = literal.kind(&self.cursor.spellings)
         {
             Some((literal, ty.size()))
         } else {
@@ -478,7 +483,7 @@ impl Function<'_, '_, '_, '_> {
                 id = inner;
             }
             if let ExprKind::Literal(literal) = self.tree.expressions.get(id).kind
-                && let PostTokenKind::String { ty, .. } = literal.kind
+                && let PostTokenKind::String { ty, .. } = literal.kind(&self.cursor.spellings)
             {
                 Some((literal, ty.size()))
             } else {

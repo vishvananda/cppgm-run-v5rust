@@ -105,7 +105,7 @@ impl Analyzer<'_> {
         let immediate = matches!(
             self.tree.expressions.get(root).kind,
             ast::ExprKind::Literal(_)
-        ) || self.graph.expression_facts.get(root)?.folded.is_some();
+        ) || self.graph.expression_facts.get(root)?.folded().is_some();
         Ok(ArrayAllocation {
             count,
             constant: constant.filter(|_| immediate),

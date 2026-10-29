@@ -70,7 +70,7 @@ impl Analyzer<'_> {
                 ))?;
             let designation = self.function_designation(binding, found.functions.as_slice())?;
             let set = designation
-                .functions
+                .functions(&self.graph.expression_facts)
                 .ok_or(Error::Invariant("arrow designation without candidates"))?;
             let receiver = ObjectArgument {
                 source: ObjectSource::Explicit {

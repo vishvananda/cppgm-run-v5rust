@@ -221,7 +221,7 @@ impl Analyzer<'_> {
                             .ok_or(Error::Invariant("cast name without type"))?;
                         let mut facts =
                             self.scalar_functional_cast(id, target, arguments, None, scope)?;
-                        facts.functional_call = true;
+                        facts.set_functional_call(true);
                         return Ok(facts);
                     }
                 }
@@ -349,7 +349,10 @@ impl Analyzer<'_> {
                     .kind
                     == super::graph::BindingKind::Function
                 {
-                    facts.functions = Some(self.graph.overloads.add(found.functions.as_slice())?);
+                    facts.set_functions(
+                        Some(self.graph.overloads.add(found.functions.as_slice())?),
+                        &mut self.graph.expression_facts,
+                    )?;
                 }
                 if let Some(template) = template_facts {
                     self.bind_template_call_object(template, &mut facts)?;
@@ -380,20 +383,20 @@ impl Analyzer<'_> {
         facts: ExprFacts,
         scope: ScopeId,
     ) -> Result<ExprFacts, Error> {
-        if let Some(target) = facts.destructor {
+        if let Some(target) = facts.destructor(&self.graph.expression_facts) {
             let mut result = self.destructor_call(id, arguments, target)?;
-            result.dispatch = facts.dispatch;
+            result.set_dispatch(facts.dispatch());
             return Ok(result);
         }
         if self.graph.class_of(facts.ty).is_some() {
             return self.callable_object_call(id, facts, scope);
         }
         let designation = if let Some(set) = facts
-            .functions
+            .functions(&self.graph.expression_facts)
             .or_else(|| self.graph.expression_facts.function_declarations(callee))
         {
             Some(set)
-        } else if let Some(binding) = facts.function {
+        } else if let Some(binding) = facts.function(&self.graph.expression_facts) {
             Some(self.graph.overloads.add(&[binding])?)
         } else {
             None
@@ -422,7 +425,7 @@ impl Analyzer<'_> {
                 self.tree.expressions.get(id).location,
                 Candidates::Functions(set),
                 argument_buffer.as_slice(),
-                facts.object,
+                facts.object(&self.graph.expression_facts),
                 &mut scratch,
             );
             let result = chosen.and_then(|selected| {
@@ -441,7 +444,7 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         let functions = self.graph.overloads.get(
             source
-                .functions
+                .functions(&self.graph.expression_facts)
                 .ok_or(Error::Invariant("template callee without candidates"))?,
         );
         let member = functions
@@ -452,10 +455,13 @@ impl Analyzer<'_> {
             && let Some(first) = first
             && let Some(object) = self.implicit_member_object(first)?
         {
-            facts.object = Some(object);
-            facts.member_naming = facts
-                .member_naming
-                .or_else(|| self.graph.class_of(object.ty));
+            facts.set_object(Some(object), &mut self.graph.expression_facts)?;
+            facts.set_member_naming(
+                facts
+                    .member_naming(&self.graph.expression_facts)
+                    .or_else(|| self.graph.class_of(object.ty)),
+                &mut self.graph.expression_facts,
+            )?;
         }
         Ok(())
     }
@@ -494,10 +500,13 @@ impl Analyzer<'_> {
         }
         found.binding = Some(first);
         let mut facts = self.function_designation(first, found.functions.as_slice())?;
-        facts.member_naming = found
-            .qualifier
-            .filter(|&home| self.graph.scope(home).kind == super::graph::ScopeKind::Class)
-            .and_then(|home| self.graph.scope(home).owner);
+        facts.set_member_naming(
+            found
+                .qualifier
+                .filter(|&home| self.graph.scope(home).kind == super::graph::ScopeKind::Class)
+                .and_then(|home| self.graph.scope(home).owner),
+            &mut self.graph.expression_facts,
+        )?;
         self.publish_named_callee(callee, named, facts, scope)?;
         Ok(Some(facts))
     }
@@ -516,7 +525,7 @@ impl Analyzer<'_> {
         let binding = selected.binding;
         let location = self.tree.expressions.get(id).location;
         self.check_function_not_deleted(self.graph.binding(binding).entity, location)?;
-        let callable = facts.call_form == super::expression_facts::CallForm::CallableObject;
+        let callable = facts.call_form() == super::expression_facts::CallForm::CallableObject;
         if let Some(receiver) =
             self.record_call_receiver(callee, binding, &facts, scope, location)?
         {
@@ -540,12 +549,15 @@ impl Analyzer<'_> {
         if callable {
             // Calling an object does not replace the object's own designation
             // or base paths. The call owns its selected receiver conversion.
-            facts.call_form = super::expression_facts::CallForm::CallableObject;
+            facts.set_call_form(super::expression_facts::CallForm::CallableObject);
         }
-        facts.call = Some(CallTarget::Direct(
-            self.graph
-                .function_origin(self.graph.binding(binding).entity)?,
-        ));
+        facts.set_call(
+            Some(CallTarget::Direct(
+                self.graph
+                    .function_origin(self.graph.binding(binding).entity)?,
+            )),
+            &mut self.graph.expression_facts,
+        )?;
         if self
             .graph
             .virtuals
@@ -553,7 +565,7 @@ impl Analyzer<'_> {
             .is_virtual
             && (callable || !self.qualified_call_designator(callee))
         {
-            facts.dispatch = super::expression_facts::Dispatch::Virtual;
+            facts.set_dispatch(super::expression_facts::Dispatch::Virtual);
             if self.lowering()
                 && self.unevaluated == 0
                 && let Some(class) = self.call_table_class(callee, binding, arguments, callable)?
@@ -584,12 +596,14 @@ impl Analyzer<'_> {
             .function_origin(self.graph.binding(binding).entity)?;
         let root = self.graph.expression_facts.root(callee);
         if let Some(facts) = self.graph.expression_facts.known(root) {
-            if facts.functions.is_none() && facts.function == Some(origin) {
+            if facts.functions(&self.graph.expression_facts).is_none()
+                && facts.function(&self.graph.expression_facts) == Some(origin)
+            {
                 return Ok(());
             }
         } else {
             let mut facts = self.new_expression_facts(ty, V::Lvalue)?;
-            facts.function = Some(origin);
+            facts.set_function(Some(origin), &mut self.graph.expression_facts)?;
             self.graph.expression_facts.set(root, facts);
             super::record(&mut self.graph.expression_types, root.index(), ty);
             return Ok(());
@@ -647,25 +661,30 @@ impl Analyzer<'_> {
     ) -> Result<Option<super::expression_facts::CallReceiver>, Error> {
         let existing = self.graph.expression_facts.known(callee);
         let mut receiver = existing.unwrap_or(*facts);
-        receiver.object = facts.object;
-        if facts.call_form == super::expression_facts::CallForm::CallableObject {
+        receiver.set_object(
+            facts.object(&self.graph.expression_facts),
+            &mut self.graph.expression_facts,
+        )?;
+        if facts.call_form() == super::expression_facts::CallForm::CallableObject {
             receiver.conversion = None;
-            receiver.base_path = None;
-            receiver.member_naming_path = None;
-            receiver.member_path = None;
+            receiver.set_base_path(None, &mut self.graph.expression_facts)?;
+            receiver.set_member_naming_path(None, &mut self.graph.expression_facts)?;
+            receiver.set_member_path(None, &mut self.graph.expression_facts)?;
         }
         let declaration = facts
-            .functions
+            .functions(&self.graph.expression_facts)
             .or_else(|| self.graph.expression_facts.function_declarations(callee))
-            .map_or(facts.function, |set| {
+            .map_or(facts.function(&self.graph.expression_facts), |set| {
                 self.selected_function_declaration(binding, self.graph.overloads.get(set))
             });
-        if let Some(object) = facts.object {
+        if let Some(object) = facts.object(&self.graph.expression_facts) {
             let class = self
                 .graph
                 .class_of(object.ty)
                 .ok_or(Error::Invariant("call object without class"))?;
-            let naming = facts.member_naming.unwrap_or(class);
+            let naming = facts
+                .member_naming(&self.graph.expression_facts)
+                .unwrap_or(class);
             if let Some(declaration) = declaration {
                 self.check_named_member_access(declaration, naming, class, scope, location)?;
             }
@@ -703,10 +722,16 @@ impl Analyzer<'_> {
                     self.conversion_base_path(object_facts, conversion, scope, location, false)?
                 };
                 self.record_conversion(&mut receiver, conversion);
-                receiver.base_path = path;
+                receiver.set_base_path(path, &mut self.graph.expression_facts)?;
                 if naming != class && naming != home {
-                    receiver.member_naming_path = Some(self.graph.retain_base_path(class, naming)?);
-                    receiver.member_path = Some(self.graph.retain_base_path(naming, home)?);
+                    receiver.set_member_naming_path(
+                        Some(self.graph.retain_base_path(class, naming)?),
+                        &mut self.graph.expression_facts,
+                    )?;
+                    receiver.set_member_path(
+                        Some(self.graph.retain_base_path(naming, home)?),
+                        &mut self.graph.expression_facts,
+                    )?;
                     if self.lowering() {
                         self.demand_storage_layout(class, location)?;
                     }
@@ -714,7 +739,7 @@ impl Analyzer<'_> {
             } else {
                 self.require_deduced_result(self.graph.binding(binding).entity, location)?;
                 if self.lowering()
-                    && facts.call_form == super::expression_facts::CallForm::CallableObject
+                    && facts.call_form() == super::expression_facts::CallForm::CallableObject
                     && object.category == V::Prvalue
                 {
                     // A static operator has no object parameter boundary. Its
@@ -724,7 +749,7 @@ impl Analyzer<'_> {
             }
         } else {
             if let Some(declaration) = declaration {
-                if let Some(naming) = facts.member_naming {
+                if let Some(naming) = facts.member_naming(&self.graph.expression_facts) {
                     self.check_declaration_member_access(
                         declaration,
                         naming,
@@ -744,14 +769,14 @@ impl Analyzer<'_> {
             }
             self.require_deduced_result(self.graph.binding(binding).entity, location)?;
         }
-        if facts.call_form == super::expression_facts::CallForm::CallableObject {
+        if facts.call_form() == super::expression_facts::CallForm::CallableObject {
             Ok(Some(super::expression_facts::CallReceiver {
                 object: receiver
-                    .object
+                    .object(&self.graph.expression_facts)
                     .ok_or(Error::Invariant("callable receiver missing"))?,
-                path: receiver.base_path,
-                naming_path: receiver.member_naming_path,
-                member_path: receiver.member_path,
+                path: receiver.base_path(&self.graph.expression_facts),
+                naming_path: receiver.member_naming_path(&self.graph.expression_facts),
+                member_path: receiver.member_path(&self.graph.expression_facts),
             }))
         } else {
             if existing.is_some() {
@@ -893,10 +918,13 @@ impl Analyzer<'_> {
             ));
         }
         let mut facts = self.call_result(function)?;
-        facts.call = Some(CallTarget::Indirect(
-            function,
-            self.callee_target_entity(callee)?,
-        ));
+        facts.set_call(
+            Some(CallTarget::Indirect(
+                function,
+                self.callee_target_entity(callee)?,
+            )),
+            &mut self.graph.expression_facts,
+        )?;
         Ok(facts)
     }
     pub(super) fn publish_named_callee(
@@ -940,8 +968,9 @@ impl Analyzer<'_> {
             return self.list_sequence(id, target);
         }
         let mut facts = self.graph.expression_facts.get(id)?;
-        if facts.object.is_some()
-            && (facts.functions.is_some() || facts.destructor.is_some())
+        if facts.object(&self.graph.expression_facts).is_some()
+            && (facts.functions(&self.graph.expression_facts).is_some()
+                || facts.destructor(&self.graph.expression_facts).is_some())
             && self.ordinary_function_operand(facts).is_none()
         {
             // The frozen implicit_sequence accepts only a lone static
@@ -949,9 +978,9 @@ impl Analyzer<'_> {
             return Ok(None);
         }
         let mut function = None;
-        let overloaded =
-            facts.functions.is_some() && self.ordinary_function_operand(facts).is_none();
-        if facts.functions.is_some() {
+        let overloaded = facts.functions(&self.graph.expression_facts).is_some()
+            && self.ordinary_function_operand(facts).is_none();
+        if facts.functions(&self.graph.expression_facts).is_some() {
             let binding = if let Some(binding) = self.ordinary_function_operand(facts) {
                 Some(binding)
             } else {
@@ -966,7 +995,7 @@ impl Analyzer<'_> {
                     .ty
                     .ok_or(Error::Invariant("function argument without type"))?,
             )?;
-            facts.ty = if facts.member_address.is_some() {
+            facts.ty = if facts.member_address(&self.graph.expression_facts).is_some() {
                 self.function_address_type(binding, ty)?
             } else if matches!(self.graph.types.get(facts.ty).kind, TypeKind::Pointer(_))
                 || overloaded
@@ -982,7 +1011,7 @@ impl Analyzer<'_> {
             } else {
                 ty
             };
-            facts.functions = None;
+            facts.set_functions(None, &mut self.graph.expression_facts)?;
             function = Some(binding);
         }
         let application = self.scalar_sequence(facts, target, false)?;
@@ -1303,7 +1332,8 @@ impl Analyzer<'_> {
                         break;
                     }
                     let facts = self.graph.expression_facts.get(arg)?;
-                    if facts.functions.is_some() && self.ordinary_function_operand(facts).is_none()
+                    if facts.functions(&self.graph.expression_facts).is_some()
+                        && self.ordinary_function_operand(facts).is_none()
                         || matches!(
                             self.graph.types.get(facts.ty).kind,
                             TypeKind::Scalar(Scalar::Void)
@@ -1353,7 +1383,7 @@ impl Analyzer<'_> {
                 sequences[position],
                 facts.ty,
                 facts.category,
-                facts.functions.is_some(),
+                facts.functions(&self.graph.expression_facts).is_some(),
             ) {
                 return Ok(false);
             }
@@ -1371,7 +1401,7 @@ impl Analyzer<'_> {
                 sequences[position],
                 facts.ty,
                 facts.category,
-                facts.functions.is_some(),
+                facts.functions(&self.graph.expression_facts).is_some(),
             ) {
                 return Ok(false);
             }
@@ -1691,12 +1721,15 @@ impl Analyzer<'_> {
             .function_conversion(arg)
             .is_none()
         {
-            facts.base_path = self.conversion_base_path(
-                facts,
-                conversion,
-                scope,
-                self.tree.expressions.get(arg).location,
-                true,
+            facts.set_base_path(
+                self.conversion_base_path(
+                    facts,
+                    conversion,
+                    scope,
+                    self.tree.expressions.get(arg).location,
+                    true,
+                )?,
+                &mut self.graph.expression_facts,
             )?;
         }
         self.check_binding_temporary(
@@ -2052,7 +2085,7 @@ mod tests {
         assert_eq!(graph.class_of(conversion.result), graph.class_of(facts.ty));
         assert_eq!(conversion.rank, ConversionRank::Ellipsis);
         assert_eq!(graph.expression_facts.get(root).unwrap().ty, facts.ty);
-        assert!(facts.class_copy.is_none());
+        assert!(facts.class_copy(&graph.expression_facts).is_none());
         assert!(graph.lower_class_copy(argument).unwrap().is_none());
     }
 

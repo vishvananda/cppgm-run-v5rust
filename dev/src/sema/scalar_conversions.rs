@@ -197,9 +197,9 @@ impl Analyzer<'_> {
                 return Ok(None);
             }
             C::Arithmetic
-        } else if (facts.null_literal || matches!(sk, TypeKind::Scalar(Scalar::Nullptr)))
+        } else if (facts.null_literal() || matches!(sk, TypeKind::Scalar(Scalar::Nullptr)))
             && (gk.pointer_level().is_some()
-                || facts.null_literal && matches!(gk, TypeKind::Scalar(Scalar::Nullptr)))
+                || facts.null_literal() && matches!(gk, TypeKind::Scalar(Scalar::Nullptr)))
         {
             C::NullPointer
         } else if let (
@@ -406,7 +406,7 @@ impl Analyzer<'_> {
                 let mut conversion = self.standard_conversion_in(facts, element, false, context)?;
                 if let Some(c) = &mut conversion {
                     c.target = target;
-                    c.result = if c.second == C::NullPointer && facts.null_literal {
+                    c.result = if c.second == C::NullPointer && facts.null_literal() {
                         self.bare_type(element)?
                     } else {
                         element
@@ -441,7 +441,7 @@ impl Analyzer<'_> {
         context: SequenceContext,
     ) -> Result<(), Error> {
         let facts = self.builtin_operand_facts(id)?;
-        if facts.functions.is_some() {
+        if facts.functions(&self.graph.expression_facts).is_some() {
             let binding = if let Some(binding) = self.ordinary_function_operand(facts) {
                 Some(binding)
             } else {
@@ -510,12 +510,15 @@ impl Analyzer<'_> {
         if matches!(conversion.second, C::DerivedToBase | C::MemberToDerived) {
             let scope = self.graph.expression_scopes[self.graph.expression_facts.root(id).index()]
                 .ok_or(Error::Invariant("base conversion without expression scope"))?;
-            facts.base_path = self.conversion_base_path(
-                facts,
-                conversion,
-                scope,
-                self.tree.expressions.get(id).location,
-                true,
+            facts.set_base_path(
+                self.conversion_base_path(
+                    facts,
+                    conversion,
+                    scope,
+                    self.tree.expressions.get(id).location,
+                    true,
+                )?,
+                &mut self.graph.expression_facts,
             )?;
         }
         if matches!(

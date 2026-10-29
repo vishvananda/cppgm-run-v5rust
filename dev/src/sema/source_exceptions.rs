@@ -66,7 +66,10 @@ impl Analyzer<'_> {
         self.typed_expression(operand, scope)?;
         self.check_resolved_function(operand)?;
         let facts = self.graph.expression_facts.get(operand)?;
-        if facts.functions.is_some() || facts.object.is_some() && facts.function.is_some() {
+        if facts.functions(&self.graph.expression_facts).is_some()
+            || facts.object(&self.graph.expression_facts).is_some()
+                && facts.function(&self.graph.expression_facts).is_some()
+        {
             return Err(Error::at(location, "a throw operand that is not a value"));
         }
         let mut ty = facts.ty;
@@ -466,7 +469,7 @@ mod tests {
                     .expression_facts
                     .get(id)
                     .unwrap()
-                    .class_copy
+                    .class_copy(&analyzer.graph.expression_facts)
                     .unwrap();
                 let CopyOrigin::Declared(binding) = selected.origin else {
                     panic!("declared copy");

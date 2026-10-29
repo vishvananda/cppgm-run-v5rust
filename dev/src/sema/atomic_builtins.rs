@@ -155,11 +155,11 @@ impl Analyzer<'_> {
                 })?;
             let boolean = self.graph.types.scalar(Scalar::Bool)?;
             let mut facts = self.new_expression_facts(boolean, ValueCategory::Prvalue)?;
-            facts.folded = Some(u64::from(if form.intrinsic.c11 {
+            facts.set_folded(Some(u64::from(if form.intrinsic.c11 {
                 (1..=8).contains(&constant.bits)
             } else {
                 matches!(constant.bits, 1 | 2 | 4 | 8)
-            }));
+            })));
             return Ok(facts);
         }
         let result = match form.result {
@@ -324,7 +324,14 @@ mod tests {
                 Op::Update(super::super::atomic_operations::AtomicArithmetic::Add, true)
             );
             assert!(intrinsic.implied.is_none());
-            assert!(graph.expression_facts.get(id).unwrap().call.is_none());
+            assert!(
+                graph
+                    .expression_facts
+                    .get(id)
+                    .unwrap()
+                    .call(&graph.expression_facts)
+                    .is_none()
+            );
             let ExprKind::Call { callee, arguments } = tree.expressions.get(id).kind else {
                 panic!("expected call syntax");
             };

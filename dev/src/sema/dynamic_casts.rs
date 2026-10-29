@@ -172,7 +172,7 @@ impl Analyzer<'_> {
         } else {
             let mut facts =
                 self.new_expression_facts(to, if lvalue { V::Lvalue } else { V::Xvalue })?;
-            facts.reference_cast = Some(target);
+            facts.set_reference_cast(Some(target), &mut self.graph.expression_facts)?;
             facts
         };
         self.graph.expression_facts.set_runtime_cast(

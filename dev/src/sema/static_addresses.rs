@@ -50,11 +50,13 @@ impl Analyzer<'_> {
         let node = *self.tree.expressions.get(id);
         let facts = self.graph.expression_facts.get(id)?;
         let mut place = match node.kind {
-            ExprKind::Cast { operand, .. } if facts.reference_cast.is_some() => {
+            ExprKind::Cast { operand, .. }
+                if facts.reference_cast(&self.graph.expression_facts).is_some() =>
+            {
                 let place = self.static_place(operand, scope)?;
                 self.project_static_cast(
                     place,
-                    facts.base_cast,
+                    facts.base_cast(&self.graph.expression_facts),
                     self.is_member_expression(operand),
                     node.location,
                 )?
@@ -64,7 +66,7 @@ impl Analyzer<'_> {
                     .graph
                     .binding(
                         facts
-                            .function
+                            .function(&self.graph.expression_facts)
                             .or_else(|| self.graph.resolved_name(name))
                             .ok_or(Error::Invariant("static reference binding"))?,
                     )
@@ -75,7 +77,7 @@ impl Analyzer<'_> {
                 self.static_pointer(operand, scope)?
             }
             ExprKind::Subscript { base, index } => {
-                let (base, index) = if facts.commuted {
+                let (base, index) = if facts.commuted() {
                     (index, base)
                 } else {
                     (base, index)
@@ -99,7 +101,7 @@ impl Analyzer<'_> {
             }
             ExprKind::Member { base, op, .. } => {
                 let member = facts
-                    .member
+                    .member(&self.graph.expression_facts)
                     .ok_or(Error::Invariant("static member designation"))?;
                 let entity = self.graph.binding(member).entity;
                 if self.graph.entity(entity).data_member
@@ -123,14 +125,17 @@ impl Analyzer<'_> {
                     op.token.as_punctuator() != Some(P::Arrow) && self.is_member_expression(base);
                 let place = self.static_project_path(
                     place,
-                    facts.member_naming_path,
+                    facts.member_naming_path(&self.graph.expression_facts),
                     member_object,
                     node.location,
                 )?;
                 let place = self.static_project_path(
                     place,
-                    facts.member_path,
-                    member_object && facts.member_naming_path.is_none(),
+                    facts.member_path(&self.graph.expression_facts),
+                    member_object
+                        && facts
+                            .member_naming_path(&self.graph.expression_facts)
+                            .is_none(),
                     node.location,
                 )?;
                 let address = self.constant_member_designation(
@@ -235,7 +240,7 @@ impl Analyzer<'_> {
         }) {
             return self.static_project_path(
                 place,
-                facts.base_path,
+                facts.base_path(&self.graph.expression_facts),
                 false,
                 self.tree.expressions.get(id).location,
             );
@@ -261,13 +266,17 @@ impl Analyzer<'_> {
             ExprKind::Cast { operand, .. } => {
                 // The cast owns this base adjustment. Its operand can retain
                 // the same conversion fact, which must not be applied twice.
-                let place = if facts.base_cast.is_some() {
+                let place = if facts.base_cast(&self.graph.expression_facts).is_some() {
                     self.static_pointer_value(operand, scope)?
                 } else {
                     self.static_pointer(operand, scope)?
                 };
-                let mut place =
-                    self.project_static_cast(place, facts.base_cast, false, node.location)?;
+                let mut place = self.project_static_cast(
+                    place,
+                    facts.base_cast(&self.graph.expression_facts),
+                    false,
+                    node.location,
+                )?;
                 if let TypeKind::Pointer(element) = self.graph.types.get(facts.ty).kind {
                     place.address.designated = element;
                 }
@@ -345,7 +354,7 @@ impl Analyzer<'_> {
             }
             | ExprKind::Call { arguments, .. }
                 if matches!(node.kind, ExprKind::FunctionalCast { .. })
-                    || facts.functional_call =>
+                    || facts.functional_call() =>
             {
                 let [operand] = self.tree.expr_lists.get(arguments) else {
                     return Err(nonconstant(node.location, "not a static pointer form"));
@@ -462,7 +471,7 @@ impl Analyzer<'_> {
         }) {
             place = self.static_project_path(
                 place,
-                facts.base_path,
+                facts.base_path(&self.graph.expression_facts),
                 self.is_member_expression(id),
                 self.tree.expressions.get(id).location,
             )?;

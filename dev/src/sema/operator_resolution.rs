@@ -118,10 +118,12 @@ impl Analyzer<'_> {
                 continue;
             }
             let facts = self.graph.expression_facts.get(operand)?;
-            if facts.object.is_some() && facts.functions.is_some() {
+            if facts.object(&self.graph.expression_facts).is_some()
+                && facts.functions(&self.graph.expression_facts).is_some()
+            {
                 return Ok(None);
             }
-            if facts.functions.is_some() {
+            if facts.functions(&self.graph.expression_facts).is_some() {
                 continue;
             }
             overloadable |= matches!(
@@ -381,18 +383,21 @@ impl Analyzer<'_> {
             .ty
             .ok_or(Error::Invariant("operator without result"))?;
         let mut facts = self.call_result(ty)?;
-        facts.call = Some(CallTarget::Direct(
-            self.graph
-                .function_origin(self.graph.binding(binding).entity)?,
-        ));
-        facts.call_form = super::expression_facts::CallForm::Operator;
+        facts.set_call(
+            Some(CallTarget::Direct(
+                self.graph
+                    .function_origin(self.graph.binding(binding).entity)?,
+            )),
+            &mut self.graph.expression_facts,
+        )?;
+        facts.set_call_form(super::expression_facts::CallForm::Operator);
         if self
             .graph
             .virtuals
             .function(self.graph.binding(binding).entity)
             .is_virtual
         {
-            facts.dispatch = super::expression_facts::Dispatch::Virtual;
+            facts.set_dispatch(super::expression_facts::Dispatch::Virtual);
         }
         self.graph.record_call_binding(id, binding);
         Ok(Some(facts))
@@ -432,12 +437,15 @@ impl Analyzer<'_> {
                 self.tree.expressions.get(operand).location,
                 "invalid implicit conversion",
             ))?;
-            facts.base_path = self.conversion_base_path(
-                facts,
-                conversion,
-                scope,
-                location,
-                !(member && index == 0),
+            facts.set_base_path(
+                self.conversion_base_path(
+                    facts,
+                    conversion,
+                    scope,
+                    location,
+                    !(member && index == 0),
+                )?,
+                &mut self.graph.expression_facts,
             )?;
             let operand_location = self.tree.expressions.get(operand).location;
             if member && index == 0 {

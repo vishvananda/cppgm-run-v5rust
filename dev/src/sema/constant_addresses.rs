@@ -293,7 +293,7 @@ impl Analyzer<'_> {
             return Ok(Address::new(root, element));
         }
         if facts.category == ValueCategory::Prvalue
-            && facts.folded == Some(0)
+            && facts.folded() == Some(0)
             && self.graph.address_parameter_type(facts.ty)
         {
             return Ok(Address::new(Root::Null, facts.ty));
@@ -327,8 +327,8 @@ impl Analyzer<'_> {
             return self.read_constant_address(place, location);
         }
         let mut value = match node.kind {
-            _ if (facts.literal_call.is_some()
-                || facts.call_form == super::expression_facts::CallForm::Operator) =>
+            _ if (facts.literal_call(&self.graph.expression_facts).is_some()
+                || facts.call_form() == super::expression_facts::CallForm::Operator) =>
             {
                 let returned = self.constant_call_result(id, scope)?;
                 let value = self.returned_scalar(returned, location)?;
@@ -438,7 +438,7 @@ impl Analyzer<'_> {
                 [operand] => self.address_operand(*operand, scope)?,
                 _ => return Err(Error::Invariant("typed scalar list with several elements")),
             },
-            ExprKind::Call { arguments, .. } if facts.functional_call => {
+            ExprKind::Call { arguments, .. } if facts.functional_call() => {
                 self.functional_address(id, arguments, None, scope)?
             }
             ExprKind::Call { .. } => match self.constant_call_result(id, scope)? {
@@ -497,7 +497,7 @@ impl Analyzer<'_> {
                 && conversion.second == super::expression_facts::ValueConversion::DerivedToBase
             {
                 let path = facts
-                    .base_path
+                    .base_path(&self.graph.expression_facts)
                     .ok_or(Error::Invariant("base address conversion without route"))?;
                 let TypeKind::Pointer(element) = self.graph.types.get(conversion.result).kind
                 else {
@@ -572,7 +572,7 @@ impl Analyzer<'_> {
         let facts = self.graph.expression_facts.get(id)?;
         let location = self.tree.expressions.get(id).location;
         let value = self.address_cast_operand(operand, scope, location)?;
-        if let Some(cast) = facts.base_cast {
+        if let Some(cast) = facts.base_cast(&self.graph.expression_facts) {
             let TypeKind::Pointer(element) = self.graph.types.get(facts.ty).kind else {
                 return Err(Error::Invariant("base pointer cast without pointer type"));
             };
@@ -675,7 +675,13 @@ impl Analyzer<'_> {
         id: ast::ExprId,
         scope: ScopeId,
     ) -> Result<Address, Error> {
-        if self.graph.expression_facts.get(id)?.literal_call.is_some() {
+        if self
+            .graph
+            .expression_facts
+            .get(id)?
+            .literal_call(&self.graph.expression_facts)
+            .is_some()
+        {
             return Err(nonconstant(
                 self.tree.expressions.get(id).location,
                 "a glvalue outside constant evaluation",
@@ -684,6 +690,118 @@ impl Analyzer<'_> {
         match self.constant_call_result(id, scope)? {
             super::constexpr_calls::Returned::Place(place) => Ok(place),
             _ => Err(Error::Invariant("reference operator returned no place")),
+        }
+    }
+    fn constant_named_place(
+        &mut self,
+        name: ast::Name,
+        facts: super::expression_facts::ExprFacts,
+        location: SourceOffset,
+    ) -> Result<Address, Error> {
+        let binding = facts
+            .function(&self.graph.expression_facts)
+            .or_else(|| self.graph.resolved_name(name))
+            .ok_or(Error::Invariant("constant place without selected binding"))?;
+        let binding = self.graph.binding(binding);
+        if let Some(alias) = self.graph.lower_binding_alias(binding.entity) {
+            return self.constant_binding_place(alias, facts.ty, location);
+        }
+        if let Some(mut place) = self.constexpr_frames.local(binding.entity) {
+            place.designated = facts.ty;
+            return Ok(place);
+        }
+        if let Some(mut place) = self.graph.aggregate_constants.constructing(binding.entity) {
+            place.designated = facts.ty;
+            return Ok(place);
+        }
+        if let Some(entity) = self.graph.reference_argument_entity(binding.entity) {
+            let root = if self.graph.entity(entity).function.is_some() {
+                Root::Function(entity)
+            } else {
+                Root::Variable(entity)
+            };
+            return Ok(Address::new(root, facts.ty));
+        }
+        match binding.kind {
+            BindingKind::Function => Ok(Address::new(Root::Function(binding.entity), facts.ty)),
+            BindingKind::Parameter => Err(nonconstant(
+                location,
+                "a parameter is not usable in a constant expression",
+            )),
+            BindingKind::Variable => {
+                if let Some(text) = self.graph.predefined_variables.text(binding.entity) {
+                    let text = self.identifiers.bytes(text).to_vec();
+                    let literal = self.source_text_literal(&text)?;
+                    return Ok(Address::new(Root::Literal(literal), facts.ty));
+                }
+                let entity = self.graph.entity(binding.entity);
+                if entity.data_member == Some(super::graph::DataMemberKind::Instance)
+                    && let Some(object) = self
+                        .constexpr_frames
+                        .current()
+                        .ok()
+                        .and_then(|frame| frame.object)
+                {
+                    let object = self.constant_project_path(
+                        object,
+                        facts.member_naming_path(&self.graph.expression_facts),
+                        location,
+                    )?;
+                    let object = self.constant_project_path(
+                        object,
+                        facts
+                            .member_path(&self.graph.expression_facts)
+                            .or(facts.base_path(&self.graph.expression_facts)),
+                        location,
+                    )?;
+                    return self.constant_member_designation(
+                        object,
+                        binding.entity,
+                        facts.ty,
+                        location,
+                    );
+                }
+                if entity.ty.is_some_and(|ty| {
+                    matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
+                }) {
+                    self.instantiate_variable_value(binding.entity)?;
+                    let mut place = self
+                        .graph
+                        .constant_addresses
+                        .value(binding.entity)
+                        .ok_or_else(|| {
+                            nonconstant(
+                                location,
+                                "a reference is not usable in a constant expression",
+                            )
+                        })?;
+                    place.designated = facts.ty;
+                    return Ok(place);
+                }
+                if entity.data_member == Some(super::graph::DataMemberKind::Instance) {
+                    let storage = facts
+                        .anonymous_member(&self.graph.expression_facts)
+                        .ok_or_else(|| {
+                            nonconstant(location, "`this` outside a constexpr member function call")
+                        })?;
+                    let object = self.graph.binding(storage).entity;
+                    let owner = self
+                        .graph
+                        .class_of(self.graph.lower_entity_type(object)?)
+                        .ok_or(Error::Invariant("anonymous storage without class"))?;
+                    self.class_layout(owner, location)?;
+                    let ty = self.graph.lower_entity_type(object)?;
+                    let place = Address::new(Root::Variable(object), ty);
+                    return self.constant_member_designation(
+                        place,
+                        binding.entity,
+                        facts.ty,
+                        location,
+                    );
+                }
+                Ok(Address::new(Root::Variable(binding.entity), facts.ty))
+            }
+            _ => Err(nonconstant(location, "a name that designates no object")),
         }
     }
     fn constant_place_inner(&mut self, id: ast::ExprId, scope: ScopeId) -> Result<Address, Error> {
@@ -697,8 +815,8 @@ impl Analyzer<'_> {
         if self.graph.class_of(facts.ty).is_some() && facts.category == ValueCategory::Prvalue {
             return self.constant_object_place(id, scope);
         }
-        if facts.literal_call.is_some()
-            || facts.call_form == super::expression_facts::CallForm::Operator
+        if facts.literal_call(&self.graph.expression_facts).is_some()
+            || facts.call_form() == super::expression_facts::CallForm::Operator
         {
             return self.constant_operator_place(id, scope);
         }
@@ -706,115 +824,7 @@ impl Analyzer<'_> {
             ExprKind::ComplexPart { imaginary, operand } => {
                 self.constant_component_place(operand, imaginary, scope, location)
             }
-            ExprKind::Id(name) => {
-                let binding = facts
-                    .function
-                    .or_else(|| self.graph.resolved_name(name))
-                    .ok_or(Error::Invariant("constant place without selected binding"))?;
-                let binding = self.graph.binding(binding);
-                if let Some(alias) = self.graph.lower_binding_alias(binding.entity) {
-                    return self.constant_binding_place(alias, facts.ty, location);
-                }
-                if let Some(mut place) = self.constexpr_frames.local(binding.entity) {
-                    place.designated = facts.ty;
-                    return Ok(place);
-                }
-                if let Some(mut place) = self.graph.aggregate_constants.constructing(binding.entity)
-                {
-                    place.designated = facts.ty;
-                    return Ok(place);
-                }
-                if let Some(entity) = self.graph.reference_argument_entity(binding.entity) {
-                    let root = if self.graph.entity(entity).function.is_some() {
-                        Root::Function(entity)
-                    } else {
-                        Root::Variable(entity)
-                    };
-                    return Ok(Address::new(root, facts.ty));
-                }
-                match binding.kind {
-                    BindingKind::Function => {
-                        Ok(Address::new(Root::Function(binding.entity), facts.ty))
-                    }
-                    BindingKind::Parameter => Err(nonconstant(
-                        location,
-                        "a parameter is not usable in a constant expression",
-                    )),
-                    BindingKind::Variable => {
-                        if let Some(text) = self.graph.predefined_variables.text(binding.entity) {
-                            let text = self.identifiers.bytes(text).to_vec();
-                            let literal = self.source_text_literal(&text)?;
-                            return Ok(Address::new(Root::Literal(literal), facts.ty));
-                        }
-                        let entity = self.graph.entity(binding.entity);
-                        if entity.data_member == Some(super::graph::DataMemberKind::Instance)
-                            && let Some(object) = self
-                                .constexpr_frames
-                                .current()
-                                .ok()
-                                .and_then(|frame| frame.object)
-                        {
-                            let object = self.constant_project_path(
-                                object,
-                                facts.member_naming_path,
-                                location,
-                            )?;
-                            let object = self.constant_project_path(
-                                object,
-                                facts.member_path.or(facts.base_path),
-                                location,
-                            )?;
-                            return self.constant_member_designation(
-                                object,
-                                binding.entity,
-                                facts.ty,
-                                location,
-                            );
-                        }
-                        if entity.ty.is_some_and(|ty| {
-                            matches!(self.graph.types.get(ty).kind, TypeKind::Reference { .. })
-                        }) {
-                            self.instantiate_variable_value(binding.entity)?;
-                            let mut place = self
-                                .graph
-                                .constant_addresses
-                                .value(binding.entity)
-                                .ok_or_else(|| {
-                                    nonconstant(
-                                        location,
-                                        "a reference is not usable in a constant expression",
-                                    )
-                                })?;
-                            place.designated = facts.ty;
-                            return Ok(place);
-                        }
-                        if entity.data_member == Some(super::graph::DataMemberKind::Instance) {
-                            let storage = facts.anonymous_member.ok_or_else(|| {
-                                nonconstant(
-                                    location,
-                                    "`this` outside a constexpr member function call",
-                                )
-                            })?;
-                            let object = self.graph.binding(storage).entity;
-                            let owner = self
-                                .graph
-                                .class_of(self.graph.lower_entity_type(object)?)
-                                .ok_or(Error::Invariant("anonymous storage without class"))?;
-                            self.class_layout(owner, location)?;
-                            let ty = self.graph.lower_entity_type(object)?;
-                            let place = Address::new(Root::Variable(object), ty);
-                            return self.constant_member_designation(
-                                place,
-                                binding.entity,
-                                facts.ty,
-                                location,
-                            );
-                        }
-                        Ok(Address::new(Root::Variable(binding.entity), facts.ty))
-                    }
-                    _ => Err(nonconstant(location, "a name that designates no object")),
-                }
-            }
+            ExprKind::Id(name) => self.constant_named_place(name, facts, location),
             ExprKind::Binary { op, .. }
                 if matches!(op.token.as_punctuator(), Some(P::DotStar | P::ArrowStar)) =>
             {
@@ -826,10 +836,14 @@ impl Analyzer<'_> {
                 right,
                 assignment: true,
             } => self.constant_assignment_place(id, left, right, op.token.as_punctuator(), scope),
-            ExprKind::Literal(ast::Literal {
-                kind: PostTokenKind::String { .. },
-                ..
-            }) => Ok(Address::new(Root::Literal(id), facts.ty)),
+            ExprKind::Literal(literal)
+                if matches!(
+                    literal.kind(self.literal_bytes),
+                    PostTokenKind::String { .. }
+                ) =>
+            {
+                Ok(Address::new(Root::Literal(id), facts.ty))
+            }
             ExprKind::Unary { op, operand } if op.token.as_punctuator() == Some(P::Multiply) => {
                 let mut value = if matches!(
                     self.graph
@@ -868,7 +882,7 @@ impl Analyzer<'_> {
             } => self.constant_conditional_place(condition, [then_expr, else_expr], scope),
             ExprKind::Cast {
                 operand, keyword, ..
-            } if facts.reference_cast.is_some() => {
+            } if facts.reference_cast(&self.graph.expression_facts).is_some() => {
                 self.constant_reference_cast_place(id, operand, keyword, scope)
             }
             ExprKind::Unary { op, operand }
@@ -899,7 +913,7 @@ impl Analyzer<'_> {
                 };
                 self.constant_place(*operand, scope)
             }
-            ExprKind::Call { arguments, .. } if facts.functional_call => {
+            ExprKind::Call { arguments, .. } if facts.functional_call() => {
                 let [operand] = self.tree.expr_lists.get(arguments) else {
                     return Err(nonconstant(
                         location,
@@ -971,12 +985,12 @@ impl Analyzer<'_> {
             self.constant_object_place(base, scope)?
         };
         let binding = facts
-            .member
+            .member(&self.graph.expression_facts)
             .ok_or(Error::Missing("constant member place"))?;
         let entity = self.graph.binding(binding).entity;
         if self.graph.entity(entity).data_member == Some(super::graph::DataMemberKind::Instance) {
             let owner = facts
-                .member_naming
+                .member_naming(&self.graph.expression_facts)
                 .ok_or(Error::Invariant("member place without class owner"))?;
             if place.root == Root::Null {
                 return Err(nonconstant(
@@ -985,8 +999,16 @@ impl Analyzer<'_> {
                 ));
             }
             self.class_layout(owner, location)?;
-            place = self.constant_project_path(place, facts.member_naming_path, location)?;
-            place = self.constant_project_path(place, facts.member_path, location)?;
+            place = self.constant_project_path(
+                place,
+                facts.member_naming_path(&self.graph.expression_facts),
+                location,
+            )?;
+            place = self.constant_project_path(
+                place,
+                facts.member_path(&self.graph.expression_facts),
+                location,
+            )?;
             return self.constant_member_designation(place, entity, facts.ty, location);
         }
         if self.graph.entity(entity).data_member == Some(super::graph::DataMemberKind::Static) {
@@ -1033,7 +1055,7 @@ impl Analyzer<'_> {
             || self.vector_shape(facts.ty).is_some()
             || self.complex_part_type(facts.ty).is_some()
         {
-            if let Some(cast) = facts.base_cast {
+            if let Some(cast) = facts.base_cast(&self.graph.expression_facts) {
                 let place = self.constant_object_place(operand, scope)?;
                 return self.constant_cast_subobject(place, facts.ty, cast, location);
             }
@@ -1253,12 +1275,15 @@ impl Analyzer<'_> {
                 let offset = usize::try_from(place.offset).map_err(|_| {
                     nonconstant(location, "an access outside the designated object")
                 })?;
-                if let Some(super::literal_calls::LiteralCall::Raw { digits, .. }) =
-                    self.graph.expression_facts.get(id)?.literal_call
+                if let Some(super::literal_calls::LiteralCall::Raw { digits, .. }) = self
+                    .graph
+                    .expression_facts
+                    .get(id)?
+                    .literal_call(&self.graph.expression_facts)
                 {
                     let digits =
                         usize::try_from(digits).map_err(|_| Error::Limit("raw literal length"))?;
-                    let spelling = self.literal_bytes.get(literal.spelling);
+                    let spelling = self.literal_bytes.get(literal.spelling(self.literal_bytes));
                     let byte = if offset == digits {
                         0
                     } else {
@@ -1278,7 +1303,7 @@ impl Analyzer<'_> {
                 }
                 let data = self
                     .literal_bytes
-                    .get(literal.data)
+                    .get(literal.data(self.literal_bytes))
                     .get(
                         offset
                             ..offset
@@ -1326,8 +1351,8 @@ impl Analyzer<'_> {
                 let node = *self.tree.expressions.get(id);
                 self.check_deferred_constant(id)?;
                 let facts = self.graph.expression_facts.get(id)?;
-                if facts.literal_call.is_some()
-                    || facts.call_form == super::expression_facts::CallForm::Operator
+                if facts.literal_call(&self.graph.expression_facts).is_some()
+                    || facts.call_form() == super::expression_facts::CallForm::Operator
                 {
                     self.constant_call_result(id, scope)?;
                     continue;

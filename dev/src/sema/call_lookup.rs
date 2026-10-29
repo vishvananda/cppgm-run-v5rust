@@ -124,7 +124,8 @@ impl Analyzer<'_> {
                     continue;
                 }
                 let facts = self.graph.expression_facts.get(argument)?;
-                if (facts.functions.is_none() || self.ordinary_function_operand(facts).is_some())
+                if (facts.functions(&self.graph.expression_facts).is_none()
+                    || self.ordinary_function_operand(facts).is_some())
                     && !matches!(self.graph.types.get(facts.ty).kind, TypeKind::Scalar(_))
                 {
                     scratch.types.push((facts.ty, 0));

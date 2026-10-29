@@ -56,7 +56,10 @@ impl Analyzer<'_> {
                 ));
             }
             let mut facts = self.new_expression_facts(target, ValueCategory::Prvalue)?;
-            facts.class_initialization = Some(ClassInitialization::Aggregate(arguments));
+            facts.set_class_initialization(
+                Some(ClassInitialization::Aggregate(arguments)),
+                &mut self.graph.expression_facts,
+            )?;
             return Ok(facts);
         }
         let selected = self.initialize_class_object(
@@ -67,30 +70,36 @@ impl Analyzer<'_> {
         )?;
         let mut facts = self.new_expression_facts(target, ValueCategory::Prvalue)?;
         if let Some((constructor, arguments)) = selected {
-            facts.constructor = Some(constructor);
-            facts.class_initialization = Some(ClassInitialization::Constructed(arguments));
+            facts.set_constructor(Some(constructor), &mut self.graph.expression_facts)?;
+            facts.set_class_initialization(
+                Some(ClassInitialization::Constructed(arguments)),
+                &mut self.graph.expression_facts,
+            )?;
         } else {
-            facts.class_initialization = Some(match initializer.kind {
-                ast::InitializerKind::Braced(list) => {
-                    let ast::ExprKind::Braced { elements, .. } =
-                        self.tree.expressions.get(list).kind
-                    else {
-                        return Err(Error::Invariant("class prvalue aggregate list"));
-                    };
-                    ClassInitialization::Aggregate(elements)
-                }
-                ast::InitializerKind::Parenthesized(arguments) => {
-                    ClassInitialization::FromExpression(
-                        *self
-                            .tree
-                            .expr_lists
-                            .get(arguments)
-                            .first()
-                            .ok_or(Error::Invariant("elided class prvalue without source"))?,
-                    )
-                }
-                _ => return Err(Error::Invariant("class prvalue initialization shape")),
-            });
+            facts.set_class_initialization(
+                Some(match initializer.kind {
+                    ast::InitializerKind::Braced(list) => {
+                        let ast::ExprKind::Braced { elements, .. } =
+                            self.tree.expressions.get(list).kind
+                        else {
+                            return Err(Error::Invariant("class prvalue aggregate list"));
+                        };
+                        ClassInitialization::Aggregate(elements)
+                    }
+                    ast::InitializerKind::Parenthesized(arguments) => {
+                        ClassInitialization::FromExpression(
+                            *self
+                                .tree
+                                .expr_lists
+                                .get(arguments)
+                                .first()
+                                .ok_or(Error::Invariant("elided class prvalue without source"))?,
+                        )
+                    }
+                    _ => return Err(Error::Invariant("class prvalue initialization shape")),
+                }),
+                &mut self.graph.expression_facts,
+            )?;
         }
         Ok(facts)
     }
@@ -175,10 +184,16 @@ impl Analyzer<'_> {
         )?;
         let mut facts = self.new_expression_facts(target, ValueCategory::Prvalue)?;
         if let Some((constructor, arguments)) = selected {
-            facts.constructor = Some(constructor);
-            facts.class_initialization = Some(ClassInitialization::Constructed(arguments));
+            facts.set_constructor(Some(constructor), &mut self.graph.expression_facts)?;
+            facts.set_class_initialization(
+                Some(ClassInitialization::Constructed(arguments)),
+                &mut self.graph.expression_facts,
+            )?;
         } else {
-            facts.class_initialization = Some(ClassInitialization::FromExpression(operand));
+            facts.set_class_initialization(
+                Some(ClassInitialization::FromExpression(operand)),
+                &mut self.graph.expression_facts,
+            )?;
         }
         Ok(facts)
     }

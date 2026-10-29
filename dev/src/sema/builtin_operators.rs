@@ -33,7 +33,7 @@ impl Analyzer<'_> {
         options: &mut Vec<TypeId>,
     ) -> Result<(), Error> {
         let begin = options.len();
-        if facts.functions.is_some() {
+        if facts.functions(&self.graph.expression_facts).is_some() {
             return Ok(());
         }
         let Some(class) = self.graph.class_of(facts.ty) else {
@@ -133,8 +133,9 @@ impl Analyzer<'_> {
                         ),
                     };
                     *view = ExprFacts::new(ty, category);
-                    view.null_literal =
-                        self.graph.class_of(facts.ty).is_none() && facts.null_literal;
+                    view.set_null_literal(
+                        self.graph.class_of(facts.ty).is_none() && facts.null_literal(),
+                    );
                 }
                 let Some(parameters) =
                     self.builtin_parameters(op, &views[..operands.len()], postfix, false)?
@@ -376,7 +377,7 @@ mod tests {
         };
         let original = graph.expression_facts.get(left).unwrap();
         assert!(graph.class_of(original.ty).is_some());
-        assert!(original.base_path.is_none());
+        assert!(original.base_path(&graph.expression_facts).is_none());
         let step = graph.expression_facts.function_conversion(left).unwrap();
         assert!(step.after_path.is_some());
         assert_ne!(step.result, step.after.result);

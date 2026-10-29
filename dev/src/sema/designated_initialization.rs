@@ -325,7 +325,7 @@ mod tests {
             .expression_facts
             .get(list)
             .unwrap()
-            .class_initialization
+            .class_initialization(&graph.expression_facts)
             .unwrap()
         else {
             panic!("selected aggregate")
@@ -338,7 +338,7 @@ mod tests {
                 .expression_facts
                 .get(original)
                 .unwrap()
-                .class_initialization
+                .class_initialization(&graph.expression_facts)
                 .is_none()
         );
         assert_eq!(tree.expressions.mark(), before + 1);

@@ -51,9 +51,12 @@ fn floating_intrinsics_keep_original_operands_and_registry_identity() {
             panic!("call");
         };
         let facts = graph.expression_facts.get(call).unwrap();
-        assert_eq!(facts.intrinsic, Some(FloatingIntrinsic::IsFinite));
-        assert!(facts.call.is_none());
-        assert!(facts.folded.is_none());
+        assert_eq!(
+            facts.intrinsic(&graph.expression_facts),
+            Some(FloatingIntrinsic::IsFinite)
+        );
+        assert!(facts.call(&graph.expression_facts).is_none());
+        assert!(facts.folded().is_none());
         let ExprKind::Call { callee, arguments } = tree.expressions.get(call).kind else {
             panic!("call syntax");
         };
@@ -104,7 +107,7 @@ fn destructor_calls_keep_source_objects_and_separate_implicit_members() {
         };
         let facts = graph.expression_facts.get(call).unwrap();
         let designation = graph.expression_facts.get(callee).unwrap();
-        let object = designation.object.unwrap();
+        let object = designation.object(&graph.expression_facts).unwrap();
         let ObjectSource::Explicit { expression, arrow } = object.source else {
             panic!("explicit object");
         };
@@ -115,11 +118,15 @@ fn destructor_calls_keep_source_objects_and_separate_implicit_members() {
         ));
         assert!(designation.conversion.is_none());
         if index == 0 {
-            assert!(matches!(facts.destructor, Some(DestructorTarget::Scalar)));
-            assert!(facts.call.is_none());
+            assert!(matches!(
+                facts.destructor(&graph.expression_facts),
+                Some(DestructorTarget::Scalar)
+            ));
+            assert!(facts.call(&graph.expression_facts).is_none());
             assert_eq!(graph.types.get(object.ty).cv, Cv(2));
         } else {
-            let Some(DestructorTarget::Class(binding)) = facts.destructor else {
+            let Some(DestructorTarget::Class(binding)) = facts.destructor(&graph.expression_facts)
+            else {
                 panic!("class target");
             };
             let class = graph.class_of(object.ty).unwrap();
@@ -131,7 +138,7 @@ fn destructor_calls_keep_source_objects_and_separate_implicit_members() {
                     .class,
                 class
             );
-            assert!(facts.call.is_some());
+            assert!(facts.call(&graph.expression_facts).is_some());
             if index == 1 {
                 assert_eq!(graph.types.get(object.ty).cv, Cv::CONST);
                 assert_eq!(graph.entity(class).declared_destructor, Some(binding));
@@ -208,9 +215,9 @@ fn enclosing_constant_reads_keep_source_identity_and_local_ownership() {
     let (read, original) = result(b"read");
     let (own, parameter) = result(b"own");
     let facts = graph.expression_facts.get(read).unwrap();
-    assert_eq!(facts.folded, Some(17));
+    assert_eq!(facts.folded(), Some(17));
     assert_eq!(
-        facts.fold_style,
+        facts.fold_style(),
         super::expression_facts::FoldStyle::EnclosingLocal
     );
     assert_eq!(
@@ -219,7 +226,7 @@ fn enclosing_constant_reads_keep_source_identity_and_local_ownership() {
     );
     assert_eq!(facts.ty, graph.entity(original).ty.unwrap());
     assert_ne!(original, parameter);
-    assert!(graph.expression_facts.get(own).unwrap().folded.is_none());
+    assert!(graph.expression_facts.get(own).unwrap().folded().is_none());
     assert!(graph.lower_deferred_local_classes(parameter).is_empty());
 }
 
@@ -903,7 +910,11 @@ fn constant_queries_keep_source_facts_and_pointer_checks_do_not_demand_layout() 
     assert_ne!(selected.ty, value.ty);
     assert_eq!(selected.conversion.unwrap().target, value.ty);
     assert!(matches!(
-        graph.expression_facts.get(else_expr).unwrap().call,
+        graph
+            .expression_facts
+            .get(else_expr)
+            .unwrap()
+            .call(&graph.expression_facts),
         Some(CallTarget::Direct(_))
     ));
     assert!(graph.constant_fact(else_expr).is_none());
@@ -921,7 +932,11 @@ fn constant_queries_keep_source_facts_and_pointer_checks_do_not_demand_layout() 
         panic!("original array bound expected");
     };
     assert_eq!(
-        graph.expression_facts.get(bound).unwrap().query_value,
+        graph
+            .expression_facts
+            .get(bound)
+            .unwrap()
+            .query_value(&graph.expression_facts),
         Some(4)
     );
     let ExprKind::Sizeof {
@@ -931,7 +946,12 @@ fn constant_queries_keep_source_facts_and_pointer_checks_do_not_demand_layout() 
     else {
         panic!("sizeof call expected");
     };
-    let Some(CallTarget::Direct(chosen)) = graph.expression_facts.get(call).unwrap().call else {
+    let Some(CallTarget::Direct(chosen)) = graph
+        .expression_facts
+        .get(call)
+        .unwrap()
+        .call(&graph.expression_facts)
+    else {
         panic!("selected overload expected");
     };
     assert!(graph.entity(graph.binding(chosen).entity).defined);
@@ -992,8 +1012,11 @@ fn template_signatures_reuse_identity_keep_lookup_clean_and_demand_only_selected
         let StmtKind::Expression(Some(expression)) = tree.statements.get(statement).kind else {
             panic!("call statement expected");
         };
-        let Some(CallTarget::Direct(binding)) =
-            graph.expression_facts.get(expression).unwrap().call
+        let Some(CallTarget::Direct(binding)) = graph
+            .expression_facts
+            .get(expression)
+            .unwrap()
+            .call(&graph.expression_facts)
         else {
             panic!("selected direct call expected");
         };
@@ -1057,7 +1080,7 @@ fn base_paths_reuse_identity_preserve_operand_types_and_keep_trivial_base_demand
         assert_eq!(conversion.second, ValueConversion::DerivedToBase);
         assert_ne!(facts.ty, conversion.result);
         assert_eq!(graph.expression_type(expression), Some(facts.ty));
-        paths.push(facts.base_path.unwrap());
+        paths.push(facts.base_path(&graph.expression_facts).unwrap());
     }
     assert_eq!(paths[0], paths[1]);
     assert_eq!(graph.base_paths.get(paths[0]).len(), 2);
@@ -1195,7 +1218,7 @@ fn elided_copies_retain_selection_and_original_facts_without_body_demand() {
             graph.expression_type(graph.expression_facts.root(expression)),
             Some(facts.ty)
         );
-        let selected = facts.class_copy.unwrap();
+        let selected = facts.class_copy(&graph.expression_facts).unwrap();
         assert!(!selected.binding.temporary);
         let TypeKind::Reference { element, .. } = graph.types.get(selected.binding.target).kind
         else {
@@ -1332,8 +1355,8 @@ fn member_pointer_size_queries_retain_constants_without_replacing_the_syntax_vie
             ExprKind::Sizeof { .. } | ExprKind::TypeTrait { .. }
         ));
         let facts = graph.expression_facts.get(query).unwrap();
-        assert_eq!(facts.query_value, Some(expected));
-        assert!(facts.folded.is_none());
+        assert_eq!(facts.query_value(&graph.expression_facts), Some(expected));
+        assert!(facts.folded().is_none());
         assert_eq!(graph.expression_type(query), Some(facts.ty));
     }
     let name = cursor.intern_name(b"C").unwrap();
@@ -2063,7 +2086,10 @@ fn explicit_base_cast_route_survives_conversion_of_its_result() {
         ExprKind::Cast { .. }
     ));
     let facts = graph.expression_facts.get(cast).unwrap();
-    assert_ne!(facts.base_cast.unwrap().path, facts.base_path.unwrap());
+    assert_ne!(
+        facts.base_cast(&graph.expression_facts).unwrap().path,
+        facts.base_path(&graph.expression_facts).unwrap()
+    );
     let observed = graph.work().base_steps;
     let explicit = graph.lower_cast_base_adjustment(cast).unwrap();
     let implicit = graph.lower_base_conversion(cast).unwrap();
@@ -2429,9 +2455,11 @@ fn resolved_call_keeps_source_operands_and_selected_sequences_on_original_nodes(
         ConversionRank::Conversion
     );
     let target = graph.expression_facts.get(callee).unwrap();
-    assert!(target.functions.is_none());
+    assert!(target.functions(&graph.expression_facts).is_none());
     assert_eq!(
-        graph.binding(target.function.unwrap()).entity,
+        graph
+            .binding(target.function(&graph.expression_facts).unwrap())
+            .entity,
         graph.binding(selected).entity
     );
 }
@@ -2479,7 +2507,7 @@ fn function_designations_keep_unary_types_and_reference_source_facts() {
         TypeKind::Function { .. }
     ));
     assert_eq!(facts.category, ValueCategory::Lvalue);
-    assert!(facts.functions.is_none());
+    assert!(facts.functions(&graph.expression_facts).is_none());
     let conversion = facts.conversion.unwrap();
     assert!(conversion.reference_source.is_function_lvalue());
     assert!(conversion.temporary);
@@ -2506,7 +2534,11 @@ fn function_designations_keep_unary_types_and_reference_source_facts() {
         panic!("call statement expected")
     };
     assert!(matches!(
-        graph.expression_facts.get(call).unwrap().call,
+        graph
+            .expression_facts
+            .get(call)
+            .unwrap()
+            .call(&graph.expression_facts),
         Some(CallTarget::Direct(_))
     ));
 }
@@ -2698,7 +2730,7 @@ fn member_designation_retains_shared_entity_and_binding_access_without_layout_de
         panic!("member expected")
     };
     let facts = graph.expression_facts.get(expr).unwrap();
-    let binding = facts.member.unwrap();
+    let binding = facts.member(&graph.expression_facts).unwrap();
     assert_eq!(graph.resolved_name(member), Some(binding));
     assert_eq!(facts.category, ValueCategory::Lvalue);
     assert_eq!(graph.types.get(facts.ty).cv, Cv::CONST);
@@ -2769,8 +2801,8 @@ fn member_addresses_select_canonical_cv_identity_and_close_only_the_selected_dem
             panic!("address initializer expected");
         };
         let facts = graph.expression_facts.get(address).unwrap();
-        let binding = facts.function.unwrap();
-        assert!(facts.functions.is_none());
+        let binding = facts.function(&graph.expression_facts).unwrap();
+        assert!(facts.functions(&graph.expression_facts).is_none());
         assert!(selected.is_none_or(|prior| prior == binding));
         selected = Some(binding);
         let TypeKind::MemberPointer { owner, element } = graph.types.get(facts.ty).kind else {
@@ -2950,7 +2982,7 @@ fn operator_chains_retain_original_nodes_and_reference_results() {
     );
     for expression in [inner, outer] {
         let facts = graph.expression_facts.get(expression).unwrap();
-        assert_eq!(facts.call_form, CallForm::Operator);
+        assert_eq!(facts.call_form(), CallForm::Operator);
         assert_eq!(facts.category, ValueCategory::Lvalue);
         assert!(matches!(graph.types.get(facts.ty).kind, TypeKind::Class(_)));
         let ExprKind::Binary { left, right, .. } = tree.expressions.get(expression).kind else {

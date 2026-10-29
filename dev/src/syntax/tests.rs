@@ -810,17 +810,29 @@ fn synthetic_null_literals_share_owned_spelling_and_typed_target_data() {
         panic!("literal")
     };
     assert!(
-        matches!(first.kind, PostTokenKind::Literal {form:LiteralForm::Integer,ty:FundamentalType::LongInt,data} if data.as_slice()==[0;8])
+        matches!(first.kind(&cursor.spellings), PostTokenKind::Literal {form:LiteralForm::Integer,ty:FundamentalType::LongInt,data} if data.as_slice()==[0;8])
     );
-    assert_eq!(cursor.spellings.get(first.spelling), b"0L");
-    assert_eq!(cursor.spellings.get(first.data), [0; 8]);
+    assert_eq!(
+        cursor.spellings.get(first.spelling(&cursor.spellings)),
+        b"0L"
+    );
+    assert_eq!(cursor.spellings.get(first.data(&cursor.spellings)), [0; 8]);
     assert!(std::ptr::eq(
-        cursor.spellings.get(first.spelling).as_ptr(),
-        cursor.spellings.get(second.spelling).as_ptr()
+        cursor
+            .spellings
+            .get(first.spelling(&cursor.spellings))
+            .as_ptr(),
+        cursor
+            .spellings
+            .get(second.spelling(&cursor.spellings))
+            .as_ptr()
     ));
     assert!(std::ptr::eq(
-        cursor.spellings.get(first.data).as_ptr(),
-        cursor.spellings.get(second.data).as_ptr()
+        cursor.spellings.get(first.data(&cursor.spellings)).as_ptr(),
+        cursor
+            .spellings
+            .get(second.data(&cursor.spellings))
+            .as_ptr()
     ));
 }
 

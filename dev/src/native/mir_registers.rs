@@ -64,6 +64,10 @@ pub(super) fn named(mut op: Op) -> u32 {
 }
 pub(super) fn written(op: Op) -> Option<R> {
     match op {
+        // shrink_wrap.cpp counts a GPR in operand zero for every admitted
+        // opcode except Store/Cmp/Test/Bt/Jcc/Jmp/Ret. Bulk destinations
+        // participate in this policy even when their encoding preserves it.
+        Op::Bulk(bulk) => bulk.destination.register(),
         Op::Move(r, _)
         | Op::SymbolMove(r, _)
         | Op::Scalar(

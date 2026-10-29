@@ -260,7 +260,7 @@ impl Analyzer<'_> {
             }
             // Resolve a sole function without odr-using it. Non-static member
             // designations and unresolved overload sets are not object operands.
-            if let Some(set) = facts.functions {
+            if let Some(set) = facts.functions(&self.graph.expression_facts) {
                 let bindings = self.graph.overloads.get(set);
                 if let [binding] = bindings
                     && self
@@ -269,22 +269,30 @@ impl Analyzer<'_> {
                         .template_head
                         .is_none()
                 {
-                    facts.function = Some(
-                        self.graph
-                            .function_origin(self.graph.binding(*binding).entity)?,
-                    );
-                    facts.functions = None;
+                    facts.set_function(
+                        Some(
+                            self.graph
+                                .function_origin(self.graph.binding(*binding).entity)?,
+                        ),
+                        &mut self.graph.expression_facts,
+                    )?;
+                    facts.set_functions(None, &mut self.graph.expression_facts)?;
                     self.graph.expression_facts.set(operand, facts);
                 }
             }
-            let static_member = facts.function.is_some_and(|binding| {
-                self.graph
-                    .entity(self.graph.binding(binding).entity)
-                    .function
-                    .is_some_and(|props| props.is_static)
-            });
-            if facts.functions.is_some()
-                || facts.object.is_some() && facts.function.is_some() && !static_member
+            let static_member =
+                facts
+                    .function(&self.graph.expression_facts)
+                    .is_some_and(|binding| {
+                        self.graph
+                            .entity(self.graph.binding(binding).entity)
+                            .function
+                            .is_some_and(|props| props.is_static)
+                    });
+            if facts.functions(&self.graph.expression_facts).is_some()
+                || facts.object(&self.graph.expression_facts).is_some()
+                    && facts.function(&self.graph.expression_facts).is_some()
+                    && !static_member
             {
                 return Err(Error::at(
                     location,

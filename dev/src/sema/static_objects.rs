@@ -40,9 +40,9 @@ impl Analyzer<'_> {
         self.check_stack()?;
         let root = self.graph.expression_facts.root(expr);
         let facts = self.graph.expression_facts.get(root)?;
-        if let Some(constructor) = facts.constructor {
+        if let Some(constructor) = facts.constructor(&self.graph.expression_facts) {
             if matches!(
-                facts.class_initialization,
+                facts.class_initialization(&self.graph.expression_facts),
                 Some(ClassInitialization::Constructed(
                     ConstructorArguments::Value
                 ))
@@ -52,7 +52,9 @@ impl Analyzer<'_> {
             }
             return Ok(None);
         }
-        if let Some(ClassInitialization::FromExpression(source)) = facts.class_initialization {
+        if let Some(ClassInitialization::FromExpression(source)) =
+            facts.class_initialization(&self.graph.expression_facts)
+        {
             return self.static_zero_prvalue(target, source, out);
         }
         Ok(None)

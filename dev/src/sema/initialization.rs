@@ -601,10 +601,7 @@ impl Analyzer<'_> {
         }
         matches!(
             self.tree.expressions.get(id).kind,
-            ExprKind::Literal(ast::Literal {
-                kind: PostTokenKind::String { suffix: None, .. },
-                ..
-            })
+            ExprKind::Literal(literal) if matches!(literal.kind(self.literal_bytes), PostTokenKind::String { suffix: None, .. })
         )
     }
     pub(super) fn character_element(&self, ty: TypeId) -> bool {

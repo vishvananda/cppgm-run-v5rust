@@ -127,7 +127,7 @@ impl Function<'_, '_, '_, '_> {
     }
     pub(super) fn literal_truth(&self, id: ast::ExprId) -> Result<Option<bool>, Error> {
         self.graph
-            .lower_literal_truth(&*self.tree, id)
+            .lower_literal_truth(&self.cursor.spellings, &*self.tree, id)
             .map_err(Error::from)
     }
     pub(super) fn truth(&mut self, id: ast::ExprId) -> Result<RValue, Error> {

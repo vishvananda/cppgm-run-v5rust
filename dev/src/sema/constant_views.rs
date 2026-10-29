@@ -304,7 +304,7 @@ impl Graph {
                             if tree.expr_lists.get(elements).is_empty())
                 })
                     && facts
-                        .constructor
+                        .constructor(&self.expression_facts)
                         .is_none_or(|id| self.lower_constructor_trivial(id))
                     && !self.has_nontrivial_destructor(class),
                 _ => false,
@@ -356,9 +356,9 @@ impl Graph {
                     .is_none()
         });
         Ok(constant
-            .folded
+            .folded()
             .filter(|_| {
-                (constant.fold_style == FoldStyle::StaticMember || parameter)
+                (constant.fold_style() == FoldStyle::StaticMember || parameter)
                     && self.types.get(constant.ty).kind == TypeKind::Scalar(Scalar::Bool)
             })
             .map(|bits| bits != 0))
@@ -370,6 +370,7 @@ impl Graph {
 impl Graph {
     pub(crate) fn lower_literal_truth(
         &self,
+        literals: &crate::syntax::storage::TextStore,
         tree: &ast::Tree,
         mut id: ast::ExprId,
     ) -> Result<Option<bool>, Error> {
@@ -412,7 +413,7 @@ impl Graph {
                     id = if selected { then_expr } else { else_expr };
                 }
                 ExprKind::Literal(literal) if !floating => {
-                    return Ok(match literal.kind {
+                    return Ok(match literal.kind(literals) {
                         PostTokenKind::Literal { data, .. }
                         | PostTokenKind::Character { data, .. } => {
                             Some(data.as_slice().iter().any(|&b| b != 0))

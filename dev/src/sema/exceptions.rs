@@ -1450,13 +1450,16 @@ impl Analyzer<'_> {
     }
     fn designated_entity(&self, expr: ast::ExprId) -> Result<Option<EntityId>, Error> {
         let facts = self.graph.expression_facts.get(expr)?;
-        let binding = facts.function.or(facts.member).or_else(|| {
-            if let ExprKind::Id(name) = self.tree.expressions.get(expr).kind {
-                self.graph.resolved_name(name)
-            } else {
-                None
-            }
-        });
+        let binding = facts
+            .function(&self.graph.expression_facts)
+            .or(facts.member(&self.graph.expression_facts))
+            .or_else(|| {
+                if let ExprKind::Id(name) = self.tree.expressions.get(expr).kind {
+                    self.graph.resolved_name(name)
+                } else {
+                    None
+                }
+            });
         Ok(binding.map(|binding| self.graph.binding(binding).entity))
     }
     pub(super) fn callee_target_entity(

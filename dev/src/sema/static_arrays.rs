@@ -801,11 +801,11 @@ impl Analyzer<'_> {
         let ExprKind::Literal(literal) = self.tree.expressions.get(root).kind else {
             return Ok(false);
         };
-        let PostTokenKind::String { ty, .. } = literal.kind else {
+        let PostTokenKind::String { ty, .. } = literal.kind(self.literal_bytes) else {
             return Ok(false);
         };
         let width = ty.size();
-        let data = self.literal_bytes.get(literal.data);
+        let data = self.literal_bytes.get(literal.data(self.literal_bytes));
         for unit in data
             .chunks_exact(width)
             .take(usize::try_from(bound).map_err(|_| Error::Limit("array bound"))?)

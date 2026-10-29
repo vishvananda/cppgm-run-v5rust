@@ -528,7 +528,7 @@ impl Analyzer<'_> {
     }
 
     fn key_literal(&mut self, literal: ast::Literal, key: &mut ExpressionKey) -> Result<(), Error> {
-        let typed = match literal.kind {
+        let typed = match literal.kind(self.literal_bytes) {
             PostTokenKind::Literal { ty, data, .. }
             | PostTokenKind::Character {
                 ty,
@@ -558,13 +558,18 @@ impl Analyzer<'_> {
             let count = data.as_slice().len().min(8);
             bytes[..count].copy_from_slice(&data.as_slice()[..count]);
             key.words.push(KeyWord::FloatingLiteral {
-                spelling: self.literal_bytes.get(literal.spelling).to_vec(),
+                spelling: self
+                    .literal_bytes
+                    .get(literal.spelling(self.literal_bytes))
+                    .to_vec(),
                 ty: self.graph.types.scalar(Scalar::Basic(ty))?,
                 bits: u64::from_le_bytes(bytes),
             });
         } else {
             key.words.push(KeyWord::Spelling(
-                self.literal_bytes.get(literal.spelling).to_vec(),
+                self.literal_bytes
+                    .get(literal.spelling(self.literal_bytes))
+                    .to_vec(),
             ));
             // For nonintegral literals C++ includes spelling even when IEEE
             // bits are known. Identical spelling already determines those bits.

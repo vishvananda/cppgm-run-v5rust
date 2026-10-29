@@ -1,6 +1,7 @@
 // Translated from sema/semantics_dump.cpp. See NOTICE.
 //! An iterative view of original syntax and recorded semantic facts.
 use super::{
+    expression_facts::{DestructorTarget, ObjectArgument},
     expression_facts::{LvalueTransform as L, ValueCategory as V, ValueConversion as C},
     function_resolution::CallTarget,
     graph::{BindingId, BindingKind, Graph, ScopeKind},
@@ -19,6 +20,63 @@ use crate::{
     },
 };
 use std::io::{self, Write};
+// Cold, read-only presentation value. A builtin conversion projects a
+// different designation without mutating the semantic unit's shared facts.
+#[derive(Clone, Copy)]
+struct DisplayFacts {
+    core: super::expression_facts::ExprFacts,
+    details: super::expression_details::Details,
+}
+impl std::ops::Deref for DisplayFacts {
+    type Target = super::expression_facts::ExprFacts;
+    fn deref(&self) -> &Self::Target {
+        &self.core
+    }
+}
+impl DisplayFacts {
+    fn new(
+        core: super::expression_facts::ExprFacts,
+        store: &super::expression_facts::ExpressionFacts,
+    ) -> Self {
+        Self {
+            core,
+            details: core.display_details(store),
+        }
+    }
+    fn reference_cast(self) -> Option<TypeId> {
+        self.details.reference_cast
+    }
+    fn functions(self) -> Option<super::function_resolution::OverloadId> {
+        self.details.functions
+    }
+    fn function(self) -> Option<super::graph::BindingId> {
+        self.details.function
+    }
+    fn call(self) -> Option<super::function_resolution::CallTarget> {
+        self.details.call
+    }
+    fn literal_call(self) -> Option<super::literal_calls::LiteralCall> {
+        self.details.literal_call
+    }
+    fn destructor(self) -> Option<DestructorTarget> {
+        self.details.destructor
+    }
+    fn anonymous_member(self) -> Option<super::graph::BindingId> {
+        self.details.anonymous_member
+    }
+    fn member(self) -> Option<super::graph::BindingId> {
+        self.details.member
+    }
+    fn member_naming(self) -> Option<super::graph::EntityId> {
+        self.details.member_naming
+    }
+    fn object(self) -> Option<ObjectArgument> {
+        self.details.object
+    }
+    fn base_path(self) -> Option<super::inheritance::BasePathId> {
+        self.details.base_path
+    }
+}
 enum Item {
     Declaration(ast::DeclId, bool),
     Statement(ast::StmtId),
@@ -668,7 +726,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 category: base_facts.category,
             })
         } else {
-            facts.object
+            facts.object(&self.graph.expression_facts)
         };
         let Some(object) = object else {
             return Ok(());
@@ -925,13 +983,18 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             .expression_facts
             .get(expression)
             .map_err(|_| io::Error::other("copy source without facts"))?;
-        if let Some(selected) = facts.class_copy
+        if let Some(selected) = facts.class_copy(&self.graph.expression_facts)
             && selected.binding.second == C::DerivedToBase
         {
             // The constructor action shows the selected reference binding,
             // while the source occurrence retains its original derived type.
             facts.conversion = Some(selected.binding);
-            if self.conversion_node(expression, facts, depth + 1, None)? {
+            if self.conversion_node(
+                expression,
+                DisplayFacts::new(facts, &self.graph.expression_facts),
+                depth + 1,
+                None,
+            )? {
                 return Ok(true);
             }
         }
@@ -1094,14 +1157,15 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             }
             id = self.graph.expression_facts.root(elements[0]);
         }
-        let ExprKind::Literal(ast::Literal {
-            kind: crate::lex::PostTokenKind::String { ty: literal, .. },
-            data,
-            ..
-        }) = self.tree.expressions.get(id).kind
+        let ExprKind::Literal(value) = self.tree.expressions.get(id).kind else {
+            return Ok(false);
+        };
+        let crate::lex::PostTokenKind::String { ty: literal, .. } =
+            value.kind(&self.cursor.spellings)
         else {
             return Ok(false);
         };
+        let data = value.data(&self.cursor.spellings);
         let bytes = self.cursor.spellings.get(data);
         let kind = self
             .graph
@@ -1351,11 +1415,11 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         &mut self,
         id: ast::ExprId,
         name: ast::Name,
-        facts: super::expression_facts::ExprFacts,
+        facts: DisplayFacts,
         depth: usize,
     ) -> io::Result<()> {
         self.output.write_all(b" ")?;
-        if let Some(storage) = facts.anonymous_member {
+        if let Some(storage) = facts.anonymous_member() {
             let binding = self
                 .graph
                 .resolved_names
@@ -1365,19 +1429,19 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 .ok_or_else(|| io::Error::other("anonymous member without designation"))?;
             self.name(self.graph.binding(binding).name)?;
             self.work.push((Item::Storage(storage), depth + 1));
-        } else if let Some(object) = facts.object
+        } else if let Some(object) = facts.object()
             && matches!(
                 object.source,
                 super::expression_facts::ObjectSource::Implicit
             )
         {
             let binding = facts
-                .member
+                .member()
                 .ok_or_else(|| io::Error::other("implicit member without designation"))?;
             self.name(self.graph.binding(binding).name)?;
             self.work
                 .push((self.implicit_this(id, object.ty), depth + 1));
-        } else if let Some(binding) = facts.member
+        } else if let Some(binding) = facts.member()
             && self
                 .graph
                 .entity(self.graph.binding(binding).entity)
@@ -1396,11 +1460,11 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         &mut self,
         base: ast::ExprId,
         op: ast::Operator,
-        facts: super::expression_facts::ExprFacts,
+        facts: DisplayFacts,
         depth: usize,
     ) -> io::Result<()> {
         if matches!(
-            facts.destructor,
+            facts.destructor(),
             Some(super::expression_facts::DestructorTarget::Scalar)
         ) {
             write!(self.output, " {}:", op.token.name())?;
@@ -1408,9 +1472,9 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             return Ok(());
         }
         let binding = facts
-            .member
+            .member()
             .ok_or_else(|| io::Error::other("member without designation"))?;
-        if facts.function == Some(binding)
+        if facts.function() == Some(binding)
             && self
                 .graph
                 .entity(self.graph.binding(binding).entity)
@@ -1421,7 +1485,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             self.arrow_operand(base, depth + 1);
             return Ok(());
         }
-        if facts.member_naming.is_none() {
+        if facts.member_naming().is_none() {
             return Err(io::Error::other("member without naming class"));
         }
         write!(self.output, " {}:", op.token.name())?;
@@ -1500,7 +1564,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
     fn conversion_node(
         &mut self,
         id: ast::ExprId,
-        facts: super::expression_facts::ExprFacts,
+        facts: DisplayFacts,
         depth: usize,
         retyped: Option<(TypeId, V)>,
     ) -> io::Result<bool> {
@@ -1524,7 +1588,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                     || matches!(conversion.first, L::ArrayToPointer | L::FunctionToPointer))
         {
             self.indent(depth)?;
-            if conversion.second == C::DerivedToBase && facts.base_path.is_none() {
+            if conversion.second == C::DerivedToBase && facts.base_path().is_none() {
                 return Err(io::Error::other("base conversion without retained path"));
             }
             self.output.write_all(b"cast-expression ")?;
@@ -1564,9 +1628,10 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         retyped: Option<(TypeId, V)>,
     ) -> io::Result<()> {
         let id = self.graph.expression_facts.root(id);
-        let Some(mut facts) = self.graph.expression_facts.known(id) else {
+        let Some(facts) = self.graph.expression_facts.known(id) else {
             return Ok(());
         };
+        let mut facts = DisplayFacts::new(facts, &self.graph.expression_facts);
         if let Some(converted) = self.graph.expression_facts.function_conversion(id)
             && matches!(
                 converted.usage,
@@ -1578,15 +1643,18 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             // its selected call. Rust keeps the receiver facts for lowering;
             // project that same presentation from the retained typed edge.
             let conversion = facts.conversion;
-            facts = super::expression_facts::ExprFacts::new(converted.result, converted.category);
-            facts.function = Some(converted.binding);
-            facts.member = Some(converted.binding);
-            facts.call = Some(CallTarget::Direct(converted.binding));
-            facts.conversion = conversion;
-            facts.base_path = converted.after_path;
+            facts = DisplayFacts::new(
+                super::expression_facts::ExprFacts::new(converted.result, converted.category),
+                &self.graph.expression_facts,
+            );
+            facts.details.function = Some(converted.binding);
+            facts.details.member = Some(converted.binding);
+            facts.details.call = Some(CallTarget::Direct(converted.binding));
+            facts.core.conversion = conversion;
+            facts.details.base_path = converted.after_path;
         }
         if let Some(outer) = self.graph.expression_facts.user_conversion(id) {
-            facts.conversion = Some(outer);
+            facts.core.conversion = Some(outer);
         }
         let (mut ty, mut category) = retyped.unwrap_or((facts.ty, facts.category));
         if !bare
@@ -1596,13 +1664,13 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             if self.conversion_node(id, facts, depth, retyped)? {
                 return Ok(());
             }
-            if conversion.second == C::NullPointer && facts.null_literal {
+            if conversion.second == C::NullPointer && facts.null_literal() {
                 ty = conversion.result;
             }
         }
         let node = self.tree.expressions.get(id);
-        if let Some(bits) = facts.folded
-            && facts.fold_style == super::expression_facts::FoldStyle::Literal
+        if let Some(bits) = facts.folded()
+            && facts.fold_style() == super::expression_facts::FoldStyle::Literal
         {
             self.indent(depth)?;
             self.output.write_all(b"literal prvalue ")?;
@@ -1619,7 +1687,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             return Ok(());
         }
         if let ExprKind::Cast { operand, .. } = node.kind
-            && let Some(target) = facts.reference_cast
+            && let Some(target) = facts.reference_cast()
         {
             self.work.push((
                 Item::Expression {
@@ -1631,13 +1699,13 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             ));
             return Ok(());
         }
-        if (matches!(node.kind, ExprKind::FunctionalCast { .. }) || facts.functional_call)
-            && let Some(target) = facts.reference_cast
+        if (matches!(node.kind, ExprKind::FunctionalCast { .. }) || facts.functional_call())
+            && let Some(target) = facts.reference_cast()
         {
             ty = target;
         }
-        if facts.call_form != super::expression_facts::CallForm::Operator
-            && facts.literal_call.is_none()
+        if facts.call_form() != super::expression_facts::CallForm::Operator
+            && facts.literal_call().is_none()
             && self
                 .graph
                 .expression_facts
@@ -1645,7 +1713,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 .is_none_or(|conversion| {
                     conversion.usage == super::conversion_functions::ConversionUse::Scalar
                 })
-            && let Some(call) = facts.call
+            && let Some(call) = facts.call()
         {
             let function = match call {
                 CallTarget::Direct(binding) => self
@@ -1675,12 +1743,12 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             self.expr(callable, depth + 1);
             return Ok(());
         }
-        let intrinsic = self.graph.expression_facts.is_intrinsic(id, facts)
+        let intrinsic = self.graph.expression_facts.is_intrinsic(id, facts.core)
             || self.graph.expression_facts.cast_call_view(id);
         if intrinsic && matches!(node.kind, ExprKind::Call { .. }) {
             // Printer::call reads an expanded builtin's own result facts,
             // independently of the surrounding initialization's retyped item.
-            ty = facts.reference_cast.unwrap_or(facts.ty);
+            ty = facts.reference_cast().unwrap_or(facts.ty);
             category = facts.category;
         }
         if self.predefined_id(node.kind, ty, category, depth)? {
@@ -1690,10 +1758,10 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         self.indent(depth)?;
         write!(self.output, "{label} {} ", category.spelling())?;
         if matches!(node.kind, ExprKind::Id(_))
-            && let Some(binding) = facts.function
+            && let Some(binding) = facts.function()
         {
             self.function_type(binding)?;
-        } else if !matches!(node.kind, ExprKind::Unary { .. }) || facts.functions.is_none() {
+        } else if !matches!(node.kind, ExprKind::Unary { .. }) || facts.functions().is_none() {
             // An unresolved unary overload designation has no expression type.
             // Selection rewrites its outermost node and immediate operand only.
             self.ty(ty)?;
@@ -1702,8 +1770,11 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             ExprKind::Id(name) => self.id_node(id, name, facts, depth)?,
             ExprKind::Literal(literal) => {
                 self.output.write_all(b" ")?;
-                self.output
-                    .write_all(self.cursor.spellings.get(literal.spelling))?;
+                self.output.write_all(
+                    self.cursor
+                        .spellings
+                        .get(literal.spelling(&self.cursor.spellings)),
+                )?;
             }
             ExprKind::Keyword(Keyword::This) => self.output.write_all(b" this")?,
             ExprKind::Keyword(keyword) => write!(
@@ -1747,7 +1818,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 }
                 self.expr(operand, depth + 1);
             }
-            ExprKind::Call { arguments, .. } if facts.functional_call || intrinsic => {
+            ExprKind::Call { arguments, .. } if facts.functional_call() || intrinsic => {
                 for &id in self.tree.expr_lists.get(arguments).iter().rev() {
                     self.expr(id, depth + 1);
                 }
@@ -1778,8 +1849,8 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             }
             ExprKind::Member { base, op, .. } => self.member_node(base, op, facts, depth)?,
             ExprKind::Subscript { base, index } => {
-                self.expr(if facts.commuted { base } else { index }, depth + 1);
-                self.expr(if facts.commuted { index } else { base }, depth + 1);
+                self.expr(if facts.commuted() { base } else { index }, depth + 1);
+                self.expr(if facts.commuted() { index } else { base }, depth + 1);
             }
             _ => (),
         }
@@ -1826,19 +1897,19 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         id: ast::ExprId,
         callee: ast::ExprId,
         arguments: crate::syntax::storage::List<ast::ExprId>,
-        facts: super::expression_facts::ExprFacts,
+        facts: DisplayFacts,
         depth: usize,
     ) -> io::Result<()> {
         writeln!(self.output)?;
         if matches!(
-            facts.destructor,
+            facts.destructor(),
             Some(super::expression_facts::DestructorTarget::Scalar)
         ) {
             self.expr(callee, depth + 1);
             return Ok(());
         }
         match facts
-            .call
+            .call()
             .ok_or_else(|| io::Error::other("call without target"))?
         {
             CallTarget::Direct(binding) => {
@@ -1861,10 +1932,10 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
         for &id in self.tree.expr_lists.get(arguments).iter().rev() {
             self.expr(id, depth + 1);
         }
-        if matches!(facts.call, Some(CallTarget::Indirect(_, _))) {
+        if matches!(facts.call(), Some(CallTarget::Indirect(_, _))) {
             self.expr(callee, depth + 1);
-        } else if let Some(CallTarget::Direct(binding)) = facts.call {
-            let call = (facts.call_form == super::expression_facts::CallForm::CallableObject)
+        } else if let Some(CallTarget::Direct(binding)) = facts.call() {
+            let call = (facts.call_form() == super::expression_facts::CallForm::CallableObject)
                 .then_some(id);
             self.work
                 .push((Item::ObjectReceiver(callee, binding, call), depth + 1));
@@ -1883,14 +1954,14 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
 
 fn expression_label(
     kind: ExprKind,
-    facts: super::expression_facts::ExprFacts,
+    facts: DisplayFacts,
     intrinsic: bool,
 ) -> io::Result<&'static str> {
     Ok(match kind {
-        ExprKind::Id(_) if facts.anonymous_member.is_some() => "member-expression",
+        ExprKind::Id(_) if facts.anonymous_member().is_some() => "member-expression",
         ExprKind::Id(_)
-            if facts.anonymous_member.is_some()
-                || facts.object.is_some_and(|object| {
+            if facts.anonymous_member().is_some()
+                || facts.object().is_some_and(|object| {
                     matches!(
                         object.source,
                         super::expression_facts::ObjectSource::Implicit
@@ -1931,7 +2002,7 @@ fn expression_label(
         | ExprKind::Lambda(_)
         | ExprKind::Statement(_) => "expression",
         ExprKind::Call { .. } => {
-            if facts.functional_call || intrinsic {
+            if facts.functional_call() || intrinsic {
                 "cast-expression"
             } else {
                 "call-expression"

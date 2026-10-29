@@ -203,8 +203,8 @@ impl Analyzer<'_> {
             return self.evaluated_error(location, "non-static data member used without an object");
         };
         self.capture_this(location)?;
-        facts.object = Some(object);
-        facts.member = Some(binding);
+        facts.set_object(Some(object), &mut self.graph.expression_facts)?;
+        facts.set_member(Some(binding), &mut self.graph.expression_facts)?;
         let class = self
             .graph
             .class_of(object.ty)
@@ -214,10 +214,16 @@ impl Analyzer<'_> {
             .and_then(|home| self.graph.scope(home).owner)
             .unwrap_or(class);
         self.check_member_subobject(binding, class, naming, scope, location)?;
-        facts.member_naming = Some(naming);
-        facts.member_path = self.data_member_path(binding, naming, location)?;
+        facts.set_member_naming(Some(naming), &mut self.graph.expression_facts)?;
+        facts.set_member_path(
+            self.data_member_path(binding, naming, location)?,
+            &mut self.graph.expression_facts,
+        )?;
         if class != naming {
-            facts.member_naming_path = Some(self.graph.retain_base_path(class, naming)?);
+            facts.set_member_naming_path(
+                Some(self.graph.retain_base_path(class, naming)?),
+                &mut self.graph.expression_facts,
+            )?;
         }
         let member = self.graph.entity(self.graph.binding(binding).entity);
         let ty = member.ty.ok_or(Error::Invariant("member without type"))?;
@@ -372,15 +378,18 @@ impl Analyzer<'_> {
             if concrete {
                 self.concrete_function_designation(id, binding, &mut facts)?;
             }
-            facts.object = Some(super::expression_facts::ObjectArgument {
-                source: super::expression_facts::ObjectSource::Explicit {
-                    expression: base,
-                    arrow,
-                },
-                ty,
-                category: if arrow { V::Lvalue } else { object.category },
-            });
-            facts.member_naming = Some(naming);
+            facts.set_object(
+                Some(super::expression_facts::ObjectArgument {
+                    source: super::expression_facts::ObjectSource::Explicit {
+                        expression: base,
+                        arrow,
+                    },
+                    ty,
+                    category: if arrow { V::Lvalue } else { object.category },
+                }),
+                &mut self.graph.expression_facts,
+            )?;
+            facts.set_member_naming(Some(naming), &mut self.graph.expression_facts)?;
             super::record(&mut self.graph.resolved_names, name.index(), binding);
             return Ok(facts);
         }
@@ -431,7 +440,7 @@ impl Analyzer<'_> {
                     return Err(Error::Invariant("enumerator member without value"));
                 };
                 let mut facts = self.new_expression_facts(value.ty, V::Prvalue)?;
-                facts.folded = self.held_integral_constant(value).then_some(value.bits);
+                facts.set_folded(self.held_integral_constant(value).then_some(value.bits));
                 facts
             }
             _ => {
@@ -441,16 +450,25 @@ impl Analyzer<'_> {
                 ));
             }
         };
-        facts.member = Some(binding);
+        facts.set_member(Some(binding), &mut self.graph.expression_facts)?;
         facts.set_bit_field(self.graph.entity(member.entity).bit_field.is_some());
-        facts.field_identity = self.graph.entity(member.entity).bit_field;
+        facts.set_field_identity(
+            self.graph.entity(member.entity).bit_field,
+            &mut self.graph.expression_facts,
+        )?;
         self.static_member_constant(&mut facts, member.entity);
-        facts.member_naming = Some(naming);
-        facts.member_path = self.data_member_path(binding, naming, location)?;
+        facts.set_member_naming(Some(naming), &mut self.graph.expression_facts)?;
+        facts.set_member_path(
+            self.data_member_path(binding, naming, location)?,
+            &mut self.graph.expression_facts,
+        )?;
         if class != naming
             && self.graph.entity(member.entity).data_member == Some(DataMemberKind::Instance)
         {
-            facts.member_naming_path = Some(self.graph.retain_base_path(class, naming)?);
+            facts.set_member_naming_path(
+                Some(self.graph.retain_base_path(class, naming)?),
+                &mut self.graph.expression_facts,
+            )?;
         }
         Ok(facts)
     }

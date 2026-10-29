@@ -57,7 +57,7 @@ impl Analyzer<'_> {
             let ast::ExprKind::Literal(literal) = self.tree.expressions.get(expression).kind else {
                 return Err(Error::Invariant("ABI tag without literal"));
             };
-            let tag = tag_name(self.literal_bytes.get(literal.spelling))
+            let tag = tag_name(self.literal_bytes.get(literal.spelling(self.literal_bytes)))
                 .ok_or_else(|| Error::at(attribute.location, "an ABI tag that is no identifier"))?;
             tags.push(self.identifiers.intern(&tag).map_err(Error::Limit)?);
         }

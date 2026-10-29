@@ -1135,7 +1135,7 @@ impl Graph {
         Ok(self
             .expression_facts
             .get(id)?
-            .object
+            .object(&self.expression_facts)
             .and_then(|object| self.class_of(object.ty)))
     }
     pub(crate) fn lower_object_source(
@@ -1148,11 +1148,11 @@ impl Graph {
         Ok(self
             .expression_facts
             .get(id)?
-            .object
+            .object(&self.expression_facts)
             .map(|object| object.source))
     }
     pub(crate) fn lower_callable_object_call(&self, id: ast::ExprId) -> Result<bool, Error> {
-        Ok(self.expression_facts.get(id)?.call_form
+        Ok(self.expression_facts.get(id)?.call_form()
             == super::expression_facts::CallForm::CallableObject)
     }
     pub(super) fn lower_path_offset(
@@ -1182,11 +1182,11 @@ impl Graph {
         let facts = self.expression_facts.get(id)?;
         Ok([
             facts
-                .member_naming_path
+                .member_naming_path(&self.expression_facts)
                 .map(|path| self.lower_member_route_projection(path))
                 .transpose()?,
             facts
-                .member_path
+                .member_path(&self.expression_facts)
                 .map(|path| self.lower_member_route_projection(path))
                 .transpose()?,
         ])
@@ -1205,7 +1205,11 @@ impl Graph {
         if !facts
             .conversion
             .into_iter()
-            .chain(facts.class_copy.map(|copy| copy.binding))
+            .chain(
+                facts
+                    .class_copy(&self.expression_facts)
+                    .map(|copy| copy.binding),
+            )
             .any(|conversion| {
                 conversion.second == super::expression_facts::ValueConversion::DerivedToBase
             })
@@ -1213,7 +1217,7 @@ impl Graph {
             return Ok(None);
         }
         let path = facts
-            .base_path
+            .base_path(&self.expression_facts)
             .ok_or(Error::Invariant("base conversion without retained path"))?;
         self.lower_path_projection(path).map(Some)
     }
@@ -1257,7 +1261,10 @@ impl Graph {
                     .expression_facts
                     .function_conversion(id)
                     .and_then(|step| step.after_path)
-                    .or(self.expression_facts.get(id)?.base_path)
+                    .or(self
+                        .expression_facts
+                        .get(id)?
+                        .base_path(&self.expression_facts))
                     .ok_or(Error::Invariant("receiver conversion without base path"))?;
                 Some(self.lower_member_route_projection(path)?)
             } else {
@@ -1271,7 +1278,7 @@ impl Graph {
         id: ast::ExprId,
     ) -> Result<Option<(BaseProjection, bool)>, Error> {
         let facts = self.expression_facts.get(id)?;
-        let Some(cast) = facts.base_cast else {
+        let Some(cast) = facts.base_cast(&self.expression_facts) else {
             return Ok(None);
         };
         let offset = self.lower_path_projection(cast.path)?;
@@ -1291,7 +1298,7 @@ impl Graph {
         Ok(self
             .expression_facts
             .get(id)?
-            .function
+            .function(&self.expression_facts)
             .map(|binding| self.binding(binding).entity))
     }
     pub(super) fn lower_entity_unit_local(&self, entity: EntityId) -> Result<bool, Error> {
@@ -1562,7 +1569,10 @@ impl Graph {
         &self,
         id: ast::ExprId,
     ) -> Result<Option<ConstructorId>, Error> {
-        Ok(self.expression_facts.get(id)?.constructor)
+        Ok(self
+            .expression_facts
+            .get(id)?
+            .constructor(&self.expression_facts))
     }
     pub(crate) fn lower_reference_reads_storage(&self, entity: EntityId) -> bool {
         self.constant_addresses.read_through_storage(entity)
@@ -1578,7 +1588,7 @@ impl Graph {
             .expression_facts
             .function_conversion(id)
             .map(|step| step.binding)
-            .or(match facts.call {
+            .or(match facts.call(&self.expression_facts) {
                 Some(super::function_resolution::CallTarget::Direct(binding)) => Some(binding),
                 _ => None,
             })
@@ -1621,7 +1631,7 @@ impl Graph {
     ) -> Option<[Option<ConstructorId>; 2]> {
         let facts = self.expression_facts.get(id).ok()?;
         Some([
-            facts.constructor,
+            facts.constructor(&self.expression_facts),
             self.expression_facts.class_conversion(id).map(|(id, _)| id),
         ])
     }
@@ -1635,7 +1645,10 @@ impl Graph {
         &self,
         id: ast::ExprId,
     ) -> Result<Option<ClassInitialization>, Error> {
-        Ok(self.expression_facts.get(id)?.class_initialization)
+        Ok(self
+            .expression_facts
+            .get(id)?
+            .class_initialization(&self.expression_facts))
     }
     pub(crate) fn lower_aggregate_class(&self, class: EntityId) -> bool {
         self.aggregate_class(class)
@@ -2030,7 +2043,11 @@ impl Graph {
         Some((name.qualifier, name.name))
     }
     pub(crate) fn lower_specialization_assignment(&self, id: ast::ExprId) -> Result<bool, Error> {
-        let Some(member) = self.expression_facts.get(id)?.member else {
+        let Some(member) = self
+            .expression_facts
+            .get(id)?
+            .member(&self.expression_facts)
+        else {
             return Ok(false);
         };
         let member = self.entity(self.binding(member).entity);
@@ -2199,16 +2216,16 @@ impl Graph {
             ty: facts.ty,
             glvalue: facts.glvalue,
             target: facts.conversion.map(|c| c.result),
-            folded: facts.folded,
-            query: facts.query_value,
-            query_kind: facts.query_kind,
+            folded: facts.folded(),
+            query: facts.query_value(&self.expression_facts),
+            query_kind: facts.query_kind(),
             is_place: facts.category != super::expression_facts::ValueCategory::Prvalue,
             null_pointer: facts
                 .conversion
                 .is_some_and(|c| c.second == super::expression_facts::ValueConversion::NullPointer),
-            commuted: facts.commuted,
+            commuted: facts.commuted(),
             temporary: facts.conversion.filter(|c| c.temporary).map(|c| c.result),
-            reference_cast: facts.reference_cast,
+            reference_cast: facts.reference_cast(&self.expression_facts),
         })
     }
     pub(crate) fn lower_name(&self, name: ast::Name) -> Result<EntityId, Error> {
@@ -2237,7 +2254,7 @@ impl Graph {
             .ok_or(Error::Invariant("lowering entity without type"))
     }
     pub(crate) fn lower_functional_call(&self, id: ast::ExprId) -> Result<bool, Error> {
-        Ok(self.expression_facts.get(id)?.functional_call)
+        Ok(self.expression_facts.get(id)?.functional_call())
     }
     pub(crate) fn lower_no_inline(&self, entity: EntityId) -> bool {
         self.entity(self.lower_function_entity(entity))
@@ -2333,14 +2350,18 @@ impl Graph {
         &self,
         id: ast::ExprId,
     ) -> Result<Option<FloatingIntrinsic>, Error> {
-        Ok(self.expression_facts.get(id)?.intrinsic)
+        Ok(self
+            .expression_facts
+            .get(id)?
+            .intrinsic(&self.expression_facts))
     }
     pub(crate) fn lower_operator_call(&self, id: ast::ExprId) -> Result<bool, Error> {
-        Ok(self.expression_facts.get(id)?.call_form == super::expression_facts::CallForm::Operator)
+        Ok(self.expression_facts.get(id)?.call_form()
+            == super::expression_facts::CallForm::Operator)
     }
     pub(crate) fn lower_literal_storage(&self, id: ast::ExprId) -> Result<TypeId, Error> {
         let facts = self.expression_facts.get(id)?;
-        Ok(match facts.literal_call {
+        Ok(match facts.literal_call(&self.expression_facts) {
             Some(
                 LiteralCall::String { object, .. }
                 | LiteralCall::Raw {
@@ -2358,10 +2379,13 @@ impl Graph {
         self.literal_numbers.value(number)
     }
     pub(crate) fn lower_literal_call(&self, id: ast::ExprId) -> Result<Option<LiteralCall>, Error> {
-        Ok(self.expression_facts.get(id)?.literal_call)
+        Ok(self
+            .expression_facts
+            .get(id)?
+            .literal_call(&self.expression_facts))
     }
     pub(crate) fn lower_call(&self, id: ast::ExprId) -> Result<CallTarget, Error> {
-        match self.expression_facts.get(id)?.call {
+        match self.expression_facts.get(id)?.call(&self.expression_facts) {
             Some(super::function_resolution::CallTarget::Direct(binding)) => {
                 Ok(CallTarget::Direct(self.binding(binding).entity))
             }
@@ -2375,17 +2399,23 @@ impl Graph {
         }
     }
     pub(crate) fn lower_destructor_evaluation_only(&self, id: ast::ExprId) -> Result<bool, Error> {
-        Ok(match self.expression_facts.get(id)?.destructor {
-            Some(super::expression_facts::DestructorTarget::Scalar) => true,
-            Some(super::expression_facts::DestructorTarget::Class(binding)) => {
-                let key = self
-                    .entity(self.binding(binding).entity)
-                    .member_function
-                    .ok_or(Error::Invariant("destructor without member key"))?;
-                self.destructor_trivial(key.class)?
-            }
-            None => false,
-        })
+        Ok(
+            match self
+                .expression_facts
+                .get(id)?
+                .destructor(&self.expression_facts)
+            {
+                Some(super::expression_facts::DestructorTarget::Scalar) => true,
+                Some(super::expression_facts::DestructorTarget::Class(binding)) => {
+                    let key = self
+                        .entity(self.binding(binding).entity)
+                        .member_function
+                        .ok_or(Error::Invariant("destructor without member key"))?;
+                    self.destructor_trivial(key.class)?
+                }
+                None => false,
+            },
+        )
     }
     pub(crate) fn lower_destructor_body_inert(
         &self,
@@ -2579,7 +2609,7 @@ impl Graph {
     pub(crate) fn lower_flexible_elements(&self, expr: ast::ExprId) -> bool {
         self.expression_facts.get(expr).is_ok_and(|facts| {
             matches!(
-                facts.class_initialization,
+                facts.class_initialization(&self.expression_facts),
                 Some(super::expression_facts::ClassInitialization::FlexibleAggregate(_))
             )
         })
@@ -2601,7 +2631,7 @@ impl Graph {
         let binding = self
             .expression_facts
             .get(expr)?
-            .member
+            .member(&self.expression_facts)
             .ok_or(Error::Invariant("member without designation"))?;
         let entity = self.binding(binding).entity;
         let node = self.entity(entity);
@@ -2620,14 +2650,17 @@ impl Graph {
     pub(crate) fn lower_union_member(&self, expr: ast::ExprId) -> Result<bool, Error> {
         let facts = self.expression_facts.get(expr)?;
         let binding = facts
-            .member
+            .member(&self.expression_facts)
             .ok_or(Error::Invariant("member without designation"))?;
         if self.member_in_union(self.binding(binding).entity) {
             return Ok(true);
         }
-        let holder = self.member_holder(self.binding(binding).entity, facts.member_naming)?;
+        let holder = self.member_holder(
+            self.binding(binding).entity,
+            facts.member_naming(&self.expression_facts),
+        )?;
         Ok(std::iter::once(holder)
-            .chain(facts.member_naming)
+            .chain(facts.member_naming(&self.expression_facts))
             .any(|class| self.entity(class).key == crate::lex::vocabulary::Keyword::Union))
     }
     pub(crate) fn lower_member_union(&self, member: EntityId) -> bool {
@@ -2674,9 +2707,12 @@ impl Graph {
     pub(crate) fn lower_anonymous_field_offset(&self, expr: ast::ExprId) -> Result<u64, Error> {
         let facts = self.expression_facts.get(expr)?;
         let binding = facts
-            .member
+            .member(&self.expression_facts)
             .ok_or(Error::Invariant("member without designation"))?;
-        self.lower_anonymous_member_offset(self.binding(binding).entity, facts.member_naming)
+        self.lower_anonymous_member_offset(
+            self.binding(binding).entity,
+            facts.member_naming(&self.expression_facts),
+        )
     }
     pub(crate) fn lower_anonymous_constructor(&self, id: ConstructorId) -> bool {
         self.constructors.get(id).declaration.is_none()
@@ -2709,7 +2745,7 @@ impl Graph {
     pub(crate) fn lower_designated_bit_field(&self, expr: ast::ExprId) -> Result<EntityId, Error> {
         let facts = self.expression_facts.get(expr)?;
         let binding = facts
-            .member
+            .member(&self.expression_facts)
             .ok_or(Error::Invariant("bit-field without designation"))?;
         let entity = self.binding(binding).entity;
         Ok(

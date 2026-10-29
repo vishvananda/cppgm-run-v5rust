@@ -444,7 +444,7 @@ pub(super) fn string(
     literal: ast::Literal,
     element: crate::sema::lowering::TypeId,
 ) -> Result<SymbolId, Error> {
-    let PostTokenKind::String { ty, .. } = literal.kind else {
+    let PostTokenKind::String { ty, .. } = symbols.literal_kind(literal) else {
         return Err(Error::Missing("non-string literal object"));
     };
     let storage = types::storage(graph, element)?;

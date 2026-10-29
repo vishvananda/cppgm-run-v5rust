@@ -3,7 +3,7 @@
 use super::{Error, types::TypeId};
 use crate::syntax::ast;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) struct MemberAddressId(u32);
 #[derive(Clone, Copy)]
 pub(super) struct MemberAddress {
@@ -15,7 +15,7 @@ pub(super) struct MemberAddress {
     pub location: Option<crate::support::source::SourceOffset>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum ValueCategory {
     Lvalue,
     Prvalue,
@@ -30,14 +30,14 @@ impl ValueCategory {
         }
     }
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum LvalueTransform {
     None,
     Read,
     ArrayToPointer,
     FunctionToPointer,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum ValueConversion {
     None,
     IntegralPromotion,
@@ -51,7 +51,7 @@ pub(super) enum ValueConversion {
     DerivedToBase,
     MemberToDerived,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) enum ConversionRank {
     Exact,
     Promotion,
@@ -60,7 +60,7 @@ pub(super) enum ConversionRank {
     UserDefined,
     Ellipsis,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum ReferenceSource {
     Other,
     FunctionLvalue,
@@ -71,13 +71,13 @@ impl ReferenceSource {
         matches!(self, Self::FunctionLvalue)
     }
 }
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) enum ListInitialization {
     #[default]
     Ordinary,
     InitializerList,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) struct Conversion {
     pub target: TypeId,
     pub result: TypeId,
@@ -90,7 +90,7 @@ pub(super) struct Conversion {
     pub temporary: bool,
     pub reference_source: ReferenceSource,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum ObjectSource {
     Implicit,
     Explicit {
@@ -98,7 +98,7 @@ pub(crate) enum ObjectSource {
         arrow: bool,
     },
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) struct ObjectArgument {
     pub source: ObjectSource,
     pub ty: TypeId,
@@ -111,7 +111,7 @@ pub(super) struct CallReceiver {
     pub naming_path: Option<super::inheritance::BasePathId>,
     pub member_path: Option<super::inheritance::BasePathId>,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) struct BaseCast {
     pub path: super::inheritance::BasePathId,
     pub downcast: bool,
@@ -134,7 +134,7 @@ impl Dispatch {
         matches!(self, Self::Virtual)
     }
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum DestructorTarget {
     Scalar,
     Class(super::graph::BindingId),
@@ -144,7 +144,7 @@ pub(crate) enum GlvalueKind {
     Ordinary,
     BitField,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum ClassInitialization {
     Constructed(super::constructor_initialization::ConstructorArguments),
     Aggregate(crate::syntax::storage::List<ast::ExprId>),
@@ -188,42 +188,13 @@ pub(super) struct ExprFacts {
     pub ty: TypeId,
     pub category: ValueCategory,
     pub glvalue: GlvalueKind,
-    pub field_identity: Option<super::bit_fields::BitFieldId>,
-    pub null_literal: bool,
     pub conversion: Option<Conversion>,
-    pub commuted: bool,
-    pub folded: Option<u64>,
-    pub fold_style: FoldStyle,
-    // Query constants retain their value without replacing the source query's
-    // sizeof-expression presentation. Constant reads do not type its operand again.
-    pub query_value: Option<u64>,
-    pub query_kind: QueryKind,
-    pub reference_cast: Option<TypeId>,
-    pub functional_call: bool,
-    pub intrinsic: Option<super::floating_intrinsics::FloatingIntrinsic>,
-    pub functions: Option<super::function_resolution::OverloadId>,
-    pub function: Option<super::graph::BindingId>,
-    pub call_form: CallForm,
-    pub dispatch: Dispatch,
-    pub call: Option<super::function_resolution::CallTarget>,
-    pub literal_call: Option<super::literal_calls::LiteralCall>,
-    pub destructor: Option<DestructorTarget>,
-    pub anonymous_member: Option<super::graph::BindingId>,
-    // Explicit designation retains the selected entity independently of spelling.
-    pub member: Option<super::graph::BindingId>,
-    pub member_naming: Option<super::graph::EntityId>,
-    pub object: Option<ObjectArgument>,
-    pub base_path: Option<super::inheritance::BasePathId>,
-    // The cast's route remains separate from a later conversion on its result.
-    pub base_cast: Option<BaseCast>,
-    pub member_path: Option<super::inheritance::BasePathId>,
-    pub member_naming_path: Option<super::inheritance::BasePathId>,
-    // Qualified address formation is distinct from parenthesized designations.
-    pub member_address: Option<MemberAddressId>,
-    pub constructor: Option<super::construction::ConstructorId>,
-    pub class_initialization: Option<ClassInitialization>,
-    pub class_copy: Option<super::copy_initialization::CopySelection>,
+    flags: u16,
+    details: Option<super::expression_details::DetailsId>,
+    folded_value: u64,
 }
+const _: () = assert!(std::mem::size_of::<ExprFacts>() <= 40);
+const _: () = assert!(std::mem::size_of::<Option<ExprFacts>>() <= 40);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum FoldStyle {
     Literal,
@@ -231,6 +202,12 @@ pub(super) enum FoldStyle {
     EnclosingLocal,
 }
 impl ExprFacts {
+    pub(super) fn display_details(
+        self,
+        store: &ExpressionFacts,
+    ) -> super::expression_details::Details {
+        *store.details.get(self.details)
+    }
     pub(super) fn is_bit_field(self) -> bool {
         matches!(self.glvalue, GlvalueKind::BitField)
     }
@@ -249,37 +226,402 @@ impl ExprFacts {
             ty,
             category,
             glvalue: GlvalueKind::Ordinary,
-            field_identity: None,
-            null_literal: false,
             conversion: None,
-            commuted: false,
-            folded: None,
-            fold_style: FoldStyle::Literal,
-            query_value: None,
-            query_kind: QueryKind::Ordinary,
-            reference_cast: None,
-            functional_call: false,
-            intrinsic: None,
-            functions: None,
-            function: None,
-            call_form: CallForm::Ordinary,
-            dispatch: Dispatch::Direct,
-            call: None,
-            literal_call: None,
-            destructor: None,
-            anonymous_member: None,
-            member: None,
-            member_naming: None,
-            object: None,
-            base_path: None,
-            base_cast: None,
-            member_path: None,
-            member_naming_path: None,
-            member_address: None,
-            constructor: None,
-            class_initialization: None,
-            class_copy: None,
+            flags: 0,
+            details: None,
+            folded_value: 0,
         }
+    }
+    pub(super) fn folded(self) -> Option<u64> {
+        (self.flags & 1 != 0).then_some(self.folded_value)
+    }
+    pub(super) fn set_folded(&mut self, value: Option<u64>) {
+        self.flags = (self.flags & !1) | u16::from(value.is_some());
+        self.folded_value = value.unwrap_or(0);
+    }
+
+    pub(super) fn null_literal(self) -> bool {
+        self.flags & (1 << 1) != 0
+    }
+    pub(super) fn set_null_literal(&mut self, value: bool) {
+        self.flags = (self.flags & !(1 << 1)) | (u16::from(value) << 1);
+    }
+    pub(super) fn commuted(self) -> bool {
+        self.flags & (1 << 2) != 0
+    }
+    pub(super) fn set_commuted(&mut self, value: bool) {
+        self.flags = (self.flags & !(1 << 2)) | (u16::from(value) << 2);
+    }
+    pub(super) fn fold_style(self) -> FoldStyle {
+        match (self.flags >> 3) & 3 {
+            1 => FoldStyle::StaticMember,
+            2 => FoldStyle::EnclosingLocal,
+            _ => FoldStyle::Literal,
+        }
+    }
+    pub(super) fn set_fold_style(&mut self, value: FoldStyle) {
+        self.flags = (self.flags & !(3 << 3))
+            | ((match value {
+                FoldStyle::Literal => 0,
+                FoldStyle::StaticMember => 1,
+                FoldStyle::EnclosingLocal => 2,
+            }) << 3);
+    }
+    pub(super) fn query_kind(self) -> QueryKind {
+        match (self.flags >> 5) & 1 {
+            1 => QueryKind::Specialization,
+            _ => QueryKind::Ordinary,
+        }
+    }
+    pub(super) fn set_query_kind(&mut self, value: QueryKind) {
+        self.flags = (self.flags & !(1 << 5))
+            | ((match value {
+                QueryKind::Ordinary => 0,
+                QueryKind::Specialization => 1,
+            }) << 5);
+    }
+    pub(super) fn functional_call(self) -> bool {
+        self.flags & (1 << 6) != 0
+    }
+    pub(super) fn set_functional_call(&mut self, value: bool) {
+        self.flags = (self.flags & !(1 << 6)) | (u16::from(value) << 6);
+    }
+    pub(super) fn call_form(self) -> CallForm {
+        match (self.flags >> 7) & 3 {
+            1 => CallForm::Operator,
+            2 => CallForm::CallableObject,
+            _ => CallForm::Ordinary,
+        }
+    }
+    pub(super) fn set_call_form(&mut self, value: CallForm) {
+        self.flags = (self.flags & !(3 << 7))
+            | ((match value {
+                CallForm::Ordinary => 0,
+                CallForm::Operator => 1,
+                CallForm::CallableObject => 2,
+            }) << 7);
+    }
+    pub(super) fn dispatch(self) -> Dispatch {
+        match (self.flags >> 9) & 1 {
+            1 => Dispatch::Virtual,
+            _ => Dispatch::Direct,
+        }
+    }
+    pub(super) fn set_dispatch(&mut self, value: Dispatch) {
+        self.flags = (self.flags & !(1 << 9))
+            | ((match value {
+                Dispatch::Direct => 0,
+                Dispatch::Virtual => 1,
+            }) << 9);
+    }
+    pub(super) fn field_identity(
+        self,
+        store: &ExpressionFacts,
+    ) -> Option<super::bit_fields::BitFieldId> {
+        store.details.get(self.details).field_identity
+    }
+    pub(super) fn set_field_identity(
+        &mut self,
+        value: Option<super::bit_fields::BitFieldId>,
+        store: &mut ExpressionFacts,
+    ) -> Result<(), Error> {
+        let mut data = *store.details.get(self.details);
+        data.field_identity = value;
+        self.details = store.details.intern(data)?;
+        Ok(())
+    }
+    pub(super) fn query_value(self, store: &ExpressionFacts) -> Option<u64> {
+        store.details.get(self.details).query_value
+    }
+    pub(super) fn set_query_value(
+        &mut self,
+        value: Option<u64>,
+        store: &mut ExpressionFacts,
+    ) -> Result<(), Error> {
+        let mut data = *store.details.get(self.details);
+        data.query_value = value;
+        self.details = store.details.intern(data)?;
+        Ok(())
+    }
+    pub(super) fn reference_cast(self, store: &ExpressionFacts) -> Option<TypeId> {
+        store.details.get(self.details).reference_cast
+    }
+    pub(super) fn set_reference_cast(
+        &mut self,
+        value: Option<TypeId>,
+        store: &mut ExpressionFacts,
+    ) -> Result<(), Error> {
+        let mut data = *store.details.get(self.details);
+        data.reference_cast = value;
+        self.details = store.details.intern(data)?;
+        Ok(())
+    }
+    pub(super) fn intrinsic(
+        self,
+        store: &ExpressionFacts,
+    ) -> Option<super::floating_intrinsics::FloatingIntrinsic> {
+        store.details.get(self.details).intrinsic
+    }
+    pub(super) fn set_intrinsic(
+        &mut self,
+        value: Option<super::floating_intrinsics::FloatingIntrinsic>,
+        store: &mut ExpressionFacts,
+    ) -> Result<(), Error> {
+        let mut data = *store.details.get(self.details);
+        data.intrinsic = value;
+        self.details = store.details.intern(data)?;
+        Ok(())
+    }
+    pub(super) fn functions(
+        self,
+        store: &ExpressionFacts,
+    ) -> Option<super::function_resolution::OverloadId> {
+        store.details.get(self.details).functions
+    }
+    pub(super) fn set_functions(
+        &mut self,
+        value: Option<super::function_resolution::OverloadId>,
+        store: &mut ExpressionFacts,
+    ) -> Result<(), Error> {
+        let mut data = *store.details.get(self.details);
+        data.functions = value;
+        self.details = store.details.intern(data)?;
+        Ok(())
+    }
+    pub(super) fn function(self, store: &ExpressionFacts) -> Option<super::graph::BindingId> {
+        store.details.get(self.details).function
+    }
+    pub(super) fn set_function(
+        &mut self,
+        value: Option<super::graph::BindingId>,
+        store: &mut ExpressionFacts,
+    ) -> Result<(), Error> {
+        let mut data = *store.details.get(self.details);
+        data.function = value;
+        self.details = store.details.intern(data)?;
+        Ok(())
+    }
+    pub(super) fn call(
+        self,
+        store: &ExpressionFacts,
+    ) -> Option<super::function_resolution::CallTarget> {
+        store.details.get(self.details).call
+    }
+    pub(super) fn set_call(
+        &mut self,
+        value: Option<super::function_resolution::CallTarget>,
+        store: &mut ExpressionFacts,
+    ) -> Result<(), Error> {
+        let mut data = *store.details.get(self.details);
+        data.call = value;
+        self.details = store.details.intern(data)?;
+        Ok(())
+    }
+    pub(super) fn literal_call(
+        self,
+        store: &ExpressionFacts,
+    ) -> Option<super::literal_calls::LiteralCall> {
+        store.details.get(self.details).literal_call
+    }
+    pub(super) fn set_literal_call(
+        &mut self,
+        value: Option<super::literal_calls::LiteralCall>,
+        store: &mut ExpressionFacts,
+    ) -> Result<(), Error> {
+        let mut data = *store.details.get(self.details);
+        data.literal_call = value;
+        self.details = store.details.intern(data)?;
+        Ok(())
+    }
+    pub(super) fn destructor(self, store: &ExpressionFacts) -> Option<DestructorTarget> {
+        store.details.get(self.details).destructor
+    }
+    pub(super) fn set_destructor(
+        &mut self,
+        value: Option<DestructorTarget>,
+        store: &mut ExpressionFacts,
+    ) -> Result<(), Error> {
+        let mut data = *store.details.get(self.details);
+        data.destructor = value;
+        self.details = store.details.intern(data)?;
+        Ok(())
+    }
+    pub(super) fn anonymous_member(
+        self,
+        store: &ExpressionFacts,
+    ) -> Option<super::graph::BindingId> {
+        store.details.get(self.details).anonymous_member
+    }
+    pub(super) fn set_anonymous_member(
+        &mut self,
+        value: Option<super::graph::BindingId>,
+        store: &mut ExpressionFacts,
+    ) -> Result<(), Error> {
+        let mut data = *store.details.get(self.details);
+        data.anonymous_member = value;
+        self.details = store.details.intern(data)?;
+        Ok(())
+    }
+    pub(super) fn member(self, store: &ExpressionFacts) -> Option<super::graph::BindingId> {
+        store.details.get(self.details).member
+    }
+    pub(super) fn set_member(
+        &mut self,
+        value: Option<super::graph::BindingId>,
+        store: &mut ExpressionFacts,
+    ) -> Result<(), Error> {
+        let mut data = *store.details.get(self.details);
+        data.member = value;
+        self.details = store.details.intern(data)?;
+        Ok(())
+    }
+    pub(super) fn member_naming(self, store: &ExpressionFacts) -> Option<super::graph::EntityId> {
+        store.details.get(self.details).member_naming
+    }
+    pub(super) fn set_member_naming(
+        &mut self,
+        value: Option<super::graph::EntityId>,
+        store: &mut ExpressionFacts,
+    ) -> Result<(), Error> {
+        let mut data = *store.details.get(self.details);
+        data.member_naming = value;
+        self.details = store.details.intern(data)?;
+        Ok(())
+    }
+    pub(super) fn object(self, store: &ExpressionFacts) -> Option<ObjectArgument> {
+        store.details.get(self.details).object
+    }
+    pub(super) fn set_object(
+        &mut self,
+        value: Option<ObjectArgument>,
+        store: &mut ExpressionFacts,
+    ) -> Result<(), Error> {
+        let mut data = *store.details.get(self.details);
+        data.object = value;
+        self.details = store.details.intern(data)?;
+        Ok(())
+    }
+    pub(super) fn base_path(
+        self,
+        store: &ExpressionFacts,
+    ) -> Option<super::inheritance::BasePathId> {
+        store.details.get(self.details).base_path
+    }
+    pub(super) fn set_base_path(
+        &mut self,
+        value: Option<super::inheritance::BasePathId>,
+        store: &mut ExpressionFacts,
+    ) -> Result<(), Error> {
+        let mut data = *store.details.get(self.details);
+        data.base_path = value;
+        self.details = store.details.intern(data)?;
+        Ok(())
+    }
+    pub(super) fn base_cast(self, store: &ExpressionFacts) -> Option<BaseCast> {
+        store.details.get(self.details).base_cast
+    }
+    pub(super) fn set_base_cast(
+        &mut self,
+        value: Option<BaseCast>,
+        store: &mut ExpressionFacts,
+    ) -> Result<(), Error> {
+        let mut data = *store.details.get(self.details);
+        data.base_cast = value;
+        self.details = store.details.intern(data)?;
+        Ok(())
+    }
+    pub(super) fn member_path(
+        self,
+        store: &ExpressionFacts,
+    ) -> Option<super::inheritance::BasePathId> {
+        store.details.get(self.details).member_path
+    }
+    pub(super) fn set_member_path(
+        &mut self,
+        value: Option<super::inheritance::BasePathId>,
+        store: &mut ExpressionFacts,
+    ) -> Result<(), Error> {
+        let mut data = *store.details.get(self.details);
+        data.member_path = value;
+        self.details = store.details.intern(data)?;
+        Ok(())
+    }
+    pub(super) fn member_naming_path(
+        self,
+        store: &ExpressionFacts,
+    ) -> Option<super::inheritance::BasePathId> {
+        store.details.get(self.details).member_naming_path
+    }
+    pub(super) fn set_member_naming_path(
+        &mut self,
+        value: Option<super::inheritance::BasePathId>,
+        store: &mut ExpressionFacts,
+    ) -> Result<(), Error> {
+        let mut data = *store.details.get(self.details);
+        data.member_naming_path = value;
+        self.details = store.details.intern(data)?;
+        Ok(())
+    }
+    pub(super) fn member_address(self, store: &ExpressionFacts) -> Option<MemberAddressId> {
+        store.details.get(self.details).member_address
+    }
+    pub(super) fn set_member_address(
+        &mut self,
+        value: Option<MemberAddressId>,
+        store: &mut ExpressionFacts,
+    ) -> Result<(), Error> {
+        let mut data = *store.details.get(self.details);
+        data.member_address = value;
+        self.details = store.details.intern(data)?;
+        Ok(())
+    }
+    pub(super) fn constructor(
+        self,
+        store: &ExpressionFacts,
+    ) -> Option<super::construction::ConstructorId> {
+        store.details.get(self.details).constructor
+    }
+    pub(super) fn set_constructor(
+        &mut self,
+        value: Option<super::construction::ConstructorId>,
+        store: &mut ExpressionFacts,
+    ) -> Result<(), Error> {
+        let mut data = *store.details.get(self.details);
+        data.constructor = value;
+        self.details = store.details.intern(data)?;
+        Ok(())
+    }
+    pub(super) fn class_initialization(
+        self,
+        store: &ExpressionFacts,
+    ) -> Option<ClassInitialization> {
+        store.details.get(self.details).class_initialization
+    }
+    pub(super) fn set_class_initialization(
+        &mut self,
+        value: Option<ClassInitialization>,
+        store: &mut ExpressionFacts,
+    ) -> Result<(), Error> {
+        let mut data = *store.details.get(self.details);
+        data.class_initialization = value;
+        self.details = store.details.intern(data)?;
+        Ok(())
+    }
+    pub(super) fn class_copy(
+        self,
+        store: &ExpressionFacts,
+    ) -> Option<super::copy_initialization::CopySelection> {
+        store.details.get(self.details).class_copy
+    }
+    pub(super) fn set_class_copy(
+        &mut self,
+        value: Option<super::copy_initialization::CopySelection>,
+        store: &mut ExpressionFacts,
+    ) -> Result<(), Error> {
+        let mut data = *store.details.get(self.details);
+        data.class_copy = value;
+        self.details = store.details.intern(data)?;
+        Ok(())
     }
 }
 #[derive(Clone, Copy)]
@@ -297,6 +639,7 @@ enum CallView {
 
 #[derive(Default)]
 pub(super) struct ExpressionFacts {
+    details: super::expression_details::DetailsStore,
     // Successful, class-specific designated-list shapes; source operands have
     // stable types before ranking. No candidate publishes conversions here.
     designated_lists: crate::support::hash::HashMap<
@@ -401,7 +744,7 @@ impl ExpressionFacts {
             || self.runtime_intrinsic(id).is_some()
             || self.constant_evaluation_query(id)
             || self.complex_construction(id)
-            || facts.intrinsic.is_some()
+            || facts.intrinsic(self).is_some()
             || self.integer_intrinsic(id).is_some()
             || self.atomic_intrinsic(id).is_some()
     }
@@ -775,6 +1118,34 @@ mod tests {
         lex::vocabulary::Keyword, support::source::SourceOffset, syntax::storage::Store,
         types::FundamentalType,
     };
+    #[test]
+    fn compact_facts_keep_copies_independent_and_share_equal_details() {
+        let mut types = super::super::types::Types::default();
+        let int = types
+            .scalar(super::super::types::Scalar::Basic(FundamentalType::Int))
+            .unwrap();
+        let mut store = ExpressionFacts::default();
+        let mut first = ExprFacts::new(int, ValueCategory::Prvalue);
+        first.set_reference_cast(Some(int), &mut store).unwrap();
+        first.set_folded(Some(u64::MAX));
+        first.set_query_kind(QueryKind::Specialization);
+        first.set_call_form(CallForm::CallableObject);
+        let mut second = first;
+        second.set_reference_cast(None, &mut store).unwrap();
+        second.set_query_value(Some(0), &mut store).unwrap();
+        second.set_folded(None);
+        assert_eq!(first.reference_cast(&store), Some(int));
+        assert_eq!(second.reference_cast(&store), None);
+        assert_eq!(first.query_value(&store), None);
+        assert_eq!(second.query_value(&store), Some(0));
+        assert_eq!(first.folded(), Some(u64::MAX));
+        assert_eq!(second.folded(), None);
+        assert!(second.query_kind().is_specialization());
+        assert_eq!(second.call_form(), CallForm::CallableObject);
+        let mut same = ExprFacts::new(int, ValueCategory::Lvalue);
+        same.set_reference_cast(Some(int), &mut store).unwrap();
+        assert_eq!(same.details, first.details);
+    }
     #[test]
     fn parentheses_share_one_conversion_record_without_recursive_alias_lookup() {
         let mut types = super::super::types::Types::default();

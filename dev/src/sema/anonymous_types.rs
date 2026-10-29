@@ -75,13 +75,13 @@ impl Graph {
         id: ast::ExprId,
     ) -> Result<Option<(EntityId, u64)>, Error> {
         let facts = self.expression_facts.get(id)?;
-        let Some(storage) = facts.anonymous_member else {
+        let Some(storage) = facts.anonymous_member(&self.expression_facts) else {
             return Ok(None);
         };
         let member = self
             .binding(
                 facts
-                    .member
+                    .member(&self.expression_facts)
                     .ok_or(Error::Invariant("injected member without designation"))?,
             )
             .entity;
@@ -98,12 +98,16 @@ impl Graph {
         Ok(self
             .expression_facts
             .get(id)?
-            .anonymous_member
+            .anonymous_member(&self.expression_facts)
             .map(|binding| self.binding(binding).entity))
     }
 
     pub(crate) fn lower_union_assignment(&self, id: ast::ExprId) -> Result<bool, Error> {
-        let Some(member) = self.expression_facts.get(id)?.member else {
+        let Some(member) = self
+            .expression_facts
+            .get(id)?
+            .member(&self.expression_facts)
+        else {
             return Ok(false);
         };
         Ok(self.member_in_union(self.binding(member).entity))

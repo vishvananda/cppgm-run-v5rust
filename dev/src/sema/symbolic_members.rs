@@ -225,7 +225,7 @@ impl Analyzer<'_> {
         {
             return Ok(value);
         }
-        if facts.category == ValueCategory::Prvalue && facts.folded == Some(0) {
+        if facts.category == ValueCategory::Prvalue && facts.folded() == Some(0) {
             return Ok(MemberPointer::null(ty));
         }
         if facts.category != ValueCategory::Prvalue
@@ -236,9 +236,12 @@ impl Analyzer<'_> {
         }
         match node.kind {
             ExprKind::Unary { op, .. } if op.token.as_punctuator() == Some(P::BitAnd) => {
-                let member = facts.function.or(facts.member).ok_or_else(|| {
-                    nonconstant(node.location, "a pointer to member of no member")
-                })?;
+                let member = facts
+                    .function(&self.graph.expression_facts)
+                    .or(facts.member(&self.graph.expression_facts))
+                    .ok_or_else(|| {
+                        nonconstant(node.location, "a pointer to member of no member")
+                    })?;
                 Ok(MemberPointer {
                     ty,
                     member: Some(self.graph.binding(member).entity),
@@ -273,7 +276,7 @@ impl Analyzer<'_> {
                 }
                 self.member_pointer_arguments(arguments, ty, scope, node.location)
             }
-            ExprKind::Call { arguments, .. } if facts.functional_call => {
+            ExprKind::Call { arguments, .. } if facts.functional_call() => {
                 self.member_pointer_arguments(arguments, ty, scope, node.location)
             }
             ExprKind::Call { .. } => {

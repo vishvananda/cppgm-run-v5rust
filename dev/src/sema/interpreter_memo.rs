@@ -221,9 +221,9 @@ impl Proof<'_> {
             .function_conversion(id)
             .is_some()
             || self.graph.expression_facts.class_conversion(id).is_some()
-            || facts.call_form != CallForm::Ordinary
-            || facts.dispatch.is_virtual()
-            || facts.literal_call.is_some()
+            || facts.call_form() != CallForm::Ordinary
+            || facts.dispatch().is_virtual()
+            || facts.literal_call(&self.graph.expression_facts).is_some()
             || self.graph.integral_kind(facts.ty).is_none()
         {
             return Ok(false);
@@ -269,7 +269,8 @@ impl Proof<'_> {
                 if !matches!(self.tree.expressions.get(callee).kind, ExprKind::Id(_)) {
                     return Ok(false);
                 }
-                let Some(CallTarget::Direct(binding)) = facts.call else {
+                let Some(CallTarget::Direct(binding)) = facts.call(&self.graph.expression_facts)
+                else {
                     return Ok(false);
                 };
                 let binding = self.graph.binding(binding);

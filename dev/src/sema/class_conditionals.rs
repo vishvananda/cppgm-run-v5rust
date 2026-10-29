@@ -204,28 +204,30 @@ impl Analyzer<'_> {
         let mut candidates = Vec::new();
         for &left in &options[0] {
             for &right in &options[1] {
-                let parameters =
-                    if self.is_arithmetic_operand(left) && self.is_arithmetic_operand(right) {
-                        [self.promoted_type(left)?, self.promoted_type(right)?]
+                let parameters = if self.is_arithmetic_operand(left)
+                    && self.is_arithmetic_operand(right)
+                {
+                    [self.promoted_type(left)?, self.promoted_type(right)?]
+                } else {
+                    let mut views = [
+                        ExprFacts::new(left, V::Prvalue),
+                        ExprFacts::new(right, V::Prvalue),
+                    ];
+                    for (view, original) in views.iter_mut().zip(facts) {
+                        view.set_null_literal(
+                            self.graph.class_of(original.ty).is_none() && original.null_literal(),
+                        );
+                    }
+                    let common = if left == right && self.scoped_enum(left) {
+                        Some(left)
                     } else {
-                        let mut views = [
-                            ExprFacts::new(left, V::Prvalue),
-                            ExprFacts::new(right, V::Prvalue),
-                        ];
-                        for (view, original) in views.iter_mut().zip(facts) {
-                            view.null_literal =
-                                self.graph.class_of(original.ty).is_none() && original.null_literal;
-                        }
-                        let common = if left == right && self.scoped_enum(left) {
-                            Some(left)
-                        } else {
-                            self.composite_pointer(views[0], views[1], false)?
-                        };
-                        let Some(common) = common else {
-                            continue;
-                        };
-                        [common, common]
+                        self.composite_pointer(views[0], views[1], false)?
                     };
+                    let Some(common) = common else {
+                        continue;
+                    };
+                    [common, common]
+                };
                 if candidates.iter().any(|(kept, _)| *kept == parameters) {
                     continue;
                 }
@@ -408,7 +410,7 @@ mod tests {
                 assert_eq!(step.result, right.ty);
                 assert_eq!(step.category, ValueCategory::Lvalue);
                 assert!(left.conversion.is_none());
-                assert!(left.class_copy.is_none());
+                assert!(left.class_copy(&graph.expression_facts).is_none());
                 assert!(
                     graph
                         .expression_facts
@@ -538,7 +540,7 @@ mod tests {
                     .expression_facts
                     .get(operand)
                     .unwrap()
-                    .class_copy
+                    .class_copy(&graph.expression_facts)
                     .is_none()
             );
             assert!(graph.lower_class_copy(operand).unwrap().is_none());
@@ -620,7 +622,10 @@ mod tests {
         assert_eq!(facts.ty, left.ty);
         assert_ne!(left.ty, right.ty);
         assert!(left.conversion.is_none() && right.conversion.is_none());
-        assert!(left.base_path.is_none() && right.base_path.is_none());
+        assert!(
+            left.base_path(&graph.expression_facts).is_none()
+                && right.base_path(&graph.expression_facts).is_none()
+        );
         assert_eq!(graph.types.get(right.ty).cv, Cv::default());
     }
 }

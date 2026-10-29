@@ -285,7 +285,7 @@ impl Analyzer<'_> {
         let mut initializer_type = None;
         if self.semantic() && self.template_depth == 0 {
             let facts = self.typed_expression(expression, scope)?;
-            if let Some(set) = facts.functions {
+            if let Some(set) = facts.functions(&self.graph.expression_facts) {
                 // Bare auto first resolves an ordinary singleton, like typed_value.
                 if matches!(self.graph.types.get(declared).kind, TypeKind::Auto(_)) {
                     self.check_resolved_function(expression)?;

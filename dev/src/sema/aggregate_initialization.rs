@@ -47,7 +47,12 @@ impl From<List<ast::ExprId>> for AggregateInitialization {
 }
 impl Graph {
     pub(crate) fn lower_list_union_member(&self, id: ast::ExprId) -> Option<EntityId> {
-        match self.expression_facts.get(id).ok()?.class_initialization? {
+        match self
+            .expression_facts
+            .get(id)
+            .ok()?
+            .class_initialization(&self.expression_facts)?
+        {
             super::expression_facts::ClassInitialization::Aggregate(elements)
             | super::expression_facts::ClassInitialization::FlexibleAggregate(elements) => {
                 self.lower_aggregate_union_member(elements)
@@ -205,17 +210,20 @@ impl Analyzer<'_> {
                 .expression_facts
                 .set_union_list_member(elements, member);
         }
-        facts.class_initialization = Some(
-            if let Some(context) = &mut self.flexible_initialization
-                && context.list == id
-                && context.given
-            {
-                context.given = false;
-                ClassInitialization::FlexibleAggregate(elements)
-            } else {
-                ClassInitialization::Aggregate(elements)
-            },
-        );
+        facts.set_class_initialization(
+            Some(
+                if let Some(context) = &mut self.flexible_initialization
+                    && context.list == id
+                    && context.given
+                {
+                    context.given = false;
+                    ClassInitialization::FlexibleAggregate(elements)
+                } else {
+                    ClassInitialization::Aggregate(elements)
+                },
+            ),
+            &mut self.graph.expression_facts,
+        )?;
         self.graph.expression_facts.set(id, facts);
         Ok(bare)
     }
@@ -380,17 +388,24 @@ mod tests {
             graph.types.get(first.ty).kind,
             TypeKind::Scalar(_)
         ));
-        assert!(first.constructor.is_none());
-        assert!(first.class_initialization.is_none());
+        assert!(first.constructor(&graph.expression_facts).is_none());
+        assert!(
+            first
+                .class_initialization(&graph.expression_facts)
+                .is_none()
+        );
         let (constructor, ConstructorArguments::Single(original)) =
             graph.expression_facts.class_conversion(values[0]).unwrap()
         else {
             panic!("retained converting argument");
         };
         assert_eq!(original, values[0]);
-        assert_eq!(Some(constructor), second.constructor);
+        assert_eq!(
+            Some(constructor),
+            second.constructor(&graph.expression_facts)
+        );
         assert!(graph.expression_facts.class_conversion(values[1]).is_none());
-        assert!(second.class_copy.is_some());
+        assert!(second.class_copy(&graph.expression_facts).is_some());
         let unused = cursor.intern_name(b"Unused").unwrap();
         let unused = graph
             .binding(graph.own(graph.global, unused, Filter::Prefix).unwrap())

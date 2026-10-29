@@ -361,13 +361,13 @@ impl Analyzer<'_> {
             let mut place = self.constant_project_path(
                 place,
                 facts
-                    .class_copy
+                    .class_copy(&self.graph.expression_facts)
                     .map(|copy| copy.binding)
                     .or(facts.conversion)
                     .filter(|conversion| {
                         conversion.second == super::expression_facts::ValueConversion::DerivedToBase
                     })
-                    .and(facts.base_path),
+                    .and(facts.base_path(&self.graph.expression_facts)),
                 self.tree.expressions.get(id).location,
             )?;
             place.designated = element;
@@ -480,10 +480,16 @@ impl Analyzer<'_> {
                 message: "not an integral constant expression",
             });
         }
-        if self.graph.expression_facts.get(id)?.literal_call.is_some() {
+        if self
+            .graph
+            .expression_facts
+            .get(id)?
+            .literal_call(&self.graph.expression_facts)
+            .is_some()
+        {
             return self.constant_literal_call(id, scope, destination);
         }
-        if self.graph.expression_facts.get(id)?.call_form == CallForm::Operator
+        if self.graph.expression_facts.get(id)?.call_form() == CallForm::Operator
             && !matches!(self.tree.expressions.get(id).kind, ExprKind::Call { .. })
         {
             return self.constant_operator_into(id, scope, destination);
@@ -494,7 +500,7 @@ impl Analyzer<'_> {
         let facts = self.graph.expression_facts.get(id)?;
         let location = self.tree.expressions.get(id).location;
         if matches!(
-            facts.destructor,
+            facts.destructor(&self.graph.expression_facts),
             Some(super::expression_facts::DestructorTarget::Scalar)
         ) {
             return Err(nonconstant(
@@ -502,7 +508,7 @@ impl Analyzer<'_> {
                 "a pseudo-destructor call in a constant expression",
             ));
         }
-        if facts.dispatch.is_virtual() {
+        if facts.dispatch().is_virtual() {
             return Err(nonconstant(
                 location,
                 "a virtual function call in a constant expression",
@@ -525,7 +531,7 @@ impl Analyzer<'_> {
         };
         let function = if let Some((function, _)) = bound {
             function
-        } else if let Some(CallTarget::Direct(binding)) = facts.call {
+        } else if let Some(CallTarget::Direct(binding)) = facts.call(&self.graph.expression_facts) {
             self.graph.binding(binding).entity
         } else {
             let address = self.address_operand(callee, scope)?;
@@ -544,10 +550,10 @@ impl Analyzer<'_> {
             .or_else(|| {
                 let facts = self.graph.expression_facts.get(callee).ok()?;
                 Some(super::expression_facts::CallReceiver {
-                    object: facts.object?,
-                    path: facts.base_path,
-                    naming_path: facts.member_naming_path,
-                    member_path: facts.member_path,
+                    object: facts.object(&self.graph.expression_facts)?,
+                    path: facts.base_path(&self.graph.expression_facts),
+                    naming_path: facts.member_naming_path(&self.graph.expression_facts),
+                    member_path: facts.member_path(&self.graph.expression_facts),
                 })
             })
             .filter(|_| {
@@ -580,7 +586,9 @@ impl Analyzer<'_> {
         };
         // The frozen interpreter evaluates the receiver, then treats a
         // trivial destructor as an inert call, without requiring constexpr.
-        if let Some(super::expression_facts::DestructorTarget::Class(binding)) = facts.destructor {
+        if let Some(super::expression_facts::DestructorTarget::Class(binding)) =
+            facts.destructor(&self.graph.expression_facts)
+        {
             let class = self
                 .graph
                 .entity(self.graph.binding(binding).entity)
@@ -608,7 +616,7 @@ impl Analyzer<'_> {
     ) -> Result<Returned, Error> {
         let facts = self.graph.expression_facts.get(id)?;
         let location = self.tree.expressions.get(id).location;
-        let Some(CallTarget::Direct(binding)) = facts.call else {
+        let Some(CallTarget::Direct(binding)) = facts.call(&self.graph.expression_facts) else {
             return Err(Error::Invariant("operator without selected function"));
         };
         let function = self.graph.binding(binding).entity;
@@ -623,7 +631,11 @@ impl Analyzer<'_> {
         let object = if member {
             let receiver = operands[0];
             let place = self.constant_object_place(receiver, scope)?;
-            let path = self.graph.expression_facts.get(receiver)?.base_path;
+            let path = self
+                .graph
+                .expression_facts
+                .get(receiver)?
+                .base_path(&self.graph.expression_facts);
             Some(self.constant_project_path(place, path, location)?)
         } else {
             None
@@ -1338,7 +1350,7 @@ mod tests {
                 .expression_facts
                 .get(expression)
                 .unwrap()
-                .call
+                .call(&analyzer.graph.expression_facts)
             else {
                 panic!("direct call");
             };

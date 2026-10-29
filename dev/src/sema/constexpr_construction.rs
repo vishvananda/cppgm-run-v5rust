@@ -42,18 +42,21 @@ impl Analyzer<'_> {
             source.designated = self.bare_type(source.designated)?;
             return self.copy_constant_object(target, source, location);
         }
-        if facts.constructor.is_none()
+        if facts.constructor(&self.graph.expression_facts).is_none()
             && self.graph.expression_facts.initializer_array(id).is_some()
         {
             return self.construct_class_prvalue(id, target, scope, location);
         }
-        if facts.literal_call.is_some()
-            || facts.call_form == super::expression_facts::CallForm::Operator
+        if facts.literal_call(&self.graph.expression_facts).is_some()
+            || facts.call_form() == super::expression_facts::CallForm::Operator
         {
             self.constant_call_into(id, scope, Some(target))?;
             return Ok(());
         }
-        if facts.class_initialization.is_some() {
+        if facts
+            .class_initialization(&self.graph.expression_facts)
+            .is_some()
+        {
             return self.construct_class_prvalue(id, target, scope, location);
         }
         let initializer = match self.tree.expressions.get(id).kind {
@@ -67,14 +70,14 @@ impl Analyzer<'_> {
             ExprKind::Cast { operand, .. } => {
                 return self.constant_class_initialize(
                     target,
-                    facts.constructor,
+                    facts.constructor(&self.graph.expression_facts),
                     &[operand],
                     false,
                     scope,
                     location,
                 );
             }
-            ExprKind::Call { arguments, .. } if facts.functional_call => {
+            ExprKind::Call { arguments, .. } if facts.functional_call() => {
                 InitializerKind::Parenthesized(arguments)
             }
             ExprKind::Call { .. } => {
@@ -112,7 +115,7 @@ impl Analyzer<'_> {
                 kind: initializer,
                 location,
             }),
-            facts.constructor,
+            facts.constructor(&self.graph.expression_facts),
             scope,
             location,
         )
@@ -129,14 +132,16 @@ impl Analyzer<'_> {
         self.check_stack()?;
         self.constant_step(location)?;
         let facts = self.graph.expression_facts.get(id)?;
-        if facts.constructor.is_none()
+        if facts.constructor(&self.graph.expression_facts).is_none()
             && self.graph.expression_facts.initializer_array(id).is_some()
         {
             return self.constant_list_object(id, target, scope, location);
         }
-        match facts.class_initialization.ok_or(Error::Invariant(
-            "class construction without initialization facts",
-        ))? {
+        match facts
+            .class_initialization(&self.graph.expression_facts)
+            .ok_or(Error::Invariant(
+                "class construction without initialization facts",
+            ))? {
             ClassInitialization::Aggregate(elements)
             | ClassInitialization::FlexibleAggregate(elements) => {
                 let arguments = Arguments::new(self.tree.expr_lists.get(elements));
@@ -156,7 +161,7 @@ impl Analyzer<'_> {
                 let args = self.constant_constructor_arguments(arguments);
                 self.constant_class_initialize(
                     target,
-                    facts.constructor,
+                    facts.constructor(&self.graph.expression_facts),
                     args.as_slice(),
                     args.as_slice().is_empty(),
                     scope,
@@ -729,7 +734,11 @@ impl Analyzer<'_> {
             return self.constant_aggregate(target, values, next, scope, location, None);
         }
         *next += 1;
-        let constructor = self.graph.expression_facts.get(expr)?.constructor;
+        let constructor = self
+            .graph
+            .expression_facts
+            .get(expr)?
+            .constructor(&self.graph.expression_facts);
         let initializer = Some(ast::Initializer {
             kind: InitializerKind::Assign(expr),
             location: self.tree.expressions.get(expr).location,

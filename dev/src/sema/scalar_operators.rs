@@ -98,14 +98,14 @@ impl Analyzer<'_> {
         postfix: bool,
     ) -> Result<ExprFacts, Error> {
         let facts = self.builtin_operand_facts(operand)?;
-        if facts.object.is_some()
+        if facts.object(&self.graph.expression_facts).is_some()
             && facts
-                .functions
+                .functions(&self.graph.expression_facts)
                 .is_some_and(|set| self.graph.overloads.get(set).len() == 1)
         {
             self.check_bound_function(operand)?;
         }
-        if facts.functions.is_some()
+        if facts.functions(&self.graph.expression_facts).is_some()
             && self.ordinary_function_operand(facts).is_none()
             && matches!(op, P::BitAnd | P::Multiply)
         {
@@ -119,8 +119,14 @@ impl Analyzer<'_> {
                     V::Lvalue
                 },
             )?;
-            result.functions = facts.functions;
-            result.object = facts.object;
+            result.set_functions(
+                facts.functions(&self.graph.expression_facts),
+                &mut self.graph.expression_facts,
+            )?;
+            result.set_object(
+                facts.object(&self.graph.expression_facts),
+                &mut self.graph.expression_facts,
+            )?;
             return Ok(result);
         }
         self.check_resolved_function(operand)?;
@@ -140,7 +146,10 @@ impl Analyzer<'_> {
             }
             let ty = self.graph.types.pointer(facts.ty)?;
             let mut result = self.new_expression_facts(ty, V::Prvalue)?;
-            result.function = facts.function;
+            result.set_function(
+                facts.function(&self.graph.expression_facts),
+                &mut self.graph.expression_facts,
+            )?;
             return Ok(result);
         }
         if matches!(op, P::Increment | P::Decrement) {
@@ -192,7 +201,10 @@ impl Analyzer<'_> {
             }
             self.convert_operand_scalar(operand, ty, false)?;
             let mut result = self.new_expression_facts(element, V::Lvalue)?;
-            result.function = facts.function;
+            result.set_function(
+                facts.function(&self.graph.expression_facts),
+                &mut self.graph.expression_facts,
+            )?;
             return Ok(result);
         }
         if op == P::LogicalNot {
@@ -392,12 +404,12 @@ impl Analyzer<'_> {
     ) -> Result<Option<TypeId>, Error> {
         let mut at = self.decayed_type(a.ty)?;
         let mut bt = self.decayed_type(b.ty)?;
-        let a_null = a.null_literal
+        let a_null = a.null_literal()
             || matches!(
                 self.graph.types.get(at).kind,
                 TypeKind::Scalar(Scalar::Nullptr)
             );
-        let b_null = b.null_literal
+        let b_null = b.null_literal()
             || matches!(
                 self.graph.types.get(bt).kind,
                 TypeKind::Scalar(Scalar::Nullptr)
@@ -881,7 +893,7 @@ impl Analyzer<'_> {
             .object_pointer(pointer)
             .ok_or(Error::Invariant("subscript without pointee"))?;
         let mut facts = self.new_expression_facts(element, V::Lvalue)?;
-        facts.commuted = commuted;
+        facts.set_commuted(commuted);
         Ok(facts)
     }
 }

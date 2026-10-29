@@ -236,7 +236,7 @@ impl Analyzer<'_> {
         let ty = match self.tree.expressions.get(id).kind {
             ExprKind::Literal(literal) => {
                 return Ok(matches!(
-                    literal.kind,
+                    literal.kind(self.literal_bytes),
                     PostTokenKind::Literal { .. }
                         | PostTokenKind::Character {
                             suffix_begin: None,

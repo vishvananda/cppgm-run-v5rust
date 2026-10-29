@@ -271,11 +271,11 @@ fn visit_bytes(
         }
         I::Call(call) => {
             let own = host
-                && program.callee_function(call.callee).is_some_and(|f| {
-                    f.body.is_some()
-                        && f.metadata.binding != Some(Binding::Weak)
-                        && f.metadata.flags & 64 == 0
-                });
+                && matches!(facts.resolve(body, call.callee), Alias::Symbol(symbol)
+                    if program.function_defined(symbol)
+                        && program.function(program.symbol(symbol)).is_some_and(|f|
+                            f.metadata.binding != Some(Binding::Weak)
+                                && f.metadata.flags & 64 == 0));
             let sig = own.then(|| program.call_boundary(call)).flatten();
             read(call.callee, false);
             for (i, &v) in body.arguments(call.arguments).iter().enumerate() {
@@ -355,6 +355,46 @@ impl Selection<'_> {
 mod tests {
     use super::*;
     use crate::native::{mir::Op, value_selection};
+    #[test]
+    fn byte_call_arguments_keep_definition_facts_after_body_release() -> Result<(), Error> {
+        let source = b"
+            function @accept(%x : u8) -> i64 [binding=internal] {
+                block ^entry:
+                    %wide = convert zext i64 u8 %x
+                    return i64 %wide
+            }
+            function @caller(%x : i64) -> i64 {
+                block ^entry:
+                    %condition = cmp ne i64 %x, 0
+                    %byte = convert trunc u8 i64 %condition
+                    %result = call i64 @accept(%byte)
+                    return i64 %result
+            }";
+        let mut outputs = Vec::new();
+        for released in [false, true] {
+            let mut program = crate::lowir::test_program(source)?;
+            let producer = program.publications()[0];
+            let consumer = program.publications()[1];
+            if released {
+                program.release_body(producer)?;
+            }
+            let function = program
+                .function(program.symbol(consumer))
+                .ok_or(Error::Limit)?;
+            let selected = value_selection::select_for_object(
+                &program,
+                consumer,
+                function,
+                3,
+                super::super::object_compile::ObjectModel::Host,
+            )?;
+            let mut mir = Vec::new();
+            selected.write(&program, &mut mir)?;
+            outputs.push(mir);
+        }
+        assert_eq!(outputs[0], outputs[1]);
+        Ok(())
+    }
     #[test]
     fn boolean_phi_demands_propagate_wide_reads_back_to_comparisons() -> Result<(), Error> {
         for (use_value, extended) in [

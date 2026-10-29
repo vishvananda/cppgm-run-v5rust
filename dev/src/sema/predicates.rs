@@ -65,7 +65,7 @@ impl Analyzer<'_> {
         let ty = self.predicate_result_type(predicate)?;
         let mut facts = self.new_expression_facts(ty, ValueCategory::Prvalue)?;
         let bits = self.predicate_value(id, predicate, &types, scope)?;
-        facts.folded = Some(bits);
+        facts.set_folded(Some(bits));
         super::record(
             &mut self.graph.constant_facts,
             id.index(),
@@ -370,7 +370,7 @@ mod tests {
         };
         for id in [left, right] {
             let facts = graph.expression_facts.get(id).unwrap();
-            assert_eq!(facts.folded, Some(1));
+            assert_eq!(facts.folded(), Some(1));
             assert_eq!(facts.category, ValueCategory::Prvalue);
             assert!(matches!(
                 graph.types.get(facts.ty).kind,
@@ -380,7 +380,7 @@ mod tests {
                 tree.expressions.get(id).kind,
                 ast::ExprKind::TypePredicate { .. }
             ));
-            assert!(facts.call.is_none());
+            assert!(facts.call(&graph.expression_facts).is_none());
         }
     }
 }

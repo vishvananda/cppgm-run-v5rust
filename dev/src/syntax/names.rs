@@ -325,7 +325,11 @@ impl Parser<'_> {
         // adjacency check is part of dispatch, including invalid heads.
         let next = self.cursor.peek(1)?;
         if let TokenKind::Literal(literal) = self.token()?.kind
-            && self.cursor.spellings.get(literal.spelling) == b"\"\""
+            && self
+                .cursor
+                .spellings
+                .get(literal.spelling(&self.cursor.spellings))
+                == b"\"\""
         {
             let suffix = match next.kind {
                 TokenKind::Identifier(name) => Some(name),

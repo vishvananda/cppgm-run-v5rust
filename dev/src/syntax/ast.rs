@@ -199,8 +199,26 @@ pub(crate) struct Operator {
     pub token: SimpleToken,
     pub alternative: bool,
 }
+pub(crate) type Literal = Id<LiteralData>;
+impl Literal {
+    pub(crate) fn kind(self, store: &super::storage::TextStore) -> PostTokenKind {
+        store.literals.get(self).kind
+    }
+    pub(crate) fn spelling(self, store: &super::storage::TextStore) -> Text {
+        store.literals.get(self).spelling
+    }
+    pub(crate) fn data(self, store: &super::storage::TextStore) -> Text {
+        store.literals.get(self).data
+    }
+    pub(crate) fn suffix_name(self, store: &super::storage::TextStore) -> Option<NameId> {
+        store.literals.get(self).suffix_name
+    }
+    pub(crate) fn token_form(self, store: &super::storage::TextStore) -> bool {
+        store.literals.get(self).token_form
+    }
+}
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Literal {
+pub(crate) struct LiteralData {
     pub kind: PostTokenKind,
     pub spelling: Text,
     pub token_form: bool,

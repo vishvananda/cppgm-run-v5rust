@@ -177,9 +177,10 @@ impl Parser<'_> {
                 )
             {
                 let mut node = *self.tree.expressions.get(value);
-                if let ExprKind::Literal(mut literal) = node.kind {
-                    literal.token_form = true;
-                    node.kind = ExprKind::Literal(literal);
+                if let ExprKind::Literal(literal) = node.kind {
+                    let mut data = *self.cursor.spellings.literals.get(literal);
+                    data.token_form = true;
+                    node.kind = ExprKind::Literal(self.cursor.spellings.literal(data)?);
                     self.tree.expressions.replace(value, node);
                 }
             }

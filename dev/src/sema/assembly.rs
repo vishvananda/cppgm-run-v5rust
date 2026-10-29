@@ -78,7 +78,7 @@ impl Analyzer<'_> {
             elements,
             suffix: None,
             ..
-        } = literal.kind
+        } = literal.kind(self.literal_bytes)
         else {
             return None;
         };
@@ -88,7 +88,7 @@ impl Analyzer<'_> {
         // StringLiteralUnits: each code unit truncated to char, omit the terminal null.
         Some(
             self.literal_bytes
-                .get(literal.data)
+                .get(literal.data(self.literal_bytes))
                 .chunks_exact(ty.size())
                 .take(usize::try_from(elements - 1).ok()?)
                 .map(|unit| unit[0])

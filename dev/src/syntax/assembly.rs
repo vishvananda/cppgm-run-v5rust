@@ -6,7 +6,10 @@ use crate::lex::{PostTokenKind, pp_lexer::Punctuator as P, vocabulary::Keyword a
 impl Parser<'_> {
     fn asm_literal(&mut self) -> Result<ast::Literal, ParseError> {
         if let TokenKind::Literal(literal) = self.token()?.kind
-            && matches!(literal.kind, PostTokenKind::String { .. })
+            && matches!(
+                literal.kind(&self.cursor.spellings),
+                PostTokenKind::String { .. }
+            )
         {
             self.cursor.advance()?;
             return Ok(literal);

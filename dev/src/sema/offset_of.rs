@@ -27,7 +27,7 @@ impl Analyzer<'_> {
             .types
             .scalar(Scalar::Basic(FundamentalType::UnsignedLongInt))?;
         let mut facts = self.new_expression_facts(ty, ValueCategory::Prvalue)?;
-        facts.folded = Some(offset);
+        facts.set_folded(Some(offset));
         // Types-mode noexcept still types its operand before constant demand.
         // Retain that value as the frozen typed_value/converted_constant path does.
         super::record(
@@ -99,7 +99,7 @@ impl Analyzer<'_> {
                         .graph
                         .class_of(self.graph.expression_facts.get(base)?.ty);
                     let member = facts
-                        .member
+                        .member(&self.graph.expression_facts)
                         .filter(|&binding| {
                             self.graph.binding(binding).kind == BindingKind::Variable
                         })
@@ -225,7 +225,7 @@ mod tests {
                 panic!("comparison");
             };
             let facts = graph.expression_facts.get(left).unwrap();
-            assert_eq!(facts.folded, Some(expected));
+            assert_eq!(facts.folded(), Some(expected));
             assert_eq!(facts.category, ValueCategory::Prvalue);
             assert!(matches!(
                 graph.types.get(facts.ty).kind,

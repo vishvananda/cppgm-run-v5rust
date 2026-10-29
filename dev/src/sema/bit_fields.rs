@@ -11,7 +11,7 @@ use crate::{
     syntax::{ast, storage::List},
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) struct BitFieldId(u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Storage {
@@ -103,7 +103,7 @@ impl Analyzer<'_> {
         if !facts.is_bit_field() || !matches!(self.graph.types.get(ty).kind, TypeKind::Scalar(_)) {
             return Ok(ty);
         }
-        let Some(id) = facts.field_identity else {
+        let Some(id) = facts.field_identity(&self.graph.expression_facts) else {
             return Ok(ty);
         };
         let Some(kind) = self.graph.integral_kind(ty) else {

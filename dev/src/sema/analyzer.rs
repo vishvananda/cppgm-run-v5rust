@@ -686,7 +686,7 @@ impl<'tree> Analyzer<'tree> {
     ) -> Result<(), Error> {
         if message.is_some_and(|literal| {
             matches!(
-                literal.kind,
+                literal.kind(self.literal_bytes),
                 crate::lex::PostTokenKind::String {
                     suffix: Some(_),
                     ..
@@ -1206,7 +1206,7 @@ mod tests {
             panic!("query");
         };
         let facts = analyzer.graph.expression_facts.get(condition).unwrap();
-        assert_eq!(facts.folded, Some(1));
+        assert_eq!(facts.folded(), Some(1));
         assert_eq!(facts.conversion.unwrap().target, facts.ty);
         assert!(
             analyzer
@@ -1214,7 +1214,7 @@ mod tests {
                 .expression_facts
                 .get(call)
                 .unwrap()
-                .call
+                .call(&analyzer.graph.expression_facts)
                 .is_some()
         );
         assert_eq!(analyzer.tree.bodies.mark(), bodies);

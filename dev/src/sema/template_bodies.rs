@@ -2208,7 +2208,7 @@ mod tests {
                         .expression_facts
                         .get(callee)
                         .unwrap()
-                        .function
+                        .function(&graph.expression_facts)
                         .unwrap();
                     let ty = graph.binding(binding).ty.unwrap();
                     let parameter = graph.types.function_parameter(ty, 0).unwrap();

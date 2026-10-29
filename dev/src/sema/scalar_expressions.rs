@@ -371,7 +371,7 @@ impl Analyzer<'_> {
             crate::types::FundamentalType::UnsignedLongInt,
         ))?;
         let mut facts = self.new_expression_facts(ty, V::Prvalue)?;
-        facts.query_value = Some(count);
+        facts.set_query_value(Some(count), &mut self.graph.expression_facts)?;
         Ok(facts)
     }
     pub(super) fn named_expression(
@@ -383,6 +383,7 @@ impl Analyzer<'_> {
         let binding = found
             .binding
             .ok_or_else(|| Error::at(self.tree.expressions.get(id).location, "undeclared name"))?;
+        let selected = binding;
         if self.graph.binding(binding).kind == BindingKind::Function {
             let explicit = matches!(self.tree.expressions.get(id).kind, ExprKind::Id(name)
                 if self.tree.name_lists.get(self.tree.names.get(name).components)
@@ -425,8 +426,8 @@ impl Analyzer<'_> {
                     )?;
                 }
                 let mut facts = self.function_designation(binding, found.functions.as_slice())?;
-                facts.object = Some(object);
-                facts.member_naming = Some(naming);
+                facts.set_object(Some(object), &mut self.graph.expression_facts)?;
+                facts.set_member_naming(Some(naming), &mut self.graph.expression_facts)?;
                 facts.category = if concrete && self.member_function_owner(binding).is_none() {
                     V::Lvalue
                 } else {
@@ -443,7 +444,7 @@ impl Analyzer<'_> {
                 self.check_intrinsic_designation(binding, location)?;
             }
             let mut facts = self.function_designation(binding, found.functions.as_slice())?;
-            facts.member_naming = naming;
+            facts.set_member_naming(naming, &mut self.graph.expression_facts)?;
             if concrete {
                 self.concrete_function_designation(id, binding, &mut facts)?;
                 // The explicit template-id owns its facts before deduction;
@@ -507,7 +508,10 @@ impl Analyzer<'_> {
                     self.graph.types.get(element).kind,
                     TypeKind::Function { .. }
                 ) {
-                    facts.function = Some(self.graph.function_origin(entity)?);
+                    facts.set_function(
+                        Some(self.graph.function_origin(entity)?),
+                        &mut self.graph.expression_facts,
+                    )?;
                 }
                 Ok(facts)
             } else {
@@ -558,14 +562,19 @@ impl Analyzer<'_> {
         if binding.kind == BindingKind::Variable
             && let Some(storage) = self.graph.injected_member_storage(binding.entity)?
         {
-            facts.anonymous_member = Some(storage);
-            facts.member = Some(
-                found
-                    .binding
-                    .ok_or(Error::Invariant("injected member without binding"))?,
-            );
+            facts.set_anonymous_member(Some(storage), &mut self.graph.expression_facts)?;
+            facts.set_member(
+                Some(
+                    found
+                        .binding
+                        .ok_or(Error::Invariant("injected member without binding"))?,
+                ),
+                &mut self.graph.expression_facts,
+            )?;
         }
-        if facts.anonymous_member.is_none()
+        if facts
+            .anonymous_member(&self.graph.expression_facts)
+            .is_none()
             && self.graph.entity(binding.entity).data_member
                 == Some(super::graph::DataMemberKind::Instance)
         {
@@ -574,9 +583,16 @@ impl Analyzer<'_> {
                 .ok_or(Error::Invariant("implicit member without binding"))?;
             self.implicit_data_member(id, &mut facts, selected, found.qualifier, scope)?;
         }
-        if facts.object.is_some() || facts.anonymous_member.is_some() {
-            facts.field_identity = self.graph.entity(binding.entity).bit_field;
-            facts.set_bit_field(facts.field_identity.is_some());
+        if facts.object(&self.graph.expression_facts).is_some()
+            || facts
+                .anonymous_member(&self.graph.expression_facts)
+                .is_some()
+        {
+            facts.set_field_identity(
+                self.graph.entity(binding.entity).bit_field,
+                &mut self.graph.expression_facts,
+            )?;
+            facts.set_bit_field(facts.field_identity(&self.graph.expression_facts).is_some());
         }
         if let Some(alias) = self.graph.lower_binding_alias(binding.entity)
             && let super::bindings::BindingTarget::Member { member, .. } = alias.target
@@ -584,17 +600,10 @@ impl Analyzer<'_> {
             let bit_field = self.graph.entity(member).bit_field.is_some();
             facts.set_bit_field(bit_field);
             if bit_field {
-                facts.member = found.binding;
+                facts.set_member(found.binding, &mut self.graph.expression_facts)?;
             }
         }
-        self.local_name(
-            id,
-            &mut facts,
-            found
-                .binding
-                .ok_or(Error::Invariant("named expression without binding"))?,
-            scope,
-        )?;
+        self.local_name(id, &mut facts, selected, scope)?;
         if matches!(
             binding.kind,
             BindingKind::Enumerator | BindingKind::TemplateValue
@@ -605,7 +614,7 @@ impl Analyzer<'_> {
                 return Err(Error::Invariant("enumerator without value"));
             };
             facts.ty = value.ty;
-            facts.folded = self.held_integral_constant(value).then_some(value.bits);
+            facts.set_folded(self.held_integral_constant(value).then_some(value.bits));
         }
         Ok(facts)
     }
@@ -619,11 +628,9 @@ impl Analyzer<'_> {
         Ok(ExprFacts::new(ty, category))
     }
     pub(super) fn copy_expression_facts(&mut self, source: ExprFacts) -> Result<ExprFacts, Error> {
-        let mut copy = self.new_expression_facts(source.ty, source.category)?;
-        copy = ExprFacts {
-            ty: copy.ty,
-            ..source
-        };
+        let ty = self.new_expression_facts(source.ty, source.category)?.ty;
+        let mut copy = source;
+        copy.ty = ty;
         Ok(copy)
     }
     pub(super) fn scalar_binary_chain(

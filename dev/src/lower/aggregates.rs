@@ -425,10 +425,7 @@ impl Function<'_, '_, '_, '_> {
                 && values.first().is_some_and(|&id| {
                     matches!(
                         self.tree.expressions.get(self.without_parentheses(id)).kind,
-                        ExprKind::Literal(ast::Literal {
-                            kind: crate::lex::PostTokenKind::String { .. },
-                            ..
-                        })
+                        ExprKind::Literal(literal) if matches!(literal.kind(&self.cursor.spellings), crate::lex::PostTokenKind::String { .. })
                     )
                 })
         } else {
@@ -768,7 +765,8 @@ impl Function<'_, '_, '_, '_> {
             && let Some(id) = expr
             && let ExprKind::Literal(literal) =
                 self.tree.expressions.get(self.without_parentheses(id)).kind
-            && let crate::lex::PostTokenKind::String { ty: literal_ty, .. } = literal.kind
+            && let crate::lex::PostTokenKind::String { ty: literal_ty, .. } =
+                literal.kind(&self.cursor.spellings)
         {
             input.next += 1;
             return self.named_string(
@@ -1084,7 +1082,8 @@ impl Function<'_, '_, '_, '_> {
                     && let Some(&id) = input.values.get(input.next)
                     && let ExprKind::Literal(literal) =
                         self.tree.expressions.get(self.without_parentheses(id)).kind
-                    && let crate::lex::PostTokenKind::String { ty: literal_ty, .. } = literal.kind
+                    && let crate::lex::PostTokenKind::String { ty: literal_ty, .. } =
+                        literal.kind(&self.cursor.spellings)
                 {
                     input.next += 1;
                     return self.named_string(

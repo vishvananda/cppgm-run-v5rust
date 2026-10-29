@@ -136,7 +136,7 @@ impl Analyzer<'_> {
             self.template_arguments += 1;
             let result = self.typed_expression(expression, scope).and_then(|facts| {
                 if let Some(target) = target.filter(|&ty| self.graph.address_parameter_type(ty))
-                    && facts.functions.is_some()
+                    && facts.functions(&self.graph.expression_facts).is_some()
                 {
                     let binding = self.matching_function(facts, target)?.ok_or_else(|| {
                         Error::at(

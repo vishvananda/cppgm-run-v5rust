@@ -9,7 +9,7 @@ use crate::{
 use std::cell::OnceCell;
 use std::cell::RefCell;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct NumberId(u32);
 
 #[derive(Clone, Copy, Debug)]

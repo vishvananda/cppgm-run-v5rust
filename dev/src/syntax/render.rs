@@ -646,7 +646,9 @@ impl<'a, 'source> Renderer<'a, 'source> {
                 self.tasks.push(Render::Text("..."));
                 self.tasks.push(Render::Expression(pattern));
             }
-            ExprKind::Literal(literal) => self.tasks.push(Render::Spelling(literal.spelling)),
+            ExprKind::Literal(literal) => self
+                .tasks
+                .push(Render::Spelling(literal.spelling(&self.cursor.spellings))),
             ExprKind::Keyword(word) => self.text(word.spelling()),
             ExprKind::Statement(body) => {
                 self.text("(");
@@ -1115,7 +1117,8 @@ impl Renderer<'_, '_> {
             DeclKind::StaticAssert { condition, message } => {
                 self.tasks.push(Render::Text(");"));
                 if let Some(message) = message {
-                    self.tasks.push(Render::Spelling(message.spelling));
+                    self.tasks
+                        .push(Render::Spelling(message.spelling(&self.cursor.spellings)));
                     self.tasks.push(Render::Text(","));
                 }
                 self.tasks.push(Render::Expression(condition));

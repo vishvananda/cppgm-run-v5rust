@@ -249,12 +249,14 @@ impl Analyzer<'_> {
         depth: u32,
         arguments: &mut [Option<TypeId>],
     ) -> Result<bool, Error> {
-        if facts.object.is_some()
-            && (facts.functions.is_some() || facts.function.is_some() || facts.destructor.is_some())
+        if facts.object(&self.graph.expression_facts).is_some()
+            && (facts.functions(&self.graph.expression_facts).is_some()
+                || facts.function(&self.graph.expression_facts).is_some()
+                || facts.destructor(&self.graph.expression_facts).is_some())
         {
             return Ok(false);
         }
-        if let Some(set) = facts.functions {
+        if let Some(set) = facts.functions(&self.graph.expression_facts) {
             self.deduce_overloaded_argument(pattern, set, depth, arguments)?;
             Ok(true)
         } else {

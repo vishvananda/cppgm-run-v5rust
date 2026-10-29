@@ -101,7 +101,9 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             Payload::None => None,
             Payload::LiteralToken(literal) => {
                 self.output.write_all(b" TT_LITERAL:")?;
-                self.renderer.render(Render::Spelling(literal.spelling))?;
+                self.renderer.render(Render::Spelling(
+                    literal.spelling(&self.renderer.cursor.spellings),
+                ))?;
                 self.output.write_all(&self.renderer.bytes)?;
                 None
             }
@@ -616,7 +618,7 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
                 if let Some(message) = message {
                     self.tasks.push(Task::Line(
                         "message",
-                        Payload::Spelling(message.spelling),
+                        Payload::Spelling(message.spelling(&self.renderer.cursor.spellings)),
                         false,
                     ));
                 }
@@ -1066,10 +1068,10 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             ExprKind::Literal(literal) => {
                 self.line(
                     "literal",
-                    if literal.token_form {
+                    if literal.token_form(&self.renderer.cursor.spellings) {
                         Payload::LiteralToken(literal)
                     } else {
-                        Payload::Spelling(literal.spelling)
+                        Payload::Spelling(literal.spelling(&self.renderer.cursor.spellings))
                     },
                     false,
                 )?;

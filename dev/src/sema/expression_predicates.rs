@@ -601,7 +601,7 @@ impl Analyzer<'_> {
             && let [operand] = self.tree.expr_lists.get(operands)
         {
             let facts = self.graph.expression_facts.get(*operand)?;
-            if let Some(copy) = facts.class_copy {
+            if let Some(copy) = facts.class_copy(&self.graph.expression_facts) {
                 let facts = self.selected_copy_properties(class, copy)?;
                 properties.nothrow = facts.nothrow;
                 properties.trivial = facts.trivial;
@@ -660,7 +660,13 @@ impl Analyzer<'_> {
         // initialize_object returns a same-class copy as the definition's
         // constructor. A copy into a different constructor's by-value parameter
         // instead belongs to that operand's outer conversion.
-        if parameter && let Some(copy) = self.graph.expression_facts.get(operand)?.class_copy {
+        if parameter
+            && let Some(copy) = self
+                .graph
+                .expression_facts
+                .get(operand)?
+                .class_copy(&self.graph.expression_facts)
+        {
             if !query_nothrow {
                 return Ok(Some(true));
             }
@@ -1015,15 +1021,16 @@ impl Analyzer<'_> {
             }
             Err(error) => return Err(error),
         };
-        let mut trivial = if let Some(CallTarget::Direct(binding)) = facts.call {
-            self.graph
-                .entity(self.graph.binding(binding).entity)
-                .assignment
-                .as_ref()
-                .is_some_and(|facts| facts.trivial)
-        } else {
-            facts.call_form != CallForm::Operator
-        };
+        let mut trivial =
+            if let Some(CallTarget::Direct(binding)) = facts.call(&self.graph.expression_facts) {
+                self.graph
+                    .entity(self.graph.binding(binding).entity)
+                    .assignment
+                    .as_ref()
+                    .is_some_and(|facts| facts.trivial)
+            } else {
+                facts.call_form() != CallForm::Operator
+            };
         // A user conversion on the source is a nontrivial operation even if
         // assignment itself selects a trivial member or the builtin operator.
         trivial &= self

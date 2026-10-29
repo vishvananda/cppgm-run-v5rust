@@ -428,8 +428,8 @@ impl Analyzer<'_> {
         self.check_stack()?;
         let id = self.graph.expression_facts.root(id);
         let facts = self.graph.expression_facts.get(id)?;
-        if facts.literal_call.is_some()
-            || facts.call_form == super::expression_facts::CallForm::Operator
+        if facts.literal_call(&self.graph.expression_facts).is_some()
+            || facts.call_form() == super::expression_facts::CallForm::Operator
         {
             return Ok(false);
         }
@@ -471,11 +471,12 @@ impl Analyzer<'_> {
                 )?,
                 None => false,
             },
-            ExprKind::Call { .. } if facts.intrinsic.is_some() => {
-                facts.intrinsic == Some(super::floating_intrinsics::FloatingIntrinsic::Constant)
+            ExprKind::Call { .. } if facts.intrinsic(&self.graph.expression_facts).is_some() => {
+                facts.intrinsic(&self.graph.expression_facts)
+                    == Some(super::floating_intrinsics::FloatingIntrinsic::Constant)
             }
             ExprKind::FunctionalCast { arguments, .. } | ExprKind::Call { arguments, .. }
-                if facts.functional_call
+                if facts.functional_call()
                     || matches!(
                         self.tree.expressions.get(id).kind,
                         ExprKind::FunctionalCast { .. }
@@ -559,7 +560,11 @@ impl Analyzer<'_> {
         self.check_stack()?;
         let id = self.graph.expression_facts.root(id);
         let source = self.graph.expression_facts.get(id)?.ty;
-        if self.graph.expression_facts.get(id)?.intrinsic
+        if self
+            .graph
+            .expression_facts
+            .get(id)?
+            .intrinsic(&self.graph.expression_facts)
             == Some(super::floating_intrinsics::FloatingIntrinsic::Constant)
         {
             let value = self.graph.expression_facts.floating_value(id)?;
@@ -626,7 +631,8 @@ impl Analyzer<'_> {
             ExprKind::Paren(inner) => self.static_scalar_value(inner, scope),
             ExprKind::Keyword(Keyword::Nullptr) => Ok(Some(Value::Integer(0))),
             ExprKind::Literal(literal) => {
-                let PostTokenKind::Literal { ty, data, .. } = literal.kind else {
+                let PostTokenKind::Literal { ty, data, .. } = literal.kind(self.literal_bytes)
+                else {
                     return Ok(None);
                 };
                 if ty.floating_rank() == 0 {
@@ -707,7 +713,7 @@ impl Analyzer<'_> {
                 }
             }
             ExprKind::Call { arguments, .. }
-                if self.graph.expression_facts.get(id)?.functional_call =>
+                if self.graph.expression_facts.get(id)?.functional_call() =>
             {
                 match self.tree.expr_lists.get(arguments) {
                     [operand] => self.static_scalar(*operand, source, scope),

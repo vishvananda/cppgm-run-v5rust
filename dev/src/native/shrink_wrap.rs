@@ -292,6 +292,43 @@ mod tests {
         condition::Condition, mir::CallSite, object_compile::ObjectModel, x86::Register as R,
     };
     #[test]
+    fn bulk_destination_counts_before_reusing_an_incoming_register() -> Result<(), Error> {
+        let program = crate::lowir::test_program(
+            b"
+            declare function @external() -> void
+            function @probe(%destination : ptr, %source : ptr) -> void {
+                block ^entry:
+                    zeroinit 8x8 %destination
+                    %value = load ptr %source
+                    %nonzero = cmp ne ptr %value, 0
+                    branch %nonzero, ^cold, ^done
+                block ^cold:
+                    call void @external()
+                    store ptr %source, %destination
+                    return void
+                block ^done:
+                    return void
+            }",
+        )?;
+        let symbol = *program.publications().last().ok_or(Error::Limit)?;
+        let body = program
+            .function(program.symbol(symbol))
+            .ok_or(Error::Limit)?;
+        let f = super::super::value_selection::select_for_object(
+            &program,
+            symbol,
+            body,
+            3,
+            ObjectModel::Host,
+        )?;
+        assert!(f.frame_policy.shrink_wrapped);
+        let mut mir = Vec::new();
+        f.write(&program, &mut mir)?;
+        let mir = std::str::from_utf8(&mir).expect("machine IR is UTF-8");
+        assert!(mir.contains("mov rax, rdi"), "{mir}");
+        Ok(())
+    }
+    #[test]
     fn sunk_spill_reload_and_distinct_prologues_keep_one_exception_area() -> Result<(), Error> {
         let program = crate::lowir::test_program(
             b"function @f(%arg: i32) -> i32 { block ^entry: return i32 %arg }",

@@ -153,7 +153,7 @@ impl Analyzer<'_> {
         let node = *self.tree.expressions.get(id);
         let location = node.location;
         match node.kind {
-            ExprKind::Literal(literal) => match literal.kind {
+            ExprKind::Literal(literal) => match literal.kind(self.literal_bytes) {
                 PostTokenKind::Literal { ty, .. } | PostTokenKind::Character { ty, .. } => {
                     self.graph.types.scalar(Scalar::Basic(ty))
                 }
@@ -345,7 +345,7 @@ impl Analyzer<'_> {
                     base = inner;
                 }
                 if let ExprKind::Literal(literal) = self.tree.expressions.get(base).kind
-                    && let PostTokenKind::String { ty, .. } = literal.kind
+                    && let PostTokenKind::String { ty, .. } = literal.kind(self.literal_bytes)
                 {
                     self.graph.types.scalar(Scalar::Basic(ty))
                 } else {

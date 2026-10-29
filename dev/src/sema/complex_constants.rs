@@ -362,7 +362,7 @@ impl Analyzer<'_> {
                 self.constant_complex_value_at(operand, ty, scope, node.location)
             }
             ExprKind::Call { arguments, .. }
-                if self.graph.expression_facts.get(id)?.functional_call =>
+                if self.graph.expression_facts.get(id)?.functional_call() =>
             {
                 if let Some(&first) = self.tree.expr_lists.get(arguments).first() {
                     self.constant_complex_value_at(first, ty, scope, node.location)

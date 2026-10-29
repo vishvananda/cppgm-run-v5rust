@@ -82,11 +82,11 @@ impl Analyzer<'_> {
                 };
                 let mut designation =
                     self.function_designation(binding, found.functions.as_slice())?;
-                designation.object = Some(object);
-                designation.member_naming = Some(class);
-                designation.call_form = super::expression_facts::CallForm::CallableObject;
+                designation.set_object(Some(object), &mut self.graph.expression_facts)?;
+                designation.set_member_naming(Some(class), &mut self.graph.expression_facts)?;
+                designation.set_call_form(super::expression_facts::CallForm::CallableObject);
                 let set = designation
-                    .functions
+                    .functions(&self.graph.expression_facts)
                     .ok_or(Error::Invariant("call operator candidates"))?;
                 let argument_buffer =
                     super::call_arguments::Arguments::new(self.tree.expr_lists.get(arguments));
@@ -321,26 +321,29 @@ mod tests {
         };
         let object = graph.expression_facts.get(callee).unwrap();
         assert!(matches!(
-            object.object.unwrap().source,
+            object.object(&graph.expression_facts).unwrap().source,
             ObjectSource::Implicit
         ));
-        assert!(object.member.is_some());
-        assert!(object.function.is_none());
+        assert!(object.member(&graph.expression_facts).is_some());
+        assert!(object.function(&graph.expression_facts).is_none());
         assert!(object.conversion.is_none());
         let receiver = graph.expression_facts.callable_receiver(call).unwrap();
         assert!(
             matches!(receiver.object.source, ObjectSource::Explicit { expression, arrow: false } if expression == callee)
         );
         assert!(receiver.path.is_some());
-        assert_ne!(receiver.path, object.member_path);
+        assert_ne!(receiver.path, object.member_path(&graph.expression_facts));
         let call_facts = graph.expression_facts.get(call).unwrap();
-        assert_eq!(call_facts.call_form, CallForm::CallableObject);
+        assert_eq!(call_facts.call_form(), CallForm::CallableObject);
         assert!(
             call_facts
                 .conversion
                 .is_none_or(|conversion| conversion.target == call_facts.ty)
         );
-        assert!(matches!(call_facts.call, Some(CallTarget::Direct(_))));
+        assert!(matches!(
+            call_facts.call(&graph.expression_facts),
+            Some(CallTarget::Direct(_))
+        ));
     }
 
     #[test]
@@ -439,8 +442,8 @@ mod tests {
         };
         let facts = graph.expression_facts.get(callee).unwrap();
         assert_eq!(graph.class_of(facts.ty), Some(source_class));
-        assert!(facts.object.is_none());
-        assert!(facts.functions.is_none());
+        assert!(facts.object(&graph.expression_facts).is_none());
+        assert!(facts.functions(&graph.expression_facts).is_none());
         assert!(graph.expression_scopes[graph.expression_facts.root(callee).index()].is_some());
         let selected = graph.expression_facts.function_conversion(callee).unwrap();
         assert_eq!(selected.binding, graph.entity(base).declared_conversions[0]);
@@ -455,7 +458,11 @@ mod tests {
                 .binding
         );
         assert!(matches!(
-            graph.expression_facts.get(call).unwrap().call,
+            graph
+                .expression_facts
+                .get(call)
+                .unwrap()
+                .call(&graph.expression_facts),
             Some(CallTarget::Indirect(_, _))
         ));
         for &argument in tree.expr_lists.get(arguments) {

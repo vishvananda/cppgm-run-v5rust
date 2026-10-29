@@ -578,12 +578,14 @@ impl Analyzer<'_> {
     fn constant_initializer_uses_object(&self, expr: ast::ExprId, depth: u32) -> bool {
         if depth > 64
             || self.graph.expression_facts.get(expr).is_ok_and(|facts| {
-                facts.object.is_some_and(|object| {
-                    matches!(
-                        object.source,
-                        super::expression_facts::ObjectSource::Implicit
-                    )
-                })
+                facts
+                    .object(&self.graph.expression_facts)
+                    .is_some_and(|object| {
+                        matches!(
+                            object.source,
+                            super::expression_facts::ObjectSource::Implicit
+                        )
+                    })
             })
         {
             return true;

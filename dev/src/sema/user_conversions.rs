@@ -87,7 +87,7 @@ impl Analyzer<'_> {
         if matches!(
             self.graph.types.get(source.ty).kind,
             TypeKind::Scalar(super::types::Scalar::Void)
-        ) || source.functions.is_some()
+        ) || source.functions(&self.graph.expression_facts).is_some()
         {
             return Ok(None);
         }
@@ -434,7 +434,10 @@ impl Analyzer<'_> {
         let mut facts = self.graph.expression_facts.get(id)?;
         // The frozen constructor-conversion owner retains this standard route
         // without the access check performed for an outer base conversion.
-        facts.base_path = self.conversion_base_path(facts, first, scope, location, false)?;
+        facts.set_base_path(
+            self.conversion_base_path(facts, first, scope, location, false)?,
+            &mut self.graph.expression_facts,
+        )?;
         self.record_conversion(&mut facts, first);
         self.odr_use_constants(id, Some(first))?;
         self.graph.expression_facts.set(id, facts);

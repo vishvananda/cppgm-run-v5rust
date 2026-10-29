@@ -101,7 +101,7 @@ impl Analyzer<'_> {
             return self.constant_vector_lane_place(id, base, index, scope, value);
         }
         let facts = self.graph.expression_facts.get(id)?;
-        let (base, index) = if facts.commuted {
+        let (base, index) = if facts.commuted() {
             (index, base)
         } else {
             (base, index)
@@ -191,7 +191,7 @@ impl Analyzer<'_> {
             .graph
             .expression_facts
             .get(id)
-            .is_ok_and(|facts| facts.call_form == super::expression_facts::CallForm::Operator)
+            .is_ok_and(|facts| facts.call_form() == super::expression_facts::CallForm::Operator)
         {
             return false;
         }
@@ -231,18 +231,16 @@ impl Analyzer<'_> {
                 .is_none_or(|facts| self.vector_shape(facts.ty).is_none()),
             ExprKind::Cast { operand, .. } => {
                 self.is_address_expression(operand)
-                    || self
-                        .graph
-                        .expression_facts
-                        .get(id)
-                        .is_ok_and(|facts| facts.reference_cast.is_some())
+                    || self.graph.expression_facts.get(id).is_ok_and(|facts| {
+                        facts.reference_cast(&self.graph.expression_facts).is_some()
+                    })
             }
             ExprKind::FunctionalCast { arguments, .. } | ExprKind::Call { arguments, .. } => {
                 if self
                     .graph
                     .expression_facts
                     .get(id)
-                    .is_ok_and(|facts| facts.reference_cast.is_some())
+                    .is_ok_and(|facts| facts.reference_cast(&self.graph.expression_facts).is_some())
                 {
                     return true;
                 }
@@ -255,7 +253,7 @@ impl Analyzer<'_> {
                         .is_some_and(|&operand| self.is_address_expression(operand))
                     && self.graph.expression_facts.get(id).is_ok_and(|facts| {
                         !matches!(self.tree.expressions.get(id).kind, ExprKind::Call { .. })
-                            || facts.functional_call
+                            || facts.functional_call()
                     })
             }
             _ => false,
@@ -327,14 +325,14 @@ impl Analyzer<'_> {
                         "a reinterpret_cast or dynamic_cast in a constant expression",
                     ));
                 }
-                if facts.reference_cast.is_some() {
+                if facts.reference_cast(&self.graph.expression_facts).is_some() {
                     let place = self.constant_place(id, scope)?;
                     return self.read_constant_integer(place, node.location).map(Some);
                 }
                 self.address_to_integer(operand, facts.ty, scope, node.location)?
             }
             ExprKind::FunctionalCast { arguments, .. } | ExprKind::Call { arguments, .. } => {
-                if facts.reference_cast.is_some() {
+                if facts.reference_cast(&self.graph.expression_facts).is_some() {
                     let place = self.constant_place(id, scope)?;
                     return self.read_constant_integer(place, node.location).map(Some);
                 }
@@ -513,18 +511,25 @@ impl Analyzer<'_> {
         let TypeKind::Scalar(element) = self.graph.types.get(element).kind else {
             return Err(Error::Invariant("literal address without scalar elements"));
         };
-        if let Some(super::literal_calls::LiteralCall::Raw { digits, .. }) =
-            self.graph.expression_facts.get(id)?.literal_call
+        if let Some(super::literal_calls::LiteralCall::Raw { digits, .. }) = self
+            .graph
+            .expression_facts
+            .get(id)?
+            .literal_call(&self.graph.expression_facts)
         {
             let digits = usize::try_from(digits).map_err(|_| Error::Limit("raw literal length"))?;
             let bytes = self
                 .literal_bytes
-                .get(literal.spelling)
+                .get(literal.spelling(self.literal_bytes))
                 .get(..digits)
                 .ok_or(Error::Invariant("raw literal digits outside spelling"))?;
             return Ok((element, bytes, true));
         }
-        Ok((element, self.literal_bytes.get(literal.data), false))
+        Ok((
+            element,
+            self.literal_bytes.get(literal.data(self.literal_bytes)),
+            false,
+        ))
     }
     fn address_comparison(
         &mut self,

@@ -35,7 +35,10 @@ impl Analyzer<'_> {
         callable: bool,
     ) -> Result<Option<EntityId>, Error> {
         let mut class = if callable {
-            match self.graph.call_object_effect(self.tree, callee)? {
+            match self
+                .graph
+                .call_object_effect(self.literal_bytes, self.tree, callee)?
+            {
                 ObjectEffect::Set(class) => class,
                 ObjectEffect::Preserve => None,
             }
@@ -55,7 +58,8 @@ impl Analyzer<'_> {
                 .copied()
                 .or_else(|| self.graph.lower_default(function, index))
                 && let ObjectEffect::Set(last) =
-                    self.graph.call_object_effect(self.tree, argument)?
+                    self.graph
+                        .call_object_effect(self.literal_bytes, self.tree, argument)?
             {
                 class = last;
             }
@@ -66,6 +70,7 @@ impl Analyzer<'_> {
 impl Graph {
     fn call_object_effect(
         &mut self,
+        literals: &crate::syntax::storage::TextStore,
         tree: &Tree,
         root: ast::ExprId,
     ) -> Result<ObjectEffect, Error> {
@@ -105,13 +110,15 @@ impl Graph {
                         continue;
                     }
                     let facts = self.expression_facts.get(id)?;
-                    if facts.folded.is_some() || facts.query_value.is_some() {
+                    if facts.folded().is_some()
+                        || facts.query_value(&self.expression_facts).is_some()
+                    {
                         if let ExprKind::Member { base, .. } = tree.expressions.get(id).kind {
                             work.push(Step::Visit(base));
                         }
                         continue;
                     }
-                    self.queue_call_object_effect(tree, id, &mut work)?;
+                    self.queue_call_object_effect(literals, tree, id, &mut work)?;
                 }
             }
         }
@@ -121,6 +128,7 @@ impl Graph {
     }
     fn queue_call_object_effect(
         &self,
+        literals: &crate::syntax::storage::TextStore,
         tree: &Tree,
         id: ast::ExprId,
         work: &mut Vec<Step>,
@@ -145,7 +153,7 @@ impl Graph {
                 if assignment && op.token.as_punctuator() == Some(P::Assign) {
                     work.extend([Step::Visit(left), Step::Visit(right)]);
                 } else {
-                    let truth = self.lower_literal_truth(tree, left)?;
+                    let truth = self.lower_literal_truth(literals, tree, left)?;
                     let skipped = matches!(
                         (op.token.as_punctuator(), truth),
                         (Some(P::LogicalAnd), Some(false)) | (Some(P::LogicalOr), Some(true))
@@ -190,7 +198,7 @@ impl Graph {
                 }
                 let supplied = tree.expr_lists.get(arguments);
                 if let Some(super::function_resolution::CallTarget::Direct(binding)) =
-                    self.expression_facts.get(id)?.call
+                    self.expression_facts.get(id)?.call(&self.expression_facts)
                 {
                     let function = self.binding(binding).entity;
                     let facts = self.lower_function(function)?;
@@ -206,7 +214,7 @@ impl Graph {
                     }
                     work.extend(supplied.iter().rev().copied().map(Step::Visit));
                     if facts.object.is_some() && self.lower_closure_invocation(id).is_none() {
-                        if self.expression_facts.get(id)?.call_form == CallForm::CallableObject {
+                        if self.expression_facts.get(id)?.call_form() == CallForm::CallableObject {
                             // call_object clears the receiver before it
                             // evaluates a callable object's expression.
                             work.push(Step::Visit(callee));

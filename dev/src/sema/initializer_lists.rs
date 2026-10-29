@@ -98,14 +98,14 @@ impl Analyzer<'_> {
                 continue;
             }
             let facts = self.graph.expression_facts.get(item)?;
-            if facts.object.is_some()
-                && (facts.functions.is_some()
-                    || facts.function.is_some()
-                    || facts.destructor.is_some())
+            if facts.object(&self.graph.expression_facts).is_some()
+                && (facts.functions(&self.graph.expression_facts).is_some()
+                    || facts.function(&self.graph.expression_facts).is_some()
+                    || facts.destructor(&self.graph.expression_facts).is_some())
             {
                 return Ok(false);
             }
-            if let Some(set) = facts.functions {
+            if let Some(set) = facts.functions(&self.graph.expression_facts) {
                 self.deduce_overloaded_argument(element, set, depth, arguments)?;
             } else if !self.deduce_call_argument(
                 element,
@@ -278,9 +278,12 @@ impl Analyzer<'_> {
         self.publish_list(id, ty, V::Prvalue)?;
         if self.graph.aggregate_class(class) {
             let mut facts = self.graph.expression_facts.get(id)?;
-            facts.class_initialization = Some(
-                super::expression_facts::ClassInitialization::Aggregate(elements),
-            );
+            facts.set_class_initialization(
+                Some(super::expression_facts::ClassInitialization::Aggregate(
+                    elements,
+                )),
+                &mut self.graph.expression_facts,
+            )?;
             self.graph.expression_facts.set(id, facts);
         }
         self.graph.expression_facts.set_initializer_array(id, array);
@@ -357,7 +360,9 @@ impl Analyzer<'_> {
             let result = self.typed_expression(item, scope);
             self.initializing = saved_initializing;
             let mut facts = result?;
-            if self.body_context.is_some() && facts.functions.is_none() {
+            if self.body_context.is_some()
+                && facts.functions(&self.graph.expression_facts).is_none()
+            {
                 facts.origin = ExpressionOrigin::Implicit;
                 self.graph.expression_facts.set(item, facts);
             }

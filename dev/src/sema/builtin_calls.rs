@@ -769,7 +769,7 @@ impl Analyzer<'_> {
         }
         let ty = self.graph.types.scalar(Scalar::Basic(F::Int))?;
         let mut facts = self.new_expression_facts(ty, V::Prvalue)?;
-        facts.folded = Some(u64::from(constant));
+        facts.set_folded(Some(u64::from(constant)));
         Ok(facts)
     }
 

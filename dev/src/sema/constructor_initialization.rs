@@ -16,7 +16,7 @@ use crate::{
     syntax::{ast, storage::List},
 };
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum ConstructorArguments {
     Values(List<ast::ExprId>),
     Single(ast::ExprId),
@@ -137,8 +137,10 @@ mod tests {
                 };
                 let operand = tree.expr_lists.get(elements)[0];
                 let facts = graph.expression_facts.get(list).unwrap();
-                assert!(matches!(facts.class_initialization,
-                    Some(super::super::expression_facts::ClassInitialization::FromExpression(id)) if id == operand));
+                assert!(
+                    matches!(facts.class_initialization(&graph.expression_facts),
+                    Some(super::super::expression_facts::ClassInitialization::FromExpression(id)) if id == operand)
+                );
                 assert_eq!(
                     graph.expression_facts.get(operand).unwrap().category,
                     ValueCategory::Prvalue
@@ -420,8 +422,10 @@ impl Analyzer<'_> {
                     if let Some(list) = list {
                         self.publish_list(list, target, ValueCategory::Prvalue)?;
                         let mut facts = self.graph.expression_facts.get(list)?;
-                        facts.class_initialization =
-                            Some(super::expression_facts::ClassInitialization::FromExpression(*id));
+                        facts.set_class_initialization(
+                            Some(super::expression_facts::ClassInitialization::FromExpression(*id)),
+                            &mut self.graph.expression_facts,
+                        )?;
                         self.graph.expression_facts.set(list, facts);
                     }
                 }
@@ -439,7 +443,7 @@ impl Analyzer<'_> {
                 .graph
                 .expression_facts
                 .get(*argument)?
-                .functions
+                .functions(&self.graph.expression_facts)
                 .is_none()
         {
             let Some(constructor) =
@@ -682,11 +686,11 @@ impl Analyzer<'_> {
         let target = self.bare_type(target)?;
         self.publish_list(id, target, ValueCategory::Prvalue)?;
         let mut facts = self.graph.expression_facts.get(id)?;
-        facts.constructor = Some(constructor);
+        facts.set_constructor(Some(constructor), &mut self.graph.expression_facts)?;
         let ast::ExprKind::Braced { elements, .. } = self.tree.expressions.get(id).kind else {
             return Err(Error::Invariant("constructor list arguments"));
         };
-        facts.class_initialization =
+        facts.set_class_initialization(
             Some(super::expression_facts::ClassInitialization::Constructed(
                 if self.graph.expression_facts.initializer_array(id).is_some() {
                     ConstructorArguments::Single(id)
@@ -695,7 +699,9 @@ impl Analyzer<'_> {
                 } else {
                     ConstructorArguments::Values(elements)
                 },
-            ));
+            )),
+            &mut self.graph.expression_facts,
+        )?;
         self.graph.expression_facts.set(id, facts);
         Ok(())
     }

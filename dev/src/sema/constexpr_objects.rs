@@ -41,7 +41,7 @@ impl Analyzer<'_> {
         let ast::ExprKind::Literal(literal) = self.tree.expressions.get(expr).kind else {
             return Ok(false);
         };
-        let crate::lex::PostTokenKind::String { ty, .. } = literal.kind else {
+        let crate::lex::PostTokenKind::String { ty, .. } = literal.kind(self.literal_bytes) else {
             return Ok(false);
         };
         let TypeKind::Array { element, bound, .. } = self.graph.types.get(target.designated).kind
@@ -57,7 +57,10 @@ impl Analyzer<'_> {
             let mut bytes = [0; 8];
             if let Some((start, end)) =
                 start.and_then(|start| start.checked_add(width).map(|end| (start, end)))
-                && let Some(unit) = self.literal_bytes.get(literal.data).get(start..end)
+                && let Some(unit) = self
+                    .literal_bytes
+                    .get(literal.data(self.literal_bytes))
+                    .get(start..end)
             {
                 bytes[..width].copy_from_slice(unit);
             }

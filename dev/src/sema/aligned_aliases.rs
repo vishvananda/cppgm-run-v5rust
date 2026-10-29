@@ -142,7 +142,11 @@ impl Analyzer<'_> {
                                 .flatten()
                                 .ok_or(Error::Invariant("aligned query without resolved name"))?,
                         ),
-                        _ => self.graph.expression_facts.get(expression)?.member,
+                        _ => self
+                            .graph
+                            .expression_facts
+                            .get(expression)?
+                            .member(&self.graph.expression_facts),
                     };
                     return Ok(binding
                         .map(|binding| self.graph.binding(binding).entity)

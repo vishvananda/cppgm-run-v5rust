@@ -474,7 +474,7 @@ impl Analyzer<'_> {
         location: SourceOffset,
     ) -> Result<(), Error> {
         if facts.category == super::expression_facts::ValueCategory::Prvalue
-            && facts.functions.is_none()
+            && facts.functions(&self.graph.expression_facts).is_none()
         {
             self.class_parameter_destruction(facts.ty, scope, location)?;
             if self.lowering() && self.unevaluated == 0 {

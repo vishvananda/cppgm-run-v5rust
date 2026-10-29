@@ -94,7 +94,7 @@ impl Analyzer<'_> {
                     self.select_function_designation(operand, binding)?;
                     facts = self.graph.expression_facts.get(operand)?;
                 }
-                if facts.functions.is_some()
+                if facts.functions(&self.graph.expression_facts).is_some()
                     || matches!(
                         self.graph.types.get(facts.ty).kind,
                         TypeKind::Function { .. }
@@ -128,8 +128,8 @@ impl Analyzer<'_> {
         let target = self.graph.types.scalar(Scalar::Basic(F::UnsignedLongInt))?;
         let mut facts =
             self.new_expression_facts(target, super::expression_facts::ValueCategory::Prvalue)?;
-        facts.query_value = Some(size);
-        facts.query_kind = self.query_kind(ty);
+        facts.set_query_value(Some(size), &mut self.graph.expression_facts)?;
+        facts.set_query_kind(self.query_kind(ty));
         Ok(facts)
     }
 
@@ -207,8 +207,8 @@ impl Analyzer<'_> {
         let ty = self.graph.types.scalar(Scalar::Basic(F::UnsignedLongInt))?;
         let mut facts =
             self.new_expression_facts(ty, super::expression_facts::ValueCategory::Prvalue)?;
-        facts.query_value = Some(alignment);
-        facts.query_kind = query_kind;
+        facts.set_query_value(Some(alignment), &mut self.graph.expression_facts)?;
+        facts.set_query_kind(query_kind);
         Ok(facts)
     }
     fn query_kind(&self, ty: TypeId) -> super::expression_facts::QueryKind {
@@ -668,7 +668,7 @@ impl Analyzer<'_> {
                 if matches!(
                     self.tree.expressions.get(operand).kind,
                     ExprKind::Member { .. }
-                ) && let Some(binding) = facts.member
+                ) && let Some(binding) = facts.member(&self.graph.expression_facts)
                     && self.graph.binding(binding).kind == BindingKind::Variable
                 {
                     return self

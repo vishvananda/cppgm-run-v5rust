@@ -174,23 +174,27 @@ impl Analyzer<'_> {
             .literal_bytes
             .add(&data)
             .map_err(|_| Error::Limit("source text data limit"))?;
+        let literal = self
+            .literal_bytes
+            .literal(ast::LiteralData {
+                kind: PostTokenKind::String {
+                    ty: F::Char,
+                    elements,
+                    initializer_bound,
+                    suffix: None,
+                },
+                spelling,
+                data,
+                token_form: false,
+                suffix_name: None,
+            })
+            .map_err(|_| Error::Limit("source literal limit"))?;
         let id = self
             .tree
             .expressions
             .add(ast::Expression {
                 location: SourceOffset(0),
-                kind: ast::ExprKind::Literal(ast::Literal {
-                    kind: PostTokenKind::String {
-                        ty: F::Char,
-                        elements,
-                        initializer_bound,
-                        suffix: None,
-                    },
-                    spelling,
-                    data,
-                    token_form: false,
-                    suffix_name: None,
-                }),
+                kind: ast::ExprKind::Literal(literal),
             })
             .map_err(|_| Error::Limit("source text expression limit"))?;
         self.typed_expression(id, self.graph.global)?;
@@ -263,7 +267,9 @@ mod tests {
             panic!("source text without literal");
         };
         assert_eq!(
-            analyzer.literal_bytes.get(literal.data),
+            analyzer
+                .literal_bytes
+                .get(literal.data(analyzer.literal_bytes)),
             b"\"\\\n\t\x7f\xff\0"
         );
         assert!(analyzer.graph.root_demands.as_slice().is_empty());

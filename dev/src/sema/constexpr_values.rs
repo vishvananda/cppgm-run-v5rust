@@ -187,23 +187,25 @@ impl Analyzer<'_> {
             id = match self.tree.expressions.get(id).kind {
                 ast::ExprKind::Member { base, op, .. }
                     if op.token.as_punctuator() == Some(crate::lex::pp_lexer::Punctuator::Dot)
-                        && facts.member.is_some_and(|binding| {
-                            let entity = self.graph.binding(binding).entity;
-                            self.graph.entity(entity).data_member
-                                == Some(super::graph::DataMemberKind::Instance)
-                                && self.graph.entity(entity).ty.is_some_and(|ty| {
-                                    !matches!(
-                                        self.graph.types.get(ty).kind,
-                                        TypeKind::Reference { .. }
-                                    )
-                                })
-                        }) =>
+                        && facts
+                            .member(&self.graph.expression_facts)
+                            .is_some_and(|binding| {
+                                let entity = self.graph.binding(binding).entity;
+                                self.graph.entity(entity).data_member
+                                    == Some(super::graph::DataMemberKind::Instance)
+                                    && self.graph.entity(entity).ty.is_some_and(|ty| {
+                                        !matches!(
+                                            self.graph.types.get(ty).kind,
+                                            TypeKind::Reference { .. }
+                                        )
+                                    })
+                            }) =>
                 {
                     base
                 }
                 ast::ExprKind::Subscript { base, .. }
-                    if !facts.commuted
-                        && facts.call_form != super::expression_facts::CallForm::Operator
+                    if !facts.commuted()
+                        && facts.call_form() != super::expression_facts::CallForm::Operator
                         && matches!(
                             self.graph
                                 .types

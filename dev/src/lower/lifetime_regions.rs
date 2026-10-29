@@ -806,6 +806,20 @@ impl Function<'_, '_, '_, '_> {
             ..value
         })
     }
+    // allocation_lowering.cpp calls emit_call directly, without begin_call /
+    // end_call. Its result still spills, but the enclosing source call owns
+    // the operand marker that remains live across allocation and construction.
+    pub(super) fn finish_allocation_call(
+        &mut self,
+        value: RValue,
+        throws: bool,
+    ) -> Result<RValue, Error> {
+        let result = self.preserve_lifetime_value(value.value, value.ty, throws)?;
+        Ok(RValue {
+            value: result,
+            ..value
+        })
+    }
     /// Preserve a call result using its `LowIR` type, including compiler-created
     /// calls that have no source-language result type (TLS wrappers).
     pub(super) fn finish_lifetime_value(
@@ -817,6 +831,14 @@ impl Function<'_, '_, '_, '_> {
         if throws && self.lifetime.full_expression {
             self.lifetime.call_marks.pop();
         }
+        self.preserve_lifetime_value(value, ty, throws)
+    }
+    fn preserve_lifetime_value(
+        &mut self,
+        value: Value,
+        ty: Type,
+        throws: bool,
+    ) -> Result<Value, Error> {
         let coverage = std::mem::take(&mut self.lifetime.call_coverage);
         if std::mem::take(&mut self.lifetime.call_region) == super::lifetime::CallRegion::Transient
         {

@@ -222,7 +222,7 @@ impl Function<'_, '_, '_, '_> {
         source: crate::sema::lowering::TypeId,
     ) -> Result<RValue, Error> {
         let (PostTokenKind::Literal { data, .. } | PostTokenKind::Character { data, .. }) =
-            literal.kind
+            literal.kind(&self.cursor.spellings)
         else {
             return Err(Error::Missing("string and user-defined literal lowering"));
         };

@@ -636,8 +636,13 @@ impl<'a, 'source> Symbols<'a, 'source> {
         self.state.class_storage.insert(class, properties);
         Ok(properties)
     }
+    pub(super) fn literal_kind(&self, literal: ast::Literal) -> crate::lex::PostTokenKind {
+        literal.kind(&self.cursor.spellings)
+    }
     pub(super) fn literal_bytes(&self, literal: ast::Literal) -> &[u8] {
-        self.cursor.spellings.get(literal.data)
+        self.cursor
+            .spellings
+            .get(literal.data(&self.cursor.spellings))
     }
     fn source_function_spelling(&self, name: FunctionName) -> Result<String, Error> {
         match name {
@@ -651,7 +656,9 @@ impl<'a, 'source> Symbols<'a, 'source> {
         }
     }
     pub(super) fn literal_spelling(&self, literal: ast::Literal) -> &[u8] {
-        self.cursor.spellings.get(literal.spelling)
+        self.cursor
+            .spellings
+            .get(literal.spelling(&self.cursor.spellings))
     }
     fn presentation_scope_label(
         &mut self,

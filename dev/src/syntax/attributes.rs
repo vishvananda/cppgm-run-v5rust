@@ -233,7 +233,7 @@ impl Parser<'_> {
         Ok(())
     }
     pub(super) fn attribute_string(&mut self) -> Result<ExprId, ParseError> {
-        if !matches!(self.token()?.kind, TokenKind::Literal(literal) if matches!(literal.kind, PostTokenKind::String { .. }))
+        if !matches!(self.token()?.kind, TokenKind::Literal(literal) if matches!(literal.kind(&self.cursor.spellings), PostTokenKind::String { .. }))
         {
             return self.fail();
         }

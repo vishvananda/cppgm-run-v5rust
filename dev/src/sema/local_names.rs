@@ -91,8 +91,8 @@ impl Analyzer<'_> {
             // Reference evaluation consumes this source type and resolved name.
             self.graph.expression_facts.set(id, *facts);
             if let Some(value) = self.constant_value(id, scope, false)? {
-                facts.folded = self.held_integral_constant(value).then_some(value.bits);
-                facts.fold_style = FoldStyle::EnclosingLocal;
+                facts.set_folded(self.held_integral_constant(value).then_some(value.bits));
+                facts.set_fold_style(FoldStyle::EnclosingLocal);
                 return Ok(());
             }
         }
@@ -144,7 +144,9 @@ impl Analyzer<'_> {
         self.check_stack()?;
         let id = self.graph.expression_facts.root(id);
         let facts = self.graph.expression_facts.get(id)?;
-        if facts.category == ValueCategory::Prvalue || facts.call.is_some() {
+        if facts.category == ValueCategory::Prvalue
+            || facts.call(&self.graph.expression_facts).is_some()
+        {
             return Ok(());
         }
         match self.tree.expressions.get(id).kind {
@@ -161,7 +163,7 @@ impl Analyzer<'_> {
             {
                 self.odr_use_constant_operand(right)
             }
-            ExprKind::Id(name) if facts.fold_style == FoldStyle::EnclosingLocal => {
+            ExprKind::Id(name) if facts.fold_style() == FoldStyle::EnclosingLocal => {
                 let binding = self
                     .graph
                     .resolved_name(name)

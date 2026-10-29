@@ -20,7 +20,7 @@ use crate::{
     types::FundamentalType,
 };
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum LiteralCall {
     Character {
         source: TypeId,
@@ -52,13 +52,15 @@ impl Analyzer<'_> {
         literal: ast::Literal,
         scope: ScopeId,
     ) -> Result<ExprFacts, Error> {
-        if literal.suffix_name.is_some() {
-            if let PostTokenKind::UserDefinedNumber { form, suffix_begin } = literal.kind {
+        if literal.suffix_name(self.literal_bytes).is_some() {
+            if let PostTokenKind::UserDefinedNumber { form, suffix_begin } =
+                literal.kind(self.literal_bytes)
+            {
                 return self.numeric_literal_call(id, literal, scope, form, suffix_begin);
             }
             return self.literal_call(id, literal, scope);
         }
-        let (ty, category) = match literal.kind {
+        let (ty, category) = match literal.kind(self.literal_bytes) {
             PostTokenKind::Literal { ty, .. }
             | PostTokenKind::Character {
                 ty,
@@ -86,9 +88,11 @@ impl Analyzer<'_> {
             _ => return Err(Error::Missing("user-defined semantic literals")),
         };
         let mut facts = self.new_expression_facts(ty, category)?;
-        if let PostTokenKind::Literal { ty, data, .. } = literal.kind {
-            facts.null_literal = super::integral::IntegralKind::of(Scalar::Basic(ty)).is_some()
-                && data.as_slice().iter().all(|&b| b == 0);
+        if let PostTokenKind::Literal { ty, data, .. } = literal.kind(self.literal_bytes) {
+            facts.set_null_literal(
+                super::integral::IntegralKind::of(Scalar::Basic(ty)).is_some()
+                    && data.as_slice().iter().all(|&b| b == 0),
+            );
         }
         Ok(facts)
     }
@@ -100,9 +104,9 @@ impl Analyzer<'_> {
     ) -> Result<ExprFacts, Error> {
         let location = self.tree.expressions.get(id).location;
         let suffix = literal
-            .suffix_name
+            .suffix_name(self.literal_bytes)
             .ok_or(Error::Invariant("literal call without suffix"))?;
-        let (shape, first, second, missing) = match literal.kind {
+        let (shape, first, second, missing) = match literal.kind(self.literal_bytes) {
             PostTokenKind::Character { ty, data, .. } => {
                 let source = self.graph.types.scalar(Scalar::Basic(ty))?;
                 let mut bytes = [0; 8];
@@ -181,7 +185,7 @@ impl Analyzer<'_> {
     ) -> Result<ExprFacts, Error> {
         let location = self.tree.expressions.get(id).location;
         let suffix = literal
-            .suffix_name
+            .suffix_name(self.literal_bytes)
             .ok_or(Error::Invariant("numeric literal without suffix"))?;
         self.lookup_location = location;
         let found = self.unqualified_result(
@@ -263,13 +267,13 @@ impl Analyzer<'_> {
         } else if form == LiteralForm::Floating {
             let digits = self
                 .literal_bytes
-                .get(literal.spelling)
+                .get(literal.spelling(self.literal_bytes))
                 .get(..digits)
                 .ok_or(Error::Invariant("numeric literal digits outside spelling"))?;
             let number = self.graph.literal_numbers.register(id, digits)?;
             LiteralCall::Floating { number }
         } else {
-            let spelling = self.literal_bytes.get(literal.spelling);
+            let spelling = self.literal_bytes.get(literal.spelling(self.literal_bytes));
             let digits = spelling
                 .get(..digits)
                 .ok_or(Error::Invariant("numeric literal digits outside spelling"))?;
@@ -353,7 +357,7 @@ impl Analyzer<'_> {
             let argument = if let Some(pack) = pack {
                 pack
             } else {
-                let spelling = self.literal_bytes.get(literal.spelling);
+                let spelling = self.literal_bytes.get(literal.spelling(self.literal_bytes));
                 let spelling = spelling
                     .get(..digits)
                     .ok_or(Error::Invariant("numeric literal digits outside spelling"))?;
@@ -402,7 +406,7 @@ impl Analyzer<'_> {
             ));
         };
         let facts = self.graph.expression_facts.get(id)?;
-        let Some(CallTarget::Direct(binding)) = facts.call else {
+        let Some(CallTarget::Direct(binding)) = facts.call(&self.graph.expression_facts) else {
             return Err(Error::Invariant(
                 "literal invocation without selected function",
             ));
@@ -418,7 +422,7 @@ impl Analyzer<'_> {
         });
         let mut values = [zero; 2];
         let count = match facts
-            .literal_call
+            .literal_call(&self.graph.expression_facts)
             .ok_or(Error::Invariant("literal invocation without operands"))?
         {
             LiteralCall::Template => 0,
@@ -480,16 +484,15 @@ impl Analyzer<'_> {
                     object
                 } else {
                     let object = self.raw_literal_array(digits)?;
-                    self.graph.expression_facts.set(
-                        id,
-                        ExprFacts {
-                            literal_call: Some(LiteralCall::Raw {
-                                digits,
-                                object: Some(object),
-                            }),
-                            ..facts
-                        },
-                    );
+                    let mut updated = facts;
+                    updated.set_literal_call(
+                        Some(LiteralCall::Raw {
+                            digits,
+                            object: Some(object),
+                        }),
+                        &mut self.graph.expression_facts,
+                    )?;
+                    self.graph.expression_facts.set(id, updated);
                     object
                 };
                 let TypeKind::Array { element, .. } = self.graph.types.get(object).kind else {
@@ -527,8 +530,11 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("literal operator without type"))?;
         let ty = self.graph.types.canonical_function(ty)?;
         let mut facts = self.call_result(ty)?;
-        facts.call = Some(CallTarget::Direct(self.graph.function_origin(entity)?));
-        facts.literal_call = Some(shape);
+        facts.set_call(
+            Some(CallTarget::Direct(self.graph.function_origin(entity)?)),
+            &mut self.graph.expression_facts,
+        )?;
+        facts.set_literal_call(Some(shape), &mut self.graph.expression_facts)?;
         self.graph.record_call_binding(id, binding);
         Ok(facts)
     }
@@ -603,7 +609,7 @@ mod tests {
             let Ok(facts) = analyzer.graph.expression_facts.get(id) else {
                 continue;
             };
-            let expected = match facts.literal_call {
+            let expected = match facts.literal_call(&analyzer.graph.expression_facts) {
                 Some(LiteralCall::Integer { source, bits }) => {
                     integers.push((analyzer.graph.types.get(source).kind.clone(), bits));
                     FundamentalType::UnsignedLongLongInt
@@ -619,7 +625,8 @@ mod tests {
                 None => continue,
                 _ => panic!("raw candidate must not displace a cooked one"),
             };
-            let CallTarget::Direct(binding) = facts.call.unwrap() else {
+            let CallTarget::Direct(binding) = facts.call(&analyzer.graph.expression_facts).unwrap()
+            else {
                 panic!("direct literal call");
             };
             let ty = analyzer.graph.binding(binding).ty.unwrap();
@@ -628,7 +635,7 @@ mod tests {
                 analyzer.graph.types.get(parameter).kind,
                 TypeKind::Scalar(Scalar::Basic(expected))
             );
-            assert!(!facts.null_literal);
+            assert!(!facts.null_literal());
         }
         assert_eq!(floating, 1);
         assert_eq!(
@@ -665,11 +672,12 @@ mod tests {
         let mut lengths = Vec::new();
         for id in literals {
             if let Ok(facts) = analyzer.graph.expression_facts.get(id)
-                && let Some(LiteralCall::Raw { digits, object }) = facts.literal_call
+                && let Some(LiteralCall::Raw { digits, object }) =
+                    facts.literal_call(&analyzer.graph.expression_facts)
             {
                 lengths.push(digits);
                 assert!(object.is_none());
-                assert!(!facts.null_literal);
+                assert!(!facts.null_literal());
             }
         }
         assert_eq!(lengths, [20, 11]);
@@ -700,7 +708,7 @@ mod tests {
                 .expression_facts
                 .get(id)
                 .unwrap()
-                .literal_call,
+                .literal_call(&analyzer.graph.expression_facts),
             Some(LiteralCall::Raw { object: None, .. })
         ));
         analyzer
@@ -748,9 +756,13 @@ mod tests {
         let mut spellings = Vec::new();
         for id in literals {
             let facts = analyzer.graph.expression_facts.get(id).unwrap();
-            assert!(matches!(facts.literal_call, Some(LiteralCall::Template)));
-            assert!(!facts.null_literal);
-            let CallTarget::Direct(binding) = facts.call.unwrap() else {
+            assert!(matches!(
+                facts.literal_call(&analyzer.graph.expression_facts),
+                Some(LiteralCall::Template)
+            ));
+            assert!(!facts.null_literal());
+            let CallTarget::Direct(binding) = facts.call(&analyzer.graph.expression_facts).unwrap()
+            else {
                 panic!("direct template literal call");
             };
             let entity = analyzer.graph.binding(binding).entity;

@@ -2,7 +2,7 @@
 //! Pull window: no whole-unit token vector; checkpoints retain only their region.
 use super::{
     ParseError,
-    ast::{Literal, Operator},
+    ast::{Literal, LiteralData, Operator},
     storage::TextStore,
 };
 use crate::lex::{
@@ -25,6 +25,8 @@ pub(super) struct Token {
     pub shift_half: u8,
     pub suffix_name: Option<NameId>,
 }
+const _: () = assert!(std::mem::size_of::<Token>() <= 32);
+
 #[derive(Clone, Copy, Debug)]
 pub(super) struct TokenRun {
     begin: u32,
@@ -183,19 +185,23 @@ impl<'a> Cursor<'a> {
                 self.end = Some(token);
                 TokenKind::End
             }
-            kind => TokenKind::Literal(Literal {
-                kind,
-                token_form: false,
-                spelling: if matches!(kind, PostTokenKind::String { .. }) {
-                    self.spellings.copy_string(post.source)?
-                } else {
-                    self.spellings.add(post.source)?
-                },
-                data: self.spellings.add(post.data)?,
-                suffix_name: None,
-            }),
+            kind => {
+                let literal = LiteralData {
+                    kind,
+                    token_form: false,
+                    spelling: if matches!(kind, PostTokenKind::String { .. }) {
+                        self.spellings.copy_string(post.source)?
+                    } else {
+                        self.spellings.add(post.source)?
+                    },
+                    data: self.spellings.add(post.data)?,
+                    suffix_name: None,
+                };
+                TokenKind::Literal(self.spellings.literal(literal)?)
+            }
         };
-        if let TokenKind::Literal(mut literal) = token.kind {
+        if let TokenKind::Literal(id) = token.kind {
+            let mut literal = *self.spellings.literals.get(id);
             let suffix = match literal.kind {
                 PostTokenKind::String {
                     suffix: Some((begin, end)),
@@ -218,7 +224,7 @@ impl<'a> Cursor<'a> {
                         .intern_name(&self.spellings.get(literal.spelling)[begin..end])
                         .map_err(ParseError::Preprocess)?,
                 );
-                token.kind = TokenKind::Literal(literal);
+                self.spellings.literals.replace(id, literal);
             }
         }
         let alignment = self.post.input().pack_alignment();
@@ -247,7 +253,7 @@ impl<'a> Cursor<'a> {
             } else {
                 let ty = crate::types::FundamentalType::LongInt;
                 let data = crate::lex::floating::ScalarBytes::integer(ty, 0);
-                let literal = Literal {
+                let literal = LiteralData {
                     kind: PostTokenKind::Literal {
                         form: crate::lex::LiteralForm::Integer,
                         ty,
@@ -258,6 +264,7 @@ impl<'a> Cursor<'a> {
                     data: self.spellings.add(data.as_slice())?,
                     suffix_name: None,
                 };
+                let literal = self.spellings.literal(literal)?;
                 self.null_literal = Some(literal);
                 literal
             };

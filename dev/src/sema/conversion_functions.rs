@@ -1013,7 +1013,7 @@ mod tests {
                 .entity;
             assert_eq!(graph.class_of(facts.ty), Some(source));
             assert_eq!(facts.category, ValueCategory::Lvalue);
-            assert!(facts.class_copy.is_none());
+            assert!(facts.class_copy(&graph.expression_facts).is_none());
             let step = graph.expression_facts.function_conversion(operand).unwrap();
             assert_eq!(step.after_path.is_some(), projected);
             assert_eq!(step.copy.is_some(), copied);
@@ -1137,8 +1137,8 @@ mod tests {
             panic!("call");
         };
         let facts = graph.expression_facts.get(callee).unwrap();
-        assert_eq!(facts.member_naming, Some(derived));
-        let object = facts.object.unwrap();
+        assert_eq!(facts.member_naming(&graph.expression_facts), Some(derived));
+        let object = facts.object(&graph.expression_facts).unwrap();
         assert_eq!(graph.class_of(object.ty), Some(derived));
         assert_eq!(object.category, ValueCategory::Lvalue);
         let demanded = |binding| {
@@ -1350,7 +1350,7 @@ mod tests {
         assert_eq!(selected.after.second, ValueConversion::DerivedToBase);
         let facts = graph.expression_facts.get(operand).unwrap();
         assert!(graph.class_of(facts.ty).is_some());
-        assert!(facts.base_path.is_none());
+        assert!(facts.base_path(&graph.expression_facts).is_none());
         assert_eq!(
             graph
                 .lower_base_conversion(operand)

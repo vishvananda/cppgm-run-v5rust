@@ -101,7 +101,7 @@ impl Parser<'_> {
             }
             Some(K::Using) => self.using_declaration(location),
             Some(K::StaticAssert) => self.static_assert(location),
-            Some(K::Extern) if matches!(self.cursor.peek(1)?.kind, TokenKind::Literal(literal) if matches!(literal.kind, crate::lex::PostTokenKind::String { .. })) => {
+            Some(K::Extern) if matches!(self.cursor.peek(1)?.kind, TokenKind::Literal(literal) if matches!(literal.kind(&self.cursor.spellings), crate::lex::PostTokenKind::String { .. })) => {
                 self.linkage(location)
             }
             Some(K::Template) if self.at_ahead(P::Less, 1)? => self.template_declaration(location),
@@ -373,7 +373,10 @@ impl Parser<'_> {
             let TokenKind::Literal(literal) = self.token()?.kind else {
                 return self.fail();
             };
-            if !matches!(literal.kind, crate::lex::PostTokenKind::String { .. }) {
+            if !matches!(
+                literal.kind(&self.cursor.spellings),
+                crate::lex::PostTokenKind::String { .. }
+            ) {
                 return self.fail();
             }
             self.cursor.advance()?;
@@ -394,7 +397,7 @@ impl Parser<'_> {
         let TokenKind::Literal(literal) = self.token()?.kind else {
             return self.fail();
         };
-        let language = super::storage::TextStore::unquote(literal.spelling);
+        let language = super::storage::TextStore::unquote(literal.spelling(&self.cursor.spellings));
         self.cursor.advance()?;
         let braced = self.accept(P::LeftBrace)?;
         let declarations = if braced {

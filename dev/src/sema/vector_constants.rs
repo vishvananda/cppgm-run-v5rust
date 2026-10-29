@@ -230,8 +230,8 @@ impl Analyzer<'_> {
         let node = *self.tree.expressions.get(id);
         self.constant_step(node.location)?;
         let facts = self.graph.expression_facts.get(id)?;
-        if facts.literal_call.is_some()
-            || facts.call_form == super::expression_facts::CallForm::Operator
+        if facts.literal_call(&self.graph.expression_facts).is_some()
+            || facts.call_form() == super::expression_facts::CallForm::Operator
         {
             let Returned::Place(place) = self.constant_call_result(id, scope)? else {
                 return Err(Error::Invariant("constant vector operator result"));
@@ -270,7 +270,7 @@ impl Analyzer<'_> {
                 }
                 self.constant_vector_cast_arguments(arguments, facts.ty, scope, node.location)
             }
-            ExprKind::Call { arguments, .. } if facts.functional_call => {
+            ExprKind::Call { arguments, .. } if facts.functional_call() => {
                 self.constant_vector_cast_arguments(arguments, facts.ty, scope, node.location)
             }
             ExprKind::Cast {

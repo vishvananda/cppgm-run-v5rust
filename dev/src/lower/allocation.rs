@@ -257,7 +257,7 @@ impl Function<'_, '_, '_, '_> {
             }),
             source,
         )?;
-        let object = self.finish_lifetime_call(object, throws)?;
+        let object = self.finish_allocation_call(object, throws)?;
         let work = initializer.is_some()
             || use_
                 .constructor

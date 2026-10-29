@@ -116,8 +116,8 @@ impl Analyzer<'_> {
             return;
         }
         if let ConstantState::Value(value) = entity.constant {
-            facts.folded = self.held_integral_constant(value).then_some(value.bits);
-            facts.fold_style = super::expression_facts::FoldStyle::StaticMember;
+            facts.set_folded(self.held_integral_constant(value).then_some(value.bits));
+            facts.set_fold_style(super::expression_facts::FoldStyle::StaticMember);
         }
     }
     pub(super) fn check_mutable_declarator(

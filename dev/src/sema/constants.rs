@@ -271,8 +271,8 @@ impl Analyzer<'_> {
         }
         if self.semantic()
             && self.graph.expression_facts.get(id).is_ok_and(|facts| {
-                facts.literal_call.is_some()
-                    || facts.call_form == super::expression_facts::CallForm::Operator
+                facts.literal_call(&self.graph.expression_facts).is_some()
+                    || facts.call_form() == super::expression_facts::CallForm::Operator
             })
         {
             return self.constant_call(id, scope, skipping);
@@ -315,11 +315,14 @@ impl Analyzer<'_> {
                     data,
                     suffix_begin: None,
                     ..
-                }) = literal.kind
+                }) = literal.kind(self.literal_bytes)
                 else {
                     return Err(not_constant(
                         location,
-                        if matches!(literal.kind, PostTokenKind::String { .. }) {
+                        if matches!(
+                            literal.kind(self.literal_bytes),
+                            PostTokenKind::String { .. }
+                        ) {
                             "a string literal is not an integral constant"
                         } else {
                             "not an integral constant expression"
@@ -632,13 +635,15 @@ impl Analyzer<'_> {
                 .graph
                 .expression_facts
                 .get(id)
-                .is_ok_and(|facts| facts.folded.is_some())
+                .is_ok_and(|facts| facts.folded().is_some())
         {
             self.constant_member_object(id, scope)?;
         }
         if self.semantic()
             && let Ok(facts) = self.graph.expression_facts.get(id)
-            && let Some(bits) = facts.folded.or(facts.query_value)
+            && let Some(bits) = facts
+                .folded()
+                .or(facts.query_value(&self.graph.expression_facts))
         {
             let ty = self.bare_type(facts.ty)?;
             return Ok(Some(self.integral_value(ty, bits)));
@@ -740,7 +745,7 @@ impl Analyzer<'_> {
         skipping: bool,
     ) -> Result<Constant, Error> {
         let facts = self.graph.expression_facts.get(id)?;
-        if facts.functional_call {
+        if facts.functional_call() {
             let ExprKind::Call { arguments, .. } = self.tree.expressions.get(id).kind else {
                 return Err(Error::Invariant("functional call without arguments"));
             };
@@ -789,7 +794,7 @@ impl Analyzer<'_> {
         if let Some(kind) = self.graph.expression_facts.integer_intrinsic(id) {
             return self.constant_integer_intrinsic(id, kind, scope);
         }
-        if let Some(kind) = facts.intrinsic {
+        if let Some(kind) = facts.intrinsic(&self.graph.expression_facts) {
             if matches!(
                 kind,
                 super::floating_intrinsics::FloatingIntrinsic::Constant
@@ -802,7 +807,8 @@ impl Analyzer<'_> {
             }
             return self.constant_floating_intrinsic(id, kind, scope);
         }
-        if let Some(super::function_resolution::CallTarget::Direct(binding)) = facts.call
+        if let Some(super::function_resolution::CallTarget::Direct(binding)) =
+            facts.call(&self.graph.expression_facts)
             && matches!(
                 self.graph
                     .entity(self.graph.binding(binding).entity)
@@ -823,7 +829,8 @@ impl Analyzer<'_> {
             };
             return Ok(value);
         }
-        if let Some(super::function_resolution::CallTarget::Direct(binding)) = facts.call
+        if let Some(super::function_resolution::CallTarget::Direct(binding)) =
+            facts.call(&self.graph.expression_facts)
             && self
                 .graph
                 .entity(self.graph.binding(binding).entity)
@@ -835,8 +842,9 @@ impl Analyzer<'_> {
                 "a builtin function that is not a constant expression",
             ));
         }
-        if facts.literal_call.is_some()
-            && let Some(super::function_resolution::CallTarget::Direct(binding)) = facts.call
+        if facts.literal_call(&self.graph.expression_facts).is_some()
+            && let Some(super::function_resolution::CallTarget::Direct(binding)) =
+                facts.call(&self.graph.expression_facts)
             && !self
                 .graph
                 .entity(self.graph.binding(binding).entity)
@@ -904,14 +912,15 @@ impl Analyzer<'_> {
                 .graph
                 .expression_facts
                 .get(id)?
-                .reference_cast
+                .reference_cast(&self.graph.expression_facts)
                 .is_some() =>
             {
                 self.constant_member_object(operand, scope)
             }
             ExprKind::Call { .. } => {
                 let facts = self.graph.expression_facts.get(id)?;
-                if let Some(super::function_resolution::CallTarget::Direct(binding)) = facts.call
+                if let Some(super::function_resolution::CallTarget::Direct(binding)) =
+                    facts.call(&self.graph.expression_facts)
                     && !self
                         .graph
                         .entity(self.graph.binding(binding).entity)
@@ -1039,7 +1048,7 @@ impl Analyzer<'_> {
             elements,
             suffix: None,
             ..
-        } = literal.kind
+        } = literal.kind(self.literal_bytes)
         else {
             return Err(not_constant(
                 location,
@@ -1068,7 +1077,7 @@ impl Analyzer<'_> {
             .ok_or(Error::Limit("string element host size"))?;
         let data = self
             .literal_bytes
-            .get(literal.data)
+            .get(literal.data(self.literal_bytes))
             .get(offset..end)
             .ok_or(Error::Invariant("string element outside decoded literal"))?;
         let mut bytes = [0u8; 8];
@@ -1094,7 +1103,7 @@ impl Analyzer<'_> {
             } = self.tree.expressions.get(next).kind
             {
                 if !matches!(op.token.as_punctuator(), Some(P::LogicalAnd | P::LogicalOr))
-                    || self.graph.expression_facts.get(next)?.call_form
+                    || self.graph.expression_facts.get(next)?.call_form()
                         == super::expression_facts::CallForm::Operator
                     || self
                         .graph
@@ -1148,7 +1157,7 @@ impl Analyzer<'_> {
             } = self.tree.expressions.get(next).kind
             {
                 if self.consumes_member_pointer(next)
-                    || self.graph.expression_facts.get(next)?.call_form
+                    || self.graph.expression_facts.get(next)?.call_form()
                         == super::expression_facts::CallForm::Operator
                     || self
                         .graph
@@ -1197,7 +1206,7 @@ impl Analyzer<'_> {
                         return Err(Error::Invariant("base address conversion without pointer"));
                     };
                     let path = facts
-                        .base_path
+                        .base_path(&self.graph.expression_facts)
                         .ok_or(Error::Invariant("base address conversion without route"))?;
                     value = Value::Pointer(self.constant_base_pointer(
                         pointer,
@@ -1254,7 +1263,7 @@ impl Analyzer<'_> {
                 && self.graph.expression_facts.get(id).is_ok()
                 && (assignment
                     || self.graph.expression_facts.get(id).is_ok_and(|facts| {
-                        facts.call_form == super::expression_facts::CallForm::Operator
+                        facts.call_form() == super::expression_facts::CallForm::Operator
                     })
                     || self.consumes_address(id)
                     || self.consumes_member_pointer(id)

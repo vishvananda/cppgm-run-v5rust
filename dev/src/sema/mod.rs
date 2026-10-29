@@ -84,6 +84,7 @@ mod explicit_classes;
 mod explicit_conditions;
 mod explicit_instantiations;
 mod explicit_specializations;
+mod expression_details;
 mod expression_facts;
 mod expression_keys;
 mod expression_predicates;

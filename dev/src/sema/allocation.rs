@@ -99,7 +99,7 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("missing global allocation family"))?;
         let facts = self.function_designation(first, bindings)?;
         let functions = facts
-            .functions
+            .functions(&self.graph.expression_facts)
             .ok_or(Error::Invariant("allocation overload set"))?;
         let ast::ExprKind::Call { callee, .. } = self.tree.expressions.get(id).kind else {
             return Err(Error::Invariant("allocation builtin without call syntax"));
@@ -149,7 +149,7 @@ impl Analyzer<'_> {
             return Ok(None);
         };
         let facts = self.graph.expression_facts.get(source)?;
-        let Some(selected) = facts.class_copy else {
+        let Some(selected) = facts.class_copy(&self.graph.expression_facts) else {
             return Ok(None);
         };
         if facts.category == ValueCategory::Prvalue {
@@ -856,8 +856,11 @@ mod tests {
             let ast::ExprKind::Call { callee, arguments } = tree.expressions.get(id).kind else {
                 panic!("builtin call syntax");
             };
-            let Some(super::super::function_resolution::CallTarget::Direct(binding)) =
-                graph.expression_facts.get(id).unwrap().call
+            let Some(super::super::function_resolution::CallTarget::Direct(binding)) = graph
+                .expression_facts
+                .get(id)
+                .unwrap()
+                .call(&graph.expression_facts)
             else {
                 panic!("direct operator call");
             };
@@ -865,7 +868,11 @@ mod tests {
             assert!(selected.builtin.is_none());
             assert_eq!(selected.home, Some(graph.global));
             assert_eq!(
-                graph.expression_facts.get(callee).unwrap().function,
+                graph
+                    .expression_facts
+                    .get(callee)
+                    .unwrap()
+                    .function(&graph.expression_facts),
                 Some(binding)
             );
             assert!(matches!(

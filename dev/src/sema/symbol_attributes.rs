@@ -40,7 +40,11 @@ impl Analyzer<'_> {
         let ast::ExprKind::Literal(literal) = self.tree.expressions.get(expression).kind else {
             return Err(Error::Invariant("asm label without string literal"));
         };
-        let mut spelling = self.literal_bytes.get(literal.spelling).iter().copied();
+        let mut spelling = self
+            .literal_bytes
+            .get(literal.spelling(self.literal_bytes))
+            .iter()
+            .copied();
         let mut inside = false;
         let mut label = Vec::new();
         while let Some(byte) = spelling.next() {
@@ -202,12 +206,13 @@ impl Analyzer<'_> {
                 return Err(Error::Invariant("section without literal"));
             };
             let name =
-                token_safe_section(self.literal_bytes.get(literal.spelling)).ok_or_else(|| {
-                    Error::at(
-                        attribute.location,
-                        "a section name outside ASCII letters, digits, `_` and `.`",
-                    )
-                })?;
+                token_safe_section(self.literal_bytes.get(literal.spelling(self.literal_bytes)))
+                    .ok_or_else(|| {
+                        Error::at(
+                            attribute.location,
+                            "a section name outside ASCII letters, digits, `_` and `.`",
+                        )
+                    })?;
             let own = self
                 .graph
                 .symbol_attributes

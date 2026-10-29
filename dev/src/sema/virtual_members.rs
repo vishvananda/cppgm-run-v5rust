@@ -899,7 +899,7 @@ impl Analyzer<'_> {
         else {
             return Ok(());
         };
-        let zero = matches!(self.tree.expressions.get(expr).kind, ast::ExprKind::Literal(lit) if self.literal_bytes.get(lit.spelling) == b"0");
+        let zero = matches!(self.tree.expressions.get(expr).kind, ast::ExprKind::Literal(lit) if self.literal_bytes.get(lit.spelling(self.literal_bytes)) == b"0");
         if !zero
             || !self.graph.virtuals.function(function).is_virtual
             || self.graph.scope(self.declaration_scope(scope)).kind != ScopeKind::Class
@@ -1455,7 +1455,11 @@ impl super::graph::Graph {
             || self.entity(function).availability == super::graph::FunctionAvailability::Deleted
     }
     pub(crate) fn lower_virtual_dispatch(&self, expression: ast::ExprId) -> Result<bool, Error> {
-        Ok(self.expression_facts.get(expression)?.dispatch.is_virtual())
+        Ok(self
+            .expression_facts
+            .get(expression)?
+            .dispatch()
+            .is_virtual())
     }
     pub(crate) fn lower_virtual_class_identity(
         &self,

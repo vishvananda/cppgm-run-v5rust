@@ -1083,12 +1083,12 @@ impl Analyzer<'_> {
                         self.tree.expressions.get(elements[0]).kind
                     && let crate::lex::PostTokenKind::String {
                         initializer_bound, ..
-                    } = literal.kind
+                    } = literal.kind(self.literal_bytes)
                 {
                     bound = initializer_bound;
                 }
             }
-            ast::ExprKind::Literal(literal) => match literal.kind {
+            ast::ExprKind::Literal(literal) => match literal.kind(self.literal_bytes) {
                 crate::lex::PostTokenKind::String {
                     initializer_bound, ..
                 } => {

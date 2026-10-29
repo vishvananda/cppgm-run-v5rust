@@ -15,9 +15,9 @@ use super::{
 use crate::{lex::pp_lexer::Punctuator as P, syntax::ast};
 use std::cmp::Ordering;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) struct OverloadId(u32);
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum CallTarget {
     Direct(BindingId),
     Indirect(TypeId, Option<super::graph::EntityId>),
@@ -170,7 +170,7 @@ impl Analyzer<'_> {
             let origin = self.graph.function_origin(function)?;
             let member = self.member_function_owner(binding).is_some();
             let mut inner = self.new_expression_facts(signature, V::Lvalue)?;
-            inner.function = Some(origin);
+            inner.set_function(Some(origin), &mut self.graph.expression_facts)?;
             self.graph.expression_facts.set(operand, inner);
             super::record(&mut self.graph.expression_types, operand.index(), signature);
             if !member {
@@ -178,7 +178,7 @@ impl Analyzer<'_> {
                 self.demand_specialization_body(binding);
                 let pointer = self.graph.types.pointer(signature)?;
                 let mut facts = self.new_expression_facts(pointer, V::Prvalue)?;
-                facts.function = Some(origin);
+                facts.set_function(Some(origin), &mut self.graph.expression_facts)?;
                 return Ok(Some(facts));
             }
             let functions =
@@ -191,7 +191,7 @@ impl Analyzer<'_> {
                 .set_function_declarations(id, functions);
             let pointer = self.function_address_type(binding, signature)?;
             let mut facts = self.new_expression_facts(pointer, V::Prvalue)?;
-            facts.function = Some(origin);
+            facts.set_function(Some(origin), &mut self.graph.expression_facts)?;
             self.graph.expression_facts.set(id, facts);
             super::record(&mut self.graph.expression_types, id.index(), pointer);
             self.demand_function(binding, false)?;
@@ -247,7 +247,7 @@ impl Analyzer<'_> {
             }
             let pointer = self.function_address_type(binding, signature)?;
             let mut facts = self.new_expression_facts(pointer, V::Prvalue)?;
-            facts.function = Some(origin);
+            facts.set_function(Some(origin), &mut self.graph.expression_facts)?;
             return Ok(Some(facts));
         }
         let address = self.graph.expression_facts.add_member_address(
@@ -262,13 +262,16 @@ impl Analyzer<'_> {
             },
         )?;
         let mut inner = self.function_designation(binding, found.functions.as_slice())?;
-        inner.member_address = Some(address);
+        inner.set_member_address(Some(address), &mut self.graph.expression_facts)?;
         self.graph.expression_facts.set(operand, inner);
         super::record(&mut self.graph.expression_types, operand.index(), inner.ty);
         // Pending sets have no pointer type until target selection.
         let mut facts = self.new_expression_facts(inner.ty, V::Prvalue)?;
-        facts.functions = inner.functions;
-        facts.member_address = Some(address);
+        facts.set_functions(
+            inner.functions(&self.graph.expression_facts),
+            &mut self.graph.expression_facts,
+        )?;
+        facts.set_member_address(Some(address), &mut self.graph.expression_facts)?;
         Ok(Some(facts))
     }
 
@@ -297,7 +300,10 @@ impl Analyzer<'_> {
             .ty
             .ok_or(Error::Invariant("function without type"))?;
         let mut facts = self.new_expression_facts(ty, V::Lvalue)?;
-        facts.functions = Some(self.graph.overloads.add(functions)?);
+        facts.set_functions(
+            Some(self.graph.overloads.add(functions)?),
+            &mut self.graph.expression_facts,
+        )?;
         Ok(facts)
     }
     pub(super) fn concrete_function_designation(
@@ -306,21 +312,24 @@ impl Analyzer<'_> {
         binding: BindingId,
         facts: &mut ExprFacts,
     ) -> Result<(), Error> {
-        if let Some(functions) = facts.functions {
+        if let Some(functions) = facts.functions(&self.graph.expression_facts) {
             self.graph
                 .expression_facts
                 .set_function_declarations(id, functions);
         }
-        facts.functions = None;
-        facts.function = Some(
-            self.graph
-                .function_origin(self.graph.binding(binding).entity)?,
-        );
+        facts.set_functions(None, &mut self.graph.expression_facts)?;
+        facts.set_function(
+            Some(
+                self.graph
+                    .function_origin(self.graph.binding(binding).entity)?,
+            ),
+            &mut self.graph.expression_facts,
+        )?;
         Ok(())
     }
     pub(super) fn check_resolved_function(&mut self, id: ast::ExprId) -> Result<(), Error> {
         let facts = self.graph.expression_facts.get(id)?;
-        if let Some(set) = facts.functions {
+        if let Some(set) = facts.functions(&self.graph.expression_facts) {
             let bindings = self.graph.overloads.get(set);
             if bindings.len() != 1
                 || self
@@ -341,10 +350,10 @@ impl Analyzer<'_> {
     }
     pub(super) fn check_bound_function(&self, id: ast::ExprId) -> Result<(), Error> {
         let facts = self.graph.expression_facts.get(id)?;
-        if facts.object.is_some()
-            && (facts.functions.is_some()
-                || facts.function.is_some()
-                || facts.destructor.is_some()
+        if facts.object(&self.graph.expression_facts).is_some()
+            && (facts.functions(&self.graph.expression_facts).is_some()
+                || facts.function(&self.graph.expression_facts).is_some()
+                || facts.destructor(&self.graph.expression_facts).is_some()
                 || matches!(
                     self.graph.types.get(facts.ty).kind,
                     TypeKind::Function { .. }
@@ -358,14 +367,18 @@ impl Analyzer<'_> {
         Ok(())
     }
     pub(super) fn ordinary_function_operand(&self, facts: ExprFacts) -> Option<BindingId> {
-        let bindings = self.graph.overloads.get(facts.functions?);
+        let bindings = self
+            .graph
+            .overloads
+            .get(facts.functions(&self.graph.expression_facts)?);
         let [binding] = bindings else {
             return None;
         };
         let entity = self.graph.entity(self.graph.binding(*binding).entity);
         (entity.template_head.is_none()
             && !self.graph.function_templates.requires_target(*binding)
-            && (self.member_function_owner(*binding).is_none() || facts.member_address.is_some()))
+            && (self.member_function_owner(*binding).is_none()
+                || facts.member_address(&self.graph.expression_facts).is_some()))
         .then_some(*binding)
     }
     pub(super) fn matching_function(
@@ -381,7 +394,7 @@ impl Analyzer<'_> {
         target: TypeId,
         explicit: bool,
     ) -> Result<Option<BindingId>, Error> {
-        let Some(set) = facts.functions else {
+        let Some(set) = facts.functions(&self.graph.expression_facts) else {
             return Ok(None);
         };
         let target = match self.graph.types.get(target).kind {
@@ -509,12 +522,22 @@ impl Analyzer<'_> {
                 .ok_or(Error::Invariant("function without type"))?,
         )?;
         let root = self.graph.expression_facts.root(id);
-        if self.graph.expression_facts.get(root)?.functions.is_none() {
+        if self
+            .graph
+            .expression_facts
+            .get(root)?
+            .functions(&self.graph.expression_facts)
+            .is_none()
+        {
             self.demand_function(binding, false)?;
             self.demand_specialization_body(binding);
             return Ok(());
         }
-        let address = self.graph.expression_facts.get(root)?.member_address;
+        let address = self
+            .graph
+            .expression_facts
+            .get(root)?
+            .member_address(&self.graph.expression_facts);
         let inner = match self.tree.expressions.get(root).kind {
             ast::ExprKind::Unary { op, operand }
                 if matches!(op.token.as_punctuator(), Some(P::BitAnd | P::Multiply)) =>
@@ -799,7 +822,12 @@ mod tests {
             (&[first, handle, other][..], true),
         ] {
             let mut facts = ExprFacts::new(ty, V::Lvalue);
-            facts.functions = Some(analyzer.graph.overloads.add(bindings).unwrap());
+            facts
+                .set_functions(
+                    Some(analyzer.graph.overloads.add(bindings).unwrap()),
+                    &mut analyzer.graph.expression_facts,
+                )
+                .unwrap();
             let selected = analyzer.matching_function(facts, ty).unwrap();
             if ambiguous {
                 assert!(selected.is_none());

@@ -308,8 +308,8 @@ impl Analyzer<'_> {
         };
         let ptr1 = matches!(self.graph.types.get(p1).kind, TypeKind::Pointer(_));
         let ptr2 = matches!(self.graph.types.get(p2).kind, TypeKind::Pointer(_));
-        if !(pointer_like(p1) || a.null_literal && ptr2)
-            || !(pointer_like(p2) || b.null_literal && ptr1)
+        if !(pointer_like(p1) || a.null_literal() && ptr2)
+            || !(pointer_like(p2) || b.null_literal() && ptr1)
             || !(ptr1 || ptr2)
         {
             return Ok(None);

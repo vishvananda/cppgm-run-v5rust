@@ -1489,7 +1489,7 @@ impl Analyzer<'_> {
             } else {
                 self.graph.expression_facts.get(args[index - offset])?
             };
-            if let Some(set) = facts.functions {
+            if let Some(set) = facts.functions(&self.graph.expression_facts) {
                 self.deduce_overloaded_argument(pattern, set, depth, &mut arguments)?;
             } else if !self.deduce_call_argument(
                 pattern,

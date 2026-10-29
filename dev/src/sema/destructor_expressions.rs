@@ -142,28 +142,33 @@ impl Analyzer<'_> {
             )?,
         };
         let mut facts = self.new_expression_facts(ty, ValueCategory::Prvalue)?;
-        facts.destructor = Some(target);
+        facts.set_destructor(Some(target), &mut self.graph.expression_facts)?;
         if let DestructorTarget::Class(binding) = target {
-            facts.dispatch = if !qualified
-                && self
-                    .graph
-                    .lower_virtual_slot(self.graph.binding(binding).entity)
-                    .is_some()
-            {
-                super::expression_facts::Dispatch::Virtual
-            } else {
-                super::expression_facts::Dispatch::Direct
-            };
+            facts.set_dispatch(
+                if !qualified
+                    && self
+                        .graph
+                        .lower_virtual_slot(self.graph.binding(binding).entity)
+                        .is_some()
+                {
+                    super::expression_facts::Dispatch::Virtual
+                } else {
+                    super::expression_facts::Dispatch::Direct
+                },
+            );
         }
-        facts.object = Some(object);
-        facts.member_naming = naming;
+        facts.set_object(Some(object), &mut self.graph.expression_facts)?;
+        facts.set_member_naming(naming, &mut self.graph.expression_facts)?;
         if let (Some(object), Some(naming)) = (object_class, naming)
             && object != naming
         {
             if self.lowering() {
                 self.request_storage_layout(object, location)?;
             }
-            facts.member_naming_path = Some(self.graph.retain_base_path(object, naming)?);
+            facts.set_member_naming_path(
+                Some(self.graph.retain_base_path(object, naming)?),
+                &mut self.graph.expression_facts,
+            )?;
         }
         Ok(facts)
     }
@@ -204,12 +209,15 @@ impl Analyzer<'_> {
         }
         let void = self.graph.types.scalar(Scalar::Void)?;
         let mut facts = self.new_expression_facts(void, ValueCategory::Prvalue)?;
-        facts.destructor = Some(target);
+        facts.set_destructor(Some(target), &mut self.graph.expression_facts)?;
         if let DestructorTarget::Class(binding) = target {
-            facts.call = Some(CallTarget::Direct(
-                self.graph
-                    .function_origin(self.graph.binding(binding).entity)?,
-            ));
+            facts.set_call(
+                Some(CallTarget::Direct(
+                    self.graph
+                        .function_origin(self.graph.binding(binding).entity)?,
+                )),
+                &mut self.graph.expression_facts,
+            )?;
             self.graph.record_call_binding(id, binding);
             self.demand_function(binding, true)?;
         }
@@ -259,16 +267,17 @@ mod tests {
                 panic!("call");
             };
             let facts = graph.expression_facts.get(callee).unwrap();
-            let Some(DestructorTarget::Class(binding)) = facts.destructor else {
+            let Some(DestructorTarget::Class(binding)) = facts.destructor(&graph.expression_facts)
+            else {
                 panic!("class destructor");
             };
-            let object = facts.object.unwrap();
+            let object = facts.object(&graph.expression_facts).unwrap();
             let class = graph.class_of(object.ty).unwrap();
             assert!(graph.entity(class).complete);
             assert_eq!(graph.types.get(object.ty).cv, super::Cv::CONST);
             assert_eq!(graph.entity(class).declared_destructor, Some(binding));
             assert_eq!(graph.call_binding(call).unwrap(), binding);
-            assert_eq!(facts.member_naming, Some(class));
+            assert_eq!(facts.member_naming(&graph.expression_facts), Some(class));
             if let Some(previous) = selected {
                 assert_eq!(binding, previous);
             }

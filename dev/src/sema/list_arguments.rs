@@ -413,7 +413,7 @@ mod tests {
                 .expression_facts
                 .get(list)
                 .unwrap()
-                .constructor
+                .constructor(&analyzer.graph.expression_facts)
                 .is_none()
         );
         for &binding in &analyzer.graph.entity(class).declared_constructors {
@@ -544,8 +544,16 @@ mod tests {
         let after = analyzer.graph.expression_facts.get(lists[0]).unwrap();
         assert_eq!(after.ty, original.ty);
         assert_eq!(after.category, original.category);
-        assert!(after.constructor.is_none());
-        assert!(after.class_initialization.is_none());
+        assert!(
+            after
+                .constructor(&analyzer.graph.expression_facts)
+                .is_none()
+        );
+        assert!(
+            after
+                .class_initialization(&analyzer.graph.expression_facts)
+                .is_none()
+        );
         let after_element = analyzer.graph.expression_facts.get(element).unwrap();
         assert_eq!(after_element.ty, element_facts.ty);
         assert_eq!(
@@ -593,7 +601,9 @@ mod tests {
             .unwrap();
         let initialized = analyzer.graph.expression_facts.get(lists[0]).unwrap();
         assert_eq!(initialized.ty, element_ty);
-        let constructor = initialized.constructor.unwrap();
+        let constructor = initialized
+            .constructor(&analyzer.graph.expression_facts)
+            .unwrap();
         assert_eq!(
             analyzer.graph.constructors.get(constructor).binding,
             Some(analyzer.graph.entity(constructed).declared_constructors[0]),

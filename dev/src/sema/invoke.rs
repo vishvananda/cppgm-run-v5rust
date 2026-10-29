@@ -125,7 +125,7 @@ impl Analyzer<'_> {
         self.pretyped_object = saved_object;
         let access = result?;
         let mut facts = self.new_expression_facts(access.ty, access.category)?;
-        facts.functional_call = true;
+        facts.set_functional_call(true);
         self.graph.expression_facts.note_member_data_call_view(id);
         Ok(facts)
     }

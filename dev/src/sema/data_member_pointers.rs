@@ -30,7 +30,7 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         let facts = self.graph.expression_facts.get(callee)?;
         let object = facts
-            .object
+            .object(&self.graph.expression_facts)
             .ok_or(Error::Invariant("bound member object"))?;
         let TypeKind::Function {
             cv,
@@ -163,13 +163,15 @@ impl Analyzer<'_> {
         let mut conversion = conversion.ok_or(Error::Invariant("member cast sequence"))?;
         conversion.initialization = false;
         let mut facts = source;
-        facts.base_path =
-            self.conversion_base_path(source, conversion, scope, location, !c_style)?;
+        facts.set_base_path(
+            self.conversion_base_path(source, conversion, scope, location, !c_style)?,
+            &mut self.graph.expression_facts,
+        )?;
         self.record_conversion(&mut facts, conversion);
         self.graph.expression_facts.set(operand, facts);
         let mut result = self.new_expression_facts(goal, V::Prvalue)?;
-        result.reference_cast = Some(goal);
-        result.base_cast = cast;
+        result.set_reference_cast(Some(goal), &mut self.graph.expression_facts)?;
+        result.set_base_cast(cast, &mut self.graph.expression_facts)?;
         Ok(Some(result))
     }
     pub(super) fn qualified_data_address(
@@ -203,12 +205,12 @@ impl Analyzer<'_> {
             self.demand_storage_layout(holder, location)?;
         }
         let mut inner = self.new_expression_facts(ty, V::Lvalue)?;
-        inner.member = Some(binding);
+        inner.set_member(Some(binding), &mut self.graph.expression_facts)?;
         self.graph.expression_facts.set(operand, inner);
         super::record(&mut self.graph.expression_types, operand.index(), ty);
         let pointer = self.graph.types.member_pointer(owner, ty)?;
         let mut facts = self.new_expression_facts(pointer, V::Prvalue)?;
-        facts.member = Some(binding);
+        facts.set_member(Some(binding), &mut self.graph.expression_facts)?;
         Ok(Some(facts))
     }
 
@@ -288,15 +290,18 @@ impl Analyzer<'_> {
             TypeKind::Function { .. }
         ) {
             let mut facts = self.new_expression_facts(element, V::Prvalue)?;
-            facts.object = Some(super::expression_facts::ObjectArgument {
-                source: super::expression_facts::ObjectSource::Explicit {
-                    expression: left,
-                    arrow: op == P::ArrowStar,
-                },
-                ty: object,
-                category,
-            });
-            facts.member_path = path;
+            facts.set_object(
+                Some(super::expression_facts::ObjectArgument {
+                    source: super::expression_facts::ObjectSource::Explicit {
+                        expression: left,
+                        arrow: op == P::ArrowStar,
+                    },
+                    ty: object,
+                    category,
+                }),
+                &mut self.graph.expression_facts,
+            )?;
+            facts.set_member_path(path, &mut self.graph.expression_facts)?;
             if self.lowering() {
                 self.demand_storage_layout(owner, location)?;
             }
@@ -312,7 +317,7 @@ impl Analyzer<'_> {
                 V::Xvalue
             },
         )?;
-        facts.member_path = path;
+        facts.set_member_path(path, &mut self.graph.expression_facts)?;
         Ok(facts)
     }
 }
@@ -415,10 +420,10 @@ impl super::graph::Graph {
 
     pub(crate) fn lower_bound_member_pointer(&self, id: ast::ExprId) -> Result<bool, Error> {
         let facts = self.expression_facts.get(id)?;
-        Ok(facts.object.is_some()
-            && facts.function.is_none()
-            && facts.functions.is_none()
-            && facts.destructor.is_none()
+        Ok(facts.object(&self.expression_facts).is_some()
+            && facts.function(&self.expression_facts).is_none()
+            && facts.functions(&self.expression_facts).is_none()
+            && facts.destructor(&self.expression_facts).is_none()
             && matches!(self.types.get(facts.ty).kind, TypeKind::Function { .. }))
     }
 
@@ -428,7 +433,9 @@ impl super::graph::Graph {
     ) -> Result<Option<super::graph::EntityId>, Error> {
         let facts = self.expression_facts.get(id)?;
         Ok(if self.lower_member_pointer_type(facts.ty).is_some() {
-            facts.function.map(|binding| self.binding(binding).entity)
+            facts
+                .function(&self.expression_facts)
+                .map(|binding| self.binding(binding).entity)
         } else {
             None
         })
@@ -445,7 +452,7 @@ impl super::graph::Graph {
             return Ok(None);
         }
         let path = facts
-            .base_path
+            .base_path(&self.expression_facts)
             .ok_or(Error::Invariant("member conversion without route"))?;
         self.lower_path_projection(path).map(Some)
     }
@@ -459,7 +466,7 @@ impl super::graph::Graph {
             return Ok(None);
         }
         facts
-            .base_cast
+            .base_cast(&self.expression_facts)
             .map(|cast| self.lower_path_projection(cast.path)?.negated())
             .transpose()
     }
@@ -470,12 +477,12 @@ impl super::graph::Graph {
         // a selected member, but its value must still be loaded from storage.
         if facts.category != V::Prvalue
             || self.lower_member_pointer_type(facts.ty).is_none()
-            || facts.function.is_some()
+            || facts.function(&self.expression_facts).is_some()
         {
             return Ok(None);
         }
         facts
-            .member
+            .member(&self.expression_facts)
             .map(|binding| {
                 let entity = self.binding(binding).entity;
                 Ok(self
@@ -491,7 +498,7 @@ impl super::graph::Graph {
     ) -> Result<Option<super::base_projections::BaseProjection>, Error> {
         self.expression_facts
             .get(id)?
-            .member_path
+            .member_path(&self.expression_facts)
             .map(|path| self.lower_path_projection(path))
             .transpose()
     }

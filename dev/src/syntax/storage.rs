@@ -196,12 +196,20 @@ pub(crate) struct Text {
 }
 #[derive(Default)]
 pub(crate) struct TextStore {
+    pub(super) literals: Store<super::ast::LiteralData>,
     bytes: Vec<u8>,
     strings: Vec<Box<[u8]>>,
     used: usize,
     string_bytes: usize,
 }
 impl TextStore {
+    pub(crate) fn literal(
+        &mut self,
+        data: super::ast::LiteralData,
+    ) -> Result<super::ast::Literal, ParseError> {
+        self.literals.add(data)
+    }
+
     /// Source string sequences outlive the tokenizer scratch. The observable
     /// spelling arena retains the frozen 16-KiB/8-MiB block growth policy.
     /// A boxed-slice handle is the 16-byte block record; scalar/data copies
@@ -259,11 +267,14 @@ impl TextStore {
     }
     #[cfg(feature = "telemetry")]
     pub(crate) fn reserved_bytes(&self) -> usize {
-        self.bytes.capacity().saturating_add(
-            self.strings
-                .capacity()
-                .saturating_mul(std::mem::size_of::<Box<[u8]>>()),
-        )
+        self.literals
+            .reserved_bytes()
+            .saturating_add(self.bytes.capacity())
+            .saturating_add(
+                self.strings
+                    .capacity()
+                    .saturating_mul(std::mem::size_of::<Box<[u8]>>()),
+            )
     }
 
     pub(crate) fn add(&mut self, bytes: &[u8]) -> Result<Text, ParseError> {

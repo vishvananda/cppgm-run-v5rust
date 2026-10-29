@@ -166,7 +166,7 @@ impl Function<'_, '_, '_, '_> {
             }),
             source,
         )?;
-        let raw = self.finish_lifetime_call(raw, throws)?;
+        let raw = self.finish_allocation_call(raw, throws)?;
         if nothrow {
             let destination = if let Some(slot) = slot {
                 slot

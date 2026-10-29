@@ -121,7 +121,7 @@ impl Analyzer<'_> {
         let bits = u64::from(!self.expression_may_throw(operand)?);
         let ty = self.graph.types.scalar(Scalar::Bool)?;
         let mut facts = self.new_expression_facts(ty, ValueCategory::Prvalue)?;
-        facts.folded = Some(bits);
+        facts.set_folded(Some(bits));
         self.graph.expression_facts.set(id, facts);
         super::record(
             &mut self.graph.constant_facts,
@@ -209,9 +209,9 @@ impl Analyzer<'_> {
         if facts.category != ValueCategory::Prvalue {
             return Ok(false);
         }
-        if let Some(constructor) = facts.constructor {
+        if let Some(constructor) = facts.constructor(&self.graph.expression_facts) {
             let Some(super::expression_facts::ClassInitialization::Constructed(arguments)) =
-                facts.class_initialization
+                facts.class_initialization(&self.graph.expression_facts)
             else {
                 return Err(Error::Invariant(
                     "constructor throw query without arguments",
@@ -221,7 +221,7 @@ impl Analyzer<'_> {
                 return Ok(true);
             }
         } else if let Some(super::expression_facts::ClassInitialization::FromExpression(source)) =
-            facts.class_initialization
+            facts.class_initialization(&self.graph.expression_facts)
         {
             // This is written class construction whose selected copy
             // lives on its source use, rather than a separate plan on
@@ -254,7 +254,7 @@ impl Analyzer<'_> {
     ) -> Result<bool, Error> {
         let next = depth + 1;
         if matches!(
-            facts.destructor,
+            facts.destructor(&self.graph.expression_facts),
             Some(super::expression_facts::DestructorTarget::Scalar)
         ) || self.graph.expression_facts.is_intrinsic(id, facts)
         {
@@ -262,7 +262,7 @@ impl Analyzer<'_> {
             return Ok(false);
         }
         match facts
-            .call
+            .call(&self.graph.expression_facts)
             .ok_or(Error::Invariant("throw query call without target"))?
         {
             CallTarget::Direct(binding) => {
@@ -371,7 +371,7 @@ impl Analyzer<'_> {
                 }
             }
             let kind = self.tree.expressions.get(id).kind;
-            if facts.folded.is_some() && !matches!(kind, ExprKind::Member { .. }) {
+            if facts.folded().is_some() && !matches!(kind, ExprKind::Member { .. }) {
                 continue;
             }
             // A selected value transfer belongs to the original operand,
@@ -390,7 +390,7 @@ impl Analyzer<'_> {
                     if let Some(super::copy_initialization::CopySelection {
                         origin: super::copy_initialization::CopyOrigin::Declared(binding),
                         ..
-                    }) = facts.class_copy
+                    }) = facts.class_copy(&self.graph.expression_facts)
                         && self.function_may_throw(self.graph.binding(binding).entity)?
                     {
                         return Ok(true);
@@ -399,10 +399,10 @@ impl Analyzer<'_> {
                 None => (),
             }
             let invoked = !matches!(kind, ExprKind::Call { .. })
-                && (facts.call_form == super::expression_facts::CallForm::Operator
-                    || facts.literal_call.is_some());
+                && (facts.call_form() == super::expression_facts::CallForm::Operator
+                    || facts.literal_call(&self.graph.expression_facts).is_some());
             if invoked
-                && let Some(CallTarget::Direct(binding)) = facts.call
+                && let Some(CallTarget::Direct(binding)) = facts.call(&self.graph.expression_facts)
                 && self.function_may_throw(self.graph.binding(binding).entity)?
             {
                 return Ok(true);
@@ -413,14 +413,14 @@ impl Analyzer<'_> {
             let constructed = matches!(
                 kind,
                 ExprKind::FunctionalCast { .. } | ExprKind::Braced { .. } | ExprKind::Cast { .. }
-            ) || matches!(kind, ExprKind::Call { .. }) && facts.functional_call;
+            ) || matches!(kind, ExprKind::Call { .. }) && facts.functional_call();
             if (invoked || constructed) && self.class_temporary_may_throw(facts, depth)? {
                 return Ok(true);
             }
             let next = depth + 1;
             match kind {
                 ExprKind::Throw(_) | ExprKind::Statement(_) => return Ok(true),
-                ExprKind::Call { arguments, .. } if facts.functional_call => {
+                ExprKind::Call { arguments, .. } if facts.functional_call() => {
                     self.throw_work.extend(
                         self.tree
                             .expr_lists
@@ -430,7 +430,7 @@ impl Analyzer<'_> {
                             .map(|&id| (id, next)),
                     );
                 }
-                ExprKind::Call { callee, arguments } if !facts.functional_call => {
+                ExprKind::Call { callee, arguments } if !facts.functional_call() => {
                     if self.call_throw_query(id, facts, callee, arguments, depth)? {
                         return Ok(true);
                     }
@@ -605,7 +605,7 @@ mod tests {
             let graph = analyzer.analyze(declarations).unwrap();
             let query = return_expression(tree, declarations);
             assert_eq!(
-                graph.expression_facts.get(query).unwrap().folded,
+                graph.expression_facts.get(query).unwrap().folded(),
                 Some(bits)
             );
             let ExprKind::TypeTrait {
@@ -616,8 +616,16 @@ mod tests {
                 panic!("missing query operand");
             };
             let facts = graph.expression_facts.get(call).unwrap();
-            assert!(facts.constructor.is_none() && facts.class_initialization.is_none());
-            assert!(matches!(facts.call, Some(CallTarget::Direct(_))));
+            assert!(
+                facts.constructor(&graph.expression_facts).is_none()
+                    && facts
+                        .class_initialization(&graph.expression_facts)
+                        .is_none()
+            );
+            assert!(matches!(
+                facts.call(&graph.expression_facts),
+                Some(CallTarget::Direct(_))
+            ));
             let TypeKind::Class(class) = graph.types.get(facts.ty).kind else {
                 panic!("missing class result");
             };
@@ -656,9 +664,16 @@ mod tests {
                 ..
             } = node.kind
             {
-                values.push(graph.expression_facts.get(id).unwrap().folded.unwrap());
+                values.push(graph.expression_facts.get(id).unwrap().folded().unwrap());
                 if let ExprKind::Call { .. } = tree.expressions.get(operand).kind {
-                    calls.push(graph.expression_facts.get(operand).unwrap().call.unwrap());
+                    calls.push(
+                        graph
+                            .expression_facts
+                            .get(operand)
+                            .unwrap()
+                            .call(&graph.expression_facts)
+                            .unwrap(),
+                    );
                 }
             }
         }
@@ -691,7 +706,7 @@ mod tests {
             assert!(super::super::function_demands::trailing(&graph).is_empty());
             let query = return_expression(tree, declarations);
             assert_eq!(
-                graph.expression_facts.get(query).unwrap().folded,
+                graph.expression_facts.get(query).unwrap().folded(),
                 Some(bits)
             );
         }
@@ -711,7 +726,7 @@ mod tests {
         assert_eq!(tree.expressions.mark(), count);
         assert!(super::super::function_demands::trailing(&graph).is_empty());
         let query = return_expression(tree, declarations);
-        assert_eq!(graph.expression_facts.get(query).unwrap().folded, Some(0));
+        assert_eq!(graph.expression_facts.get(query).unwrap().folded(), Some(0));
         let ExprKind::TypeTrait {
             operand: Some(cast),
             ..
@@ -725,7 +740,7 @@ mod tests {
         let source = tree.expr_lists.get(arguments)[0];
         let facts = graph.expression_facts.get(source).unwrap();
         assert_eq!(facts.category, ValueCategory::Lvalue);
-        assert!(facts.class_copy.is_some());
+        assert!(facts.class_copy(&graph.expression_facts).is_some());
         assert!(matches!(
             graph.expression_facts.copy_action(source),
             Some(super::super::copy_initialization::CopyAction::Constructor { .. })

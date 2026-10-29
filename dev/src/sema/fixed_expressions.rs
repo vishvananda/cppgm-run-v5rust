@@ -148,7 +148,7 @@ impl Analyzer<'_> {
         let next = depth + 1;
         match self.tree.expressions.get(id).kind {
             ExprKind::Literal(literal) => {
-                let (ty, null_constant) = match literal.kind {
+                let (ty, null_constant) = match literal.kind(self.literal_bytes) {
                     PostTokenKind::Literal { ty, data, form } => (
                         ty,
                         form == LiteralForm::Integer && data.as_slice().iter().all(|&b| b == 0),
@@ -649,7 +649,7 @@ impl Analyzer<'_> {
                     continue;
                 }
                 let mut operand = ExprFacts::new(argument.ty, argument.category);
-                operand.null_literal = argument.null_constant;
+                operand.set_null_literal(argument.null_constant);
                 if self.scalar_sequence(operand, parameter, false)?.is_none() {
                     accepted = false;
                     break;

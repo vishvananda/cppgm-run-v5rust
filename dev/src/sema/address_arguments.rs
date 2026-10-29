@@ -262,7 +262,12 @@ impl Analyzer<'_> {
         }
         // Only built-in & designates its operand. An overloaded operator is a
         // call whose result must satisfy the constant null-pointer rule.
-        let address = self.graph.expression_facts.get(named)?.call.is_none()
+        let address = self
+            .graph
+            .expression_facts
+            .get(named)?
+            .call(&self.graph.expression_facts)
+            .is_none()
             && matches!(self.tree.expressions.get(named).kind, ast::ExprKind::Unary { op, .. }
                 if op.token.as_punctuator() == Some(crate::lex::pp_lexer::Punctuator::BitAnd));
         if address
@@ -278,7 +283,7 @@ impl Analyzer<'_> {
                 .graph
                 .expression_facts
                 .get(named)?
-                .function
+                .function(&self.graph.expression_facts)
                 .or_else(|| self.graph.resolved_name(name))
         {
             let binding = self.graph.binding(binding);

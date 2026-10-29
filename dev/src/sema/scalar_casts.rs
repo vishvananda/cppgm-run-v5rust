@@ -163,7 +163,7 @@ impl Analyzer<'_> {
                 V::Xvalue
             };
             let mut facts = self.new_expression_facts(element, category)?;
-            facts.reference_cast = Some(target);
+            facts.set_reference_cast(Some(target), &mut self.graph.expression_facts)?;
             return Ok(facts);
         }
         if matches!(self.graph.types.get(target).kind, TypeKind::Class(_)) {
@@ -204,22 +204,28 @@ impl Analyzer<'_> {
         if static_kind && let Some(mut conversion) = self.standard_conversion(source, goal, true)? {
             conversion.initialization = false;
             let mut facts = source;
-            facts.base_path = self.conversion_base_path(
-                source,
-                conversion,
-                scope,
-                self.tree.expressions.get(id).location,
-                !c_style,
+            facts.set_base_path(
+                self.conversion_base_path(
+                    source,
+                    conversion,
+                    scope,
+                    self.tree.expressions.get(id).location,
+                    !c_style,
+                )?,
+                &mut self.graph.expression_facts,
             )?;
             self.record_conversion(&mut facts, conversion);
             self.graph.expression_facts.set(operand, facts);
             let mut result = self.new_expression_facts(goal, V::Prvalue)?;
-            if let Some(path) = facts.base_path {
-                result.base_cast = Some(super::expression_facts::BaseCast {
-                    path,
-                    downcast: false,
-                    project_zero: true,
-                });
+            if let Some(path) = facts.base_path(&self.graph.expression_facts) {
+                result.set_base_cast(
+                    Some(super::expression_facts::BaseCast {
+                        path,
+                        downcast: false,
+                        project_zero: true,
+                    }),
+                    &mut self.graph.expression_facts,
+                )?;
             }
             return Ok(result);
         }
@@ -319,7 +325,7 @@ impl Analyzer<'_> {
         target: TypeId,
         cast: Option<K>,
     ) -> Result<(), Error> {
-        if source.functions.is_none() {
+        if source.functions(&self.graph.expression_facts).is_none() {
             return Ok(());
         }
         let binding = if let Some(binding) = self.ordinary_function_operand(source) {
@@ -373,13 +379,16 @@ impl Analyzer<'_> {
                 V::Lvalue
             },
         )?;
-        facts.reference_cast = Some(target);
-        facts.base_path = Some(path);
-        facts.base_cast = Some(super::expression_facts::BaseCast {
-            path,
-            downcast,
-            project_zero: !downcast,
-        });
+        facts.set_reference_cast(Some(target), &mut self.graph.expression_facts)?;
+        facts.set_base_path(Some(path), &mut self.graph.expression_facts)?;
+        facts.set_base_cast(
+            Some(super::expression_facts::BaseCast {
+                path,
+                downcast,
+                project_zero: !downcast,
+            }),
+            &mut self.graph.expression_facts,
+        )?;
         Ok(Some(facts))
     }
 
@@ -425,7 +434,7 @@ impl Analyzer<'_> {
             downcast,
         )?;
         let mut facts = source;
-        facts.base_path = Some(path);
+        facts.set_base_path(Some(path), &mut self.graph.expression_facts)?;
         self.record_conversion(
             &mut facts,
             Conversion {
@@ -443,12 +452,15 @@ impl Analyzer<'_> {
         );
         self.graph.expression_facts.set(operand, facts);
         let mut facts = self.new_expression_facts(goal, V::Prvalue)?;
-        facts.base_path = Some(path);
-        facts.base_cast = Some(super::expression_facts::BaseCast {
-            path,
-            downcast,
-            project_zero: false,
-        });
+        facts.set_base_path(Some(path), &mut self.graph.expression_facts)?;
+        facts.set_base_cast(
+            Some(super::expression_facts::BaseCast {
+                path,
+                downcast,
+                project_zero: false,
+            }),
+            &mut self.graph.expression_facts,
+        )?;
         Ok(Some(facts))
     }
 
@@ -528,7 +540,7 @@ impl Analyzer<'_> {
             return Err(Error::Missing("nonscalar value initialization"));
         }
         let mut facts = self.new_expression_facts(ty, V::Prvalue)?;
-        facts.folded = Some(0);
+        facts.set_folded(Some(0));
         Ok(facts)
     }
 }

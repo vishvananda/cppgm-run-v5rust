@@ -16,7 +16,7 @@ use crate::{
 };
 use std::cmp::Ordering::{Equal, Greater, Less};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum FloatingIntrinsic {
     Constant,
     SignalingConstant,
@@ -298,7 +298,7 @@ impl Analyzer<'_> {
             }
         }
         let mut facts = self.new_expression_facts(integer, ValueCategory::Prvalue)?;
-        facts.intrinsic = Some(kind);
+        facts.set_intrinsic(Some(kind), &mut self.graph.expression_facts)?;
         Ok(facts)
     }
 }
@@ -441,11 +441,14 @@ impl Analyzer<'_> {
             })?;
         self.graph.expression_facts.set_floating_value(id, value);
         let mut facts = self.new_expression_facts(ty, ValueCategory::Prvalue)?;
-        facts.intrinsic = Some(if matches!(kind, ConstantKind::SignalingNan) {
-            FloatingIntrinsic::SignalingConstant
-        } else {
-            FloatingIntrinsic::Constant
-        });
+        facts.set_intrinsic(
+            Some(if matches!(kind, ConstantKind::SignalingNan) {
+                FloatingIntrinsic::SignalingConstant
+            } else {
+                FloatingIntrinsic::Constant
+            }),
+            &mut self.graph.expression_facts,
+        )?;
         Ok(facts)
     }
 
@@ -457,17 +460,21 @@ impl Analyzer<'_> {
             return None;
         };
         if !matches!(
-            literal.kind,
+            literal.kind(self.literal_bytes),
             PostTokenKind::String {
                 ty: F::Char,
                 suffix: None,
                 ..
             }
-        ) || literal.suffix_name.is_some()
+        ) || literal.suffix_name(self.literal_bytes).is_some()
         {
             return None;
         }
-        let (0, text) = self.literal_bytes.get(literal.data).split_last()? else {
+        let (0, text) = self
+            .literal_bytes
+            .get(literal.data(self.literal_bytes))
+            .split_last()?
+        else {
             return None;
         };
         parse_payload(text)
@@ -483,7 +490,7 @@ impl Analyzer<'_> {
         let binding = self.library_nan(fundamental)?;
         let facts = self.function_designation(binding, &[binding])?;
         let set = facts
-            .functions
+            .functions(&self.graph.expression_facts)
             .ok_or(Error::Invariant("library nan candidates"))?;
         let ast::ExprKind::Call { callee, .. } = self.tree.expressions.get(id).kind else {
             return Err(Error::Invariant("library nan without call syntax"));

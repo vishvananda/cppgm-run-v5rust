@@ -343,7 +343,7 @@ impl Analyzer<'_> {
         self.constant_step(node.location)?;
         let facts = self.graph.expression_facts.get(id)?;
         if matches!(
-            facts.intrinsic,
+            facts.intrinsic(&self.graph.expression_facts),
             Some(
                 super::floating_intrinsics::FloatingIntrinsic::Constant
                     | super::floating_intrinsics::FloatingIntrinsic::SignalingConstant
@@ -352,8 +352,8 @@ impl Analyzer<'_> {
             let value = self.graph.expression_facts.floating_value(id)?;
             return Ok(self.graph.floating_constants.get(value));
         }
-        if facts.literal_call.is_some()
-            || facts.call_form == super::expression_facts::CallForm::Operator
+        if facts.literal_call(&self.graph.expression_facts).is_some()
+            || facts.call_form() == super::expression_facts::CallForm::Operator
         {
             let returned = self.constant_call_result(id, scope)?;
             let value = self.returned_scalar(returned, node.location)?;
@@ -382,7 +382,8 @@ impl Analyzer<'_> {
                 self.constant_component(id, operand, imaginary, scope)?
             }
             ExprKind::Literal(literal) => {
-                let PostTokenKind::Literal { ty, data, .. } = literal.kind else {
+                let PostTokenKind::Literal { ty, data, .. } = literal.kind(self.literal_bytes)
+                else {
                     return Err(nonconstant(
                         node.location,
                         "not an integral constant expression",
@@ -524,7 +525,7 @@ impl Analyzer<'_> {
                     }
                 }
             }
-            ExprKind::Call { arguments, .. } if facts.functional_call => {
+            ExprKind::Call { arguments, .. } if facts.functional_call() => {
                 if let Some(&argument) = self.tree.expr_lists.get(arguments).first() {
                     self.constant_operand_value(argument, facts.ty, scope)?
                 } else {

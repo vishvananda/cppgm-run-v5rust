@@ -140,7 +140,7 @@ impl Analyzer<'_> {
         let name = self.range_name(b"__idx", location)?;
         let id = self.range_expression(ExprKind::Id(name), location)?;
         let mut facts = self.new_expression_facts(ty, V::Prvalue)?;
-        facts.folded = Some(value);
+        facts.set_folded(Some(value));
         facts.origin = ExpressionOrigin::Implicit;
         self.graph.expression_facts.set(id, facts);
         super::record(&mut self.graph.expression_types, id.index(), ty);
@@ -555,6 +555,30 @@ impl Analyzer<'_> {
         self.template_depth = depth;
         result
     }
+    fn range_named_source(
+        &self,
+        source: ast::ExprId,
+        typed: super::expression_facts::ExprFacts,
+    ) -> Option<ast::ExprId> {
+        let root = self.graph.expression_facts.root(source);
+        let anonymous = typed
+            .anonymous_member(&self.graph.expression_facts)
+            .is_some();
+        if let ExprKind::Id(name) = self.tree.expressions.get(root).kind {
+            self.graph
+                .resolved_name(name)
+                .filter(|&binding| {
+                    let bound = self.graph.binding(binding);
+                    matches!(bound.kind, BindingKind::Variable | BindingKind::Parameter)
+                        && !anonymous
+                        && self.graph.entity(bound.entity).data_member
+                            != Some(super::graph::DataMemberKind::Instance)
+                })
+                .map(|_| source)
+        } else {
+            None
+        }
+    }
     pub(super) fn range_for_equivalent(
         &mut self,
         id: ast::StmtId,
@@ -582,21 +606,7 @@ impl Analyzer<'_> {
             self.typed_expression(source, block)?
         };
         self.mark_range_expression(source)?;
-        let root = self.graph.expression_facts.root(source);
-        let named = if let ExprKind::Id(name) = self.tree.expressions.get(root).kind {
-            self.graph
-                .resolved_name(name)
-                .filter(|&binding| {
-                    let bound = self.graph.binding(binding);
-                    matches!(bound.kind, BindingKind::Variable | BindingKind::Parameter)
-                        && typed.anonymous_member.is_none()
-                        && self.graph.entity(bound.entity).data_member
-                            != Some(super::graph::DataMemberKind::Instance)
-                })
-                .map(|_| source)
-        } else {
-            None
-        };
+        let named = self.range_named_source(source, typed);
         let auto = self.graph.auto_type()?;
         let range = if braced_range.is_some() {
             braced_range

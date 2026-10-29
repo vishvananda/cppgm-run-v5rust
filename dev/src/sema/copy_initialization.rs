@@ -14,12 +14,12 @@ use super::{
 use crate::{support::source::SourceOffset, syntax::ast};
 use std::cmp::Ordering;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum CopyOrigin {
     Declared(BindingId),
     Implicit { class: EntityId, kind: RefKind },
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) struct CopySelection {
     pub origin: CopyOrigin,
     pub binding: Conversion,
@@ -400,7 +400,10 @@ impl Analyzer<'_> {
         expression: ast::ExprId,
     ) -> Result<bool, Error> {
         let facts = self.graph.expression_facts.get(expression)?;
-        if facts.functions.is_some() || facts.object.is_some() && facts.function.is_some() {
+        if facts.functions(&self.graph.expression_facts).is_some()
+            || facts.object(&self.graph.expression_facts).is_some()
+                && facts.function(&self.graph.expression_facts).is_some()
+        {
             return Ok(false);
         }
         Ok(self
@@ -448,7 +451,7 @@ impl Analyzer<'_> {
             usage,
             CopyUse::Value { in_place: true } | CopyUse::Return { .. }
         );
-        if facts.functions.is_some()
+        if facts.functions(&self.graph.expression_facts).is_some()
             || !matches!(self.graph.types.get(facts.ty).kind, TypeKind::Class(from)
                 if from == class || self.graph.is_base_of(class, from))
         {
@@ -531,8 +534,10 @@ impl Analyzer<'_> {
             }
         }
         let mut facts = self.graph.expression_facts.get(id)?;
-        facts.base_path =
-            self.conversion_base_path(facts, selected.binding, scope, location, true)?;
+        facts.set_base_path(
+            self.conversion_base_path(facts, selected.binding, scope, location, true)?,
+            &mut self.graph.expression_facts,
+        )?;
         // A base value's selected constructor binds the original derived
         // expression. Its prvalue is a distinct complete temporary, whose
         // destruction and layout must be available before lowering that bind.
@@ -574,7 +579,7 @@ impl Analyzer<'_> {
             self.note_throwing_copy(class, selected)?;
         }
         self.graph.expression_facts.set_copy_action(id, action);
-        facts.class_copy = Some(selected);
+        facts.set_class_copy(Some(selected), &mut self.graph.expression_facts)?;
         self.graph.expression_facts.set(id, facts);
         Ok(())
     }
@@ -976,7 +981,7 @@ impl Analyzer<'_> {
                 })),
                 facts.ty,
                 facts.category,
-                facts.functions.is_some(),
+                facts.functions(&self.graph.expression_facts).is_some(),
             )
         }) {
             offered |= self.declared_copy_candidates(class, facts, context, true, candidates)?;
@@ -1412,7 +1417,7 @@ mod tests {
                         .unwrap();
                     assert_eq!(failure.message, expected);
                     let facts = analyzer.graph.expression_facts.get(expression)?;
-                    assert!(facts.class_copy.is_none());
+                    assert!(facts.class_copy(&analyzer.graph.expression_facts).is_none());
                     assert!(
                         analyzer
                             .graph
@@ -1649,11 +1654,11 @@ mod tests {
                 facts.conversion.unwrap().result,
                 graph.entity(base).ty.unwrap()
             );
-            let binding = facts.class_copy.unwrap().binding;
+            let binding = facts.class_copy(&graph.expression_facts).unwrap().binding;
             assert!(
                 matches!(graph.types.get(binding.target).kind, TypeKind::Reference { element, kind } if graph.class_of(element) == Some(base) && kind == reference)
             );
-            assert!(facts.base_path.is_some());
+            assert!(facts.base_path(&graph.expression_facts).is_some());
             let Some(CopyAction::Constructor {
                 constructor,
                 elision: false,
@@ -1736,7 +1741,14 @@ mod tests {
         else {
             panic!("named storage copy action");
         };
-        assert_eq!(facts.class_copy.unwrap().binding.target, reference);
+        assert_eq!(
+            facts
+                .class_copy(&graph.expression_facts)
+                .unwrap()
+                .binding
+                .target,
+            reference
+        );
         assert!(matches!(graph.lower_class_copy(root).unwrap(),
             Some(CopyAction::Storage { reference: inner, skip_empty: true }) if inner == reference));
     }
@@ -1824,7 +1836,7 @@ mod tests {
             let conversion = facts.conversion.unwrap();
             assert_eq!(conversion.target, facts.ty);
             assert!(!conversion.temporary);
-            let selected = facts.class_copy.unwrap();
+            let selected = facts.class_copy(&graph.expression_facts).unwrap();
             assert!(
                 matches!(graph.types.get(selected.binding.target).kind, TypeKind::Reference { kind, .. } if kind == expected)
             );
