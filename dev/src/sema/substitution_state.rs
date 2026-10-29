@@ -471,9 +471,9 @@ mod tests {
             message: "retained",
             transient: false,
         });
-        let graph = analyzer.analyze(declarations).unwrap();
+        let mut graph = analyzer.analyze(declarations).unwrap();
         let facade =
-            Analyzer::with_graph(tree, cursor, StackBudget::default(), Some(graph)).unwrap();
+            Analyzer::with_graph(tree, cursor, StackBudget::default(), Some(&mut graph)).unwrap();
         assert!(Rc::ptr_eq(&store.0, &facade.graph.analysis.substitution.0));
         assert_eq!(
             facade

@@ -683,9 +683,9 @@ mod tests {
         assert_eq!(analyzer.tree.expressions.mark(), expressions);
         let literal = analyzer.source_text_literal(b"retained text").unwrap();
         let expressions = analyzer.tree.expressions.mark();
-        let graph = analyzer.finish_analysis(false).unwrap();
+        let mut graph = analyzer.finish_analysis(false).unwrap();
         let mut resumed =
-            Analyzer::with_graph(tree, cursor, StackBudget::default(), Some(graph)).unwrap();
+            Analyzer::with_graph(tree, cursor, StackBudget::default(), Some(&mut graph)).unwrap();
         resumed.set_lowering();
         assert_eq!(resumed.library_nan(F::Double).unwrap(), binding);
         assert_eq!(

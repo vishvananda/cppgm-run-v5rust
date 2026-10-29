@@ -1912,7 +1912,7 @@ mod tests {
                     .is_err()
             );
         }
-        let graph = analyzer.graph;
+        let mut graph = analyzer.graph;
         let before = graph.statistics().types;
         let mut view = Vec::new();
         graph
@@ -1924,7 +1924,7 @@ mod tests {
                 .any(|part| part == b"parameter this pointer to struct X")
         );
         let mut analyzer =
-            Analyzer::with_graph(tree, cursor, StackBudget::default(), Some(graph)).unwrap();
+            Analyzer::with_graph(tree, cursor, StackBudget::default(), Some(&mut graph)).unwrap();
         analyzer.set_lowering();
         analyzer.stack_base = std::ptr::from_ref(&marker).addr();
         analyzer.finish_lowering_boundaries().unwrap();

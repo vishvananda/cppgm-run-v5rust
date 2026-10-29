@@ -412,7 +412,7 @@ mod tests {
         // declaration. The reference keeps its successful identity lookup.
         graph.lookup_limit = Some(0);
         let mut resumed =
-            Analyzer::with_graph(tree, cursor, StackBudget::default(), Some(graph)).unwrap();
+            Analyzer::with_graph(tree, cursor, StackBudget::default(), Some(&mut graph)).unwrap();
         assert_eq!(resumed.type_info_class(SourceOffset(0)).unwrap(), identity);
         assert_eq!(resumed.graph.lookup_limit, Some(0));
     }

@@ -175,8 +175,7 @@ impl super::graph::Graph {
                 ));
             }
         }
-        let graph = std::mem::replace(self, Self::new());
-        let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(graph))?;
+        let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(self))?;
         analyzer.set_lowering();
         analyzer.stack_base = stack_base;
         let result = analyzer.function_may_throw(function).map(|throws| !throws);
@@ -1398,7 +1397,7 @@ mod tests {
         let f = cursor.intern_name(b"f").unwrap();
         let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
         analyzer.set_lowering();
-        let graph = analyzer.analyze(declarations).unwrap();
+        let mut graph = analyzer.analyze(declarations).unwrap();
         let binding = graph.own(graph.global, value, Filter::Ordinary).unwrap();
         let class = graph.class_of(graph.binding(binding).ty.unwrap()).unwrap();
         let scope = graph.entity(class).scope.unwrap();
@@ -1410,7 +1409,7 @@ mod tests {
             ExceptionState::Pending(_)
         ));
         let mut resumed =
-            Analyzer::with_graph(tree, cursor, StackBudget::default(), Some(graph)).unwrap();
+            Analyzer::with_graph(tree, cursor, StackBudget::default(), Some(&mut graph)).unwrap();
         resumed.set_lowering();
         let marker = 0u8;
         resumed.stack_base = std::ptr::from_ref(&marker).addr();

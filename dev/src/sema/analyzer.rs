@@ -168,10 +168,13 @@ impl<'tree> Analyzer<'tree> {
         tree: &'tree mut Tree,
         cursor: &'tree mut Cursor<'_>,
         stack_budget: StackBudget,
-        previous: Option<Graph>,
+        previous: Option<&mut Graph>,
     ) -> Result<Self, Error> {
         let fresh = previous.is_none();
-        let mut graph = previous.unwrap_or_else(Graph::new);
+        // Prepare every fallible cursor/name input before taking a retained
+        // graph. A preparation failure leaves its semantic stores and live
+        // substitution state with the caller.
+        let mut graph = Graph::new();
         let int128_name = cursor
             .intern_name(b"__int128")
             .map_err(Error::identifier_interning)?;
@@ -265,6 +268,10 @@ impl<'tree> Analyzer<'tree> {
             .intern_name(b"override")
             .map_err(Error::identifier_interning)?;
         let (identifiers, positions) = cursor.post.input_mut().semantic_context();
+        let graph = match previous {
+            Some(previous) => std::mem::replace(previous, graph),
+            None => graph,
+        };
         let mut analyzer = Self {
             deduced_pack_element: None,
             decltype_name,

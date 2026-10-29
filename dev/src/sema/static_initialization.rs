@@ -43,8 +43,7 @@ impl super::graph::Graph {
         let request = self.array_images.requested(entity).ok_or(Error::Invariant(
             "automatic array image without declaration request",
         ))?;
-        let graph = std::mem::replace(self, Self::new());
-        let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(graph))?;
+        let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(self))?;
         analyzer.set_lowering();
         let marker = 0u8;
         analyzer.stack_base = std::ptr::from_ref(&marker).addr();

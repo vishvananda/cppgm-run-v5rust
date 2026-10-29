@@ -287,7 +287,7 @@ pub(crate) fn analyze_unit_with_mode(
             entity
         } else {
             if lowering {
-                let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(graph))?;
+                let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(&mut graph))?;
                 analyzer.set_lowering();
                 analyzer.stack_base = base;
                 analyzer.finish_lowering_boundaries()?;
@@ -336,7 +336,7 @@ pub(crate) fn analyze_unit_with_mode(
                 Some(SpecialDefinition::Defaulted { .. })
             )
         {
-            let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(graph))?;
+            let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(&mut graph))?;
             analyzer.set_semantics(true);
             if lowering {
                 analyzer.set_lowering();
@@ -371,7 +371,7 @@ pub(crate) fn analyze_unit_with_mode(
                 .contains_key(&entity)
             && !graph.function_templates.bodies.states.contains_key(&entity)
         {
-            let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(graph))?;
+            let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(&mut graph))?;
             analyzer.set_semantics(true);
             if lowering {
                 analyzer.set_lowering();
@@ -390,7 +390,7 @@ pub(crate) fn analyze_unit_with_mode(
             if graph.function_templates.bodies.states.contains_key(&entity) {
                 continue;
             }
-            let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(graph))?;
+            let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(&mut graph))?;
             analyzer.set_semantics(true);
             if lowering {
                 analyzer.set_lowering();
@@ -445,7 +445,7 @@ pub(crate) fn analyze_unit_with_mode(
             .bodies
             .states
             .insert(entity, State::InProgress);
-        let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(graph))?;
+        let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(&mut graph))?;
         analyzer.set_semantics(true);
         if lowering {
             analyzer.set_lowering();
@@ -1752,7 +1752,7 @@ mod tests {
             SyntaxUnit::new(Preprocessor::with_name(&source, b"virtual-member-demand").unwrap());
         unit.parse().unwrap();
         let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
-        let graph = analyze_unit(
+        let mut graph = analyze_unit(
             tree,
             cursor,
             declarations,
@@ -1768,7 +1768,7 @@ mod tests {
         }
         let before = (tree.expressions.mark(), tree.bodies.mark());
         let mut analyzer =
-            Analyzer::with_graph(tree, cursor, StackBudget::default(), Some(graph)).unwrap();
+            Analyzer::with_graph(tree, cursor, StackBudget::default(), Some(&mut graph)).unwrap();
         analyzer.set_lowering();
         let marker = 0u8;
         analyzer.stack_base = std::ptr::from_ref(&marker).addr();
@@ -2005,7 +2005,7 @@ mod tests {
         );
         unit.parse().unwrap();
         let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
-        let graph = analyze_unit(
+        let mut graph = analyze_unit(
             tree,
             cursor,
             declarations,
@@ -2072,7 +2072,7 @@ mod tests {
         let body_count = tree.bodies.mark();
         let expression_count = tree.expressions.mark();
         let mut analyzer =
-            Analyzer::with_graph(tree, cursor, StackBudget::default(), Some(graph)).unwrap();
+            Analyzer::with_graph(tree, cursor, StackBudget::default(), Some(&mut graph)).unwrap();
         for _ in 0..3 {
             for &entity in &functions {
                 assert!(analyzer.constant_function_definition(entity).unwrap());

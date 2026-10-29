@@ -247,7 +247,7 @@ mod tests {
         let expression_count = tree.expressions.mark();
         let binding_count = graph.binding_limit();
         let mut analyzer =
-            Analyzer::with_graph(tree, cursor, StackBudget::default(), Some(graph)).unwrap();
+            Analyzer::with_graph(tree, cursor, StackBudget::default(), Some(&mut graph)).unwrap();
         analyzer.set_lowering();
         for entity in complete {
             analyzer.request_member_initializer(entity).unwrap();
