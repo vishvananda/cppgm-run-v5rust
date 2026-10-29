@@ -9,8 +9,8 @@ use super::{
     static_initialization::Value,
     types::{TypeId, TypeKind},
 };
+use crate::support::hash::HashMap;
 use crate::{lex::vocabulary::Keyword, support::source::SourceOffset, syntax::ast};
-use std::collections::HashMap;
 
 #[derive(Default)]
 pub(super) struct Images {

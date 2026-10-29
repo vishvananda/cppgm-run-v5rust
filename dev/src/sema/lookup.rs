@@ -7,12 +7,13 @@ use super::{
     graph::{BindingId, BindingKind, Graph, ScopeId, ScopeKind},
     types::{TypeId, TypeKind},
 };
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 use crate::{
     lex::identifiers::NameId,
     syntax::ast::{Name, NameKind},
 };
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, HashSet};
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) enum Filter {
     Ordinary,
@@ -421,7 +422,7 @@ impl<'a> DeclarationLookup<'a> {
         // A result names its representative declaring scope. Its overload set
         // is collected only once, after the graph walk, rather than copied at
         // every inherited level. Query memos store absence or this compact fact.
-        let mut memo = HashMap::<ScopeId, BaseLookup>::new();
+        let mut memo = HashMap::<ScopeId, BaseLookup>::default();
         let mut relations = LookupBases::default();
         let mut work = vec![(scope, 0usize, BaseLookup::default())];
         while let Some((current, next, result)) = work.last_mut() {
@@ -592,7 +593,7 @@ impl<'a> DeclarationLookup<'a> {
         filter: Filter,
     ) -> Result<LookupResult, Error> {
         self.graph.names.lookup();
-        let mut visited = HashSet::new();
+        let mut visited = HashSet::default();
         let mut pending = Vec::new();
         let mut current = Some(scope);
         let mut bridged = false;
@@ -708,7 +709,7 @@ impl Analyzer<'_> {
         if self.graph.scope(scope).kind != ScopeKind::Namespace {
             return self.class_lookup_in(scope, name, filter, false);
         }
-        let mut visited = HashSet::new();
+        let mut visited = HashSet::default();
         let mut level = vec![scope];
         let mut result = LookupResult::default();
         while !level.is_empty() && result.binding.is_none() {

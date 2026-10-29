@@ -2,7 +2,7 @@
 //! Runtime destruction registration shares one typed declaration per translation unit.
 use super::{Error, Metadata, Program, SymbolId, Symbols};
 use crate::sema::lowering::EntityId;
-use std::collections::HashMap;
+use crate::support::hash::HashMap;
 
 /// One unordered initializer owns its persistent temporaries in construction
 /// order, including trivial ones that need no guard. Nested unordered

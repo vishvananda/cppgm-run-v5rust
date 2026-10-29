@@ -7,7 +7,8 @@ use super::{
     graph::{Access, BindingId, DataMemberKind, EntityId, Graph, ScopeId, ScopeKind},
     member_expressions::AccessFailure,
 };
-use std::collections::{HashMap, HashSet};
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 
 enum GrantedAccess {
     Unrestricted,
@@ -51,7 +52,7 @@ impl<'a> MemberPaths<'a> {
             declaring,
             declared,
             blocked,
-            memo: HashMap::new(),
+            memo: HashMap::default(),
             work: Vec::new(),
         }
     }
@@ -169,7 +170,7 @@ impl Analyzer<'_> {
         binding: BindingId,
     ) -> Vec<(EntityId, BindingId)> {
         let mut declarations = Vec::new();
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         let mut work = vec![naming];
         while let Some(class) = work.pop() {
             if !seen.insert(class) {
@@ -203,7 +204,7 @@ impl Analyzer<'_> {
             return false;
         }
         // Each invented-member query owns its own complete target and memo.
-        let empty = HashSet::new();
+        let empty = HashSet::default();
         self.access_contexts_at(scope, context).any(|context| {
             MemberPaths::new(class, Access::Protected, &empty)
                 .access(&self.graph, context)
@@ -222,8 +223,8 @@ impl Analyzer<'_> {
         context: AccessContext,
     ) -> Option<GrantedAccess> {
         let mut work = vec![AccessTask::Visit(naming)];
-        let mut unreached = HashSet::new();
-        let mut leads = HashMap::new();
+        let mut unreached = HashSet::default();
+        let mut leads = HashMap::default();
         'query: while let Some(task) = work.pop() {
             let naming = match task {
                 AccessTask::Unreached(class) => {
@@ -347,7 +348,7 @@ impl Analyzer<'_> {
         scope: ScopeId,
     ) -> Option<GrantedAccess> {
         let declaring = self.graph.scope(self.graph.binding_scope(binding)).owner?;
-        let blocked = HashSet::new();
+        let blocked = HashSet::default();
         let mut paths = MemberPaths::new(declaring, self.graph.binding_access(binding), &blocked);
         self.imported_declaration_access(naming, scope, &mut paths, AccessContext::Scope)
     }
@@ -389,7 +390,7 @@ impl Analyzer<'_> {
         } else {
             Vec::new()
         };
-        let mut blocked = HashSet::new();
+        let mut blocked = HashSet::default();
         if declarations.len() > 1 {
             blocked.extend(declarations.iter().map(|&(class, _)| class));
         }

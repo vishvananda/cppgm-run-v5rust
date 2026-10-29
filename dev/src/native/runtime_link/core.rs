@@ -10,7 +10,8 @@ use super::super::{
 };
 use super::{Member, Members, Support, VTABLES, member_of, runtime_type, type_name};
 use crate::lowir::Error;
-use std::{collections::HashMap, sync::Arc};
+use crate::support::hash::HashMap;
+use std::sync::Arc;
 struct Core {
     image: Image,
     names: Vec<Arc<[u8]>>,
@@ -21,7 +22,7 @@ impl Core {
         Self {
             image: Image::new(0),
             names: Vec::new(),
-            known: HashMap::new(),
+            known: HashMap::default(),
         }
     }
     fn named(&mut self, name: &[u8]) -> Result<ImageSymbol, Error> {

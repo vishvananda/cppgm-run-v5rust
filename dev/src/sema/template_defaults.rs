@@ -8,8 +8,9 @@ use super::{
     graph::{BindingId, EntityId, ScopeId},
     templates::HeadId,
 };
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 use crate::syntax::ast;
-use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy)]
 pub(super) struct Pattern {
@@ -49,7 +50,7 @@ impl super::graph::Graph {
                 analyzer.finish_lowering_boundaries()?;
                 Ok(expression)
             });
-        *self = analyzer.graph;
+        *self = analyzer.into_graph();
         result
     }
 }
@@ -489,7 +490,7 @@ mod tests {
 
     fn formed_defaults(
         graph: &super::super::graph::Graph,
-    ) -> std::collections::HashSet<(EntityId, usize)> {
+    ) -> crate::support::hash::HashSet<(EntityId, usize)> {
         let defaults = &graph.function_templates.argument_defaults;
         defaults
             .patterns
@@ -612,7 +613,7 @@ mod tests {
         assert_eq!(defaults.patterns.len(), 3);
         assert_eq!(formed_defaults(&graph).len(), 3);
         let mut positions = Vec::new();
-        let mut copies = std::collections::HashSet::new();
+        let mut copies = crate::support::hash::HashSet::default();
         for (&entity, patterns) in &defaults.patterns {
             let count = patterns.len() - 1;
             positions.push(count);
@@ -656,7 +657,7 @@ mod tests {
         let formed = formed_defaults(&graph);
         assert_eq!(formed.len(), 2);
         let defaults = &graph.function_templates.argument_defaults;
-        let mut expressions = std::collections::HashSet::new();
+        let mut expressions = crate::support::hash::HashSet::default();
         for &(entity, index) in &formed {
             assert_eq!(index, 1);
             let function = graph.entity(entity);
@@ -710,8 +711,8 @@ mod tests {
         .unwrap();
         let formed = formed_defaults(&graph);
         assert_eq!(formed.len(), 2);
-        let mut copies = std::collections::HashSet::new();
-        let mut primaries = std::collections::HashSet::new();
+        let mut copies = crate::support::hash::HashSet::default();
+        let mut primaries = crate::support::hash::HashSet::default();
         for &(entity, index) in &formed {
             assert_eq!(index, 2);
             let function = graph.entity(entity);

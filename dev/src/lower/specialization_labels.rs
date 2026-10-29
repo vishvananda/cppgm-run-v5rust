@@ -3,7 +3,8 @@
 //! Bounded presentation labels; canonical identities remain semantic/ABI facts.
 use super::{Error, Symbols};
 use crate::sema::lowering::{EntityId, Scalar, TypeId, TypeView};
-use std::{collections::HashMap, fmt::Write};
+use crate::support::hash::HashMap;
+use std::fmt::Write;
 
 const LABEL_LIMIT: usize = 96;
 #[derive(Default)]

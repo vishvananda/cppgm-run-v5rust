@@ -585,7 +585,7 @@ impl Analyzer<'_> {
     }
     fn bound_names_value(&self, root: TypeId, depth: u32, index: usize) -> bool {
         let mut work = vec![(root, 0u8)];
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = crate::support::hash::HashSet::default();
         while let Some((ty, level)) = work.pop() {
             // The frozen owner conservatively accepts deeper type shapes.
             if level > 16 {

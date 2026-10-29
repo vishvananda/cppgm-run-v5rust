@@ -6,8 +6,8 @@ use super::{
     layout::LayoutState,
     types::{TypeId, TypeKind},
 };
+use crate::support::hash::HashSet;
 use crate::support::source::SourceOffset;
-use std::collections::HashSet;
 
 pub(super) fn class_elements(graph: &Graph, mut ty: TypeId) -> Option<(EntityId, u64)> {
     let mut count = 1u64;
@@ -84,7 +84,7 @@ impl EmptyPlacement {
             }
         }
         Ok(Self {
-            placed: HashSet::new(),
+            placed: HashSet::default(),
             work: Vec::new(),
             maximum: 0,
             record_limit,

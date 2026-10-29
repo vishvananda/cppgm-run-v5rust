@@ -8,12 +8,12 @@ use super::{
     special_members::SpecialDefinition,
     types::{Scalar, TypeId, TypeKind},
 };
+use crate::support::hash::HashMap;
 use crate::{
     lex::vocabulary::Keyword,
     support::source::SourceOffset,
     syntax::ast::{self, ExprKind},
 };
-use std::collections::HashMap;
 
 #[derive(Clone, Copy, Default)]
 pub(super) enum LiteralState {
@@ -67,9 +67,9 @@ impl Analyzer<'_> {
             .is_some_and(|member| member.kind == super::graph::MemberKind::Constructor)
         {
             let id = self.defaulted_constexpr_constructor_plan(function)?;
-            self.constant_implicit_constructor_eligible(id, &mut HashMap::new(), 0)?
+            self.constant_implicit_constructor_eligible(id, &mut HashMap::default(), 0)?
         } else if entity.member_function.is_none() {
-            self.constant_assignment_eligible(function, &mut HashMap::new(), 0)?
+            self.constant_assignment_eligible(function, &mut HashMap::default(), 0)?
         } else {
             false
         };
@@ -241,7 +241,7 @@ impl Analyzer<'_> {
             }
             if self.graph.inherited_constructors.source(function).is_some() {
                 let plan = self.declared_constructor_plan(binding)?;
-                if self.constant_constructor_eligible(plan, &mut HashMap::new())? {
+                if self.constant_constructor_eligible(plan, &mut HashMap::default())? {
                     return Ok(true);
                 }
             }
@@ -262,7 +262,7 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant(
                 "queried default without constructor record",
             ))?;
-        self.constant_constructor_eligible(id, &mut HashMap::new())
+        self.constant_constructor_eligible(id, &mut HashMap::default())
     }
     pub(super) fn constant_constructor_eligible(
         &mut self,
@@ -667,7 +667,9 @@ impl Analyzer<'_> {
             .constructor
             .ok_or(Error::Invariant("constexpr constructor without plan"))?;
         if let Some(delegation) = self.graph.constructors.get(id).delegation {
-            if !self.constant_constructor_eligible(delegation.constructor, &mut HashMap::new())? {
+            if !self
+                .constant_constructor_eligible(delegation.constructor, &mut HashMap::default())?
+            {
                 return Err(Error::at(
                     location,
                     "a constexpr constructor delegates to a constructor that is not constexpr",
@@ -692,7 +694,7 @@ impl Analyzer<'_> {
             if let Some(child) = base.constructor
                 && !self.graph.constructors.get(child).deleted
                 && !self.constant_trivial_value_initialization(child, base.initializer)
-                && !self.constant_constructor_eligible(child, &mut HashMap::new())?
+                && !self.constant_constructor_eligible(child, &mut HashMap::default())?
             {
                 return Err(Error::at(
                     location,
@@ -736,7 +738,7 @@ impl Analyzer<'_> {
                 && let Some(child) = child
                 && !self.graph.constructors.get(child).deleted
                 && !self.constant_trivial_value_initialization(child, written)
-                && !self.constant_constructor_eligible(child, &mut HashMap::new())?
+                && !self.constant_constructor_eligible(child, &mut HashMap::default())?
             {
                 return Err(Error::at(
                     location,

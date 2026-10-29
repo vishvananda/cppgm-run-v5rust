@@ -4,7 +4,7 @@ use crate::lowir::{
     Error,
     model::{Body, InstId, InstructionKind as I, RuntimeInstruction as R, Unwind, Value},
 };
-use std::collections::HashMap;
+use crate::support::hash::HashMap;
 
 fn can_unwind(context: &Context<'_>, kind: &I) -> bool {
     let I::Call(call) = kind else {
@@ -73,7 +73,7 @@ impl Regions {
                 region: None,
                 below: StackId(0),
             }],
-            interned: HashMap::new(),
+            interned: HashMap::default(),
             marked: vec![true],
             region_of: vec![None; body.instructions().len()],
             openers: Vec::new(),

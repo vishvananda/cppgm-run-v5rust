@@ -8,11 +8,12 @@ use super::{
     lookup::{Filter, LookupResult},
     types::{Cv, Scalar, TypeKind},
 };
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 use crate::{
     lex::{identifiers::NameId, vocabulary::Keyword},
     types::FundamentalType,
 };
-use std::collections::{HashMap, HashSet};
 
 #[derive(Default)]
 pub(super) struct Variables {
@@ -175,7 +176,7 @@ mod tests {
         .unwrap();
         let variables = &graph.predefined_variables.texts;
         assert_eq!(variables.len(), 4);
-        let mut owners = HashSet::new();
+        let mut owners = HashSet::default();
         for (&entity, &text) in variables {
             let record = graph.entity(entity);
             assert!(!record.variable.unwrap().automatic);

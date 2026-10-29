@@ -2,6 +2,7 @@
 // See NOTICE.
 //! Host psABI classification, independent of the course's four-byte model.
 use super::{Error, types};
+use crate::support::hash::HashMap;
 use crate::{
     lowir::vocabulary::{EightbyteClass, ObjectClasses, Type},
     sema::{
@@ -10,7 +11,6 @@ use crate::{
     },
     support::stack::StackBudget,
 };
-use std::collections::HashMap;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Class {

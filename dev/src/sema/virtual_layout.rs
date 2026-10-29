@@ -5,7 +5,8 @@ use super::{
     graph::{EntityId, Graph},
     layout::LayoutState,
 };
-use std::collections::{HashMap, HashSet};
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 
 pub(super) struct VirtualLayout {
     pub bases: Vec<(EntityId, u64)>,
@@ -27,8 +28,8 @@ impl Graph {
         if let Some(facts) = self.virtuals.classes.get(&root) {
             return facts.bases.clone();
         }
-        let mut expanded = HashSet::new();
-        let mut shared = HashSet::new();
+        let mut expanded = HashSet::default();
+        let mut shared = HashSet::default();
         let mut result = Vec::new();
         let mut work = vec![(root, false)];
         while let Some((class, virtual_edge)) = work.pop() {
@@ -83,8 +84,8 @@ impl Graph {
     }
     pub(super) fn virtual_layout_plan(&self, class: EntityId) -> Result<VirtualLayout, Error> {
         let mut bases = Vec::new();
-        let mut shared = HashSet::new();
-        let mut indirect = HashSet::new();
+        let mut shared = HashSet::default();
+        let mut indirect = HashSet::default();
         for edge in &self.entity(class).bases {
             if edge.is_virtual && shared.insert(edge.class) {
                 bases.push(edge.class);
@@ -179,8 +180,8 @@ impl Claims {
         }
         let mut nodes = Vec::<ClaimNode>::new();
         let mut frames = Vec::<ClaimFrame>::new();
-        let mut virtual_nodes = HashSet::new();
-        let mut claimants = HashMap::<EntityId, ClaimNodeId>::new();
+        let mut virtual_nodes = HashSet::default();
+        let mut claimants = HashMap::<EntityId, ClaimNodeId>::default();
         for direct in 0..graph.entity(root).bases.len() {
             Self::enter(
                 graph,

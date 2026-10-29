@@ -7,8 +7,8 @@ use super::{
     graph::{Access, EntityId},
     types::{Scalar, TypeId, TypeKind},
 };
+use crate::support::hash::HashSet;
 use crate::support::source::SourceOffset;
-use std::collections::HashSet;
 
 #[derive(Clone, Copy)]
 enum Owner {
@@ -293,7 +293,7 @@ impl Analyzer<'_> {
         final_check: bool,
     ) -> Result<Option<ExceptionSet>, Error> {
         let mut work = vec![root];
-        let mut seen_classes = HashSet::new();
+        let mut seen_classes = HashSet::default();
         let mut types = Vec::new();
         let mut finite = false;
         while let Some(owner) = work.pop() {
@@ -403,7 +403,7 @@ impl Analyzer<'_> {
             return false;
         }
         let mut work = vec![derived];
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         while let Some(class) = work.pop() {
             if !seen.insert(class) {
                 continue;

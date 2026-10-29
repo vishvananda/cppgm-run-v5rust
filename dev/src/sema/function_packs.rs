@@ -469,8 +469,8 @@ mod tests {
         )
         .unwrap();
         assert_eq!(graph.function_templates.arguments.len(), 3);
-        let mut signatures = std::collections::HashSet::new();
-        let mut bodies = std::collections::HashSet::new();
+        let mut signatures = crate::support::hash::HashSet::default();
+        let mut bodies = crate::support::hash::HashSet::default();
         for (&entity, arguments) in &graph.function_templates.arguments {
             assert_eq!(arguments.len(), 2);
             let primary = graph

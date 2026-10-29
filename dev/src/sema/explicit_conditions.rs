@@ -8,8 +8,8 @@ use super::{
     specifiers::{Explicitness, Specifiers},
     types::{Scalar, TypeId},
 };
+use crate::support::hash::HashMap;
 use crate::syntax::ast::ExprId;
-use std::collections::HashMap;
 
 #[derive(Clone, Copy)]
 struct Pending {

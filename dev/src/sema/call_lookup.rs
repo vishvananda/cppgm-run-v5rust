@@ -8,8 +8,9 @@ use super::{
     lookup::LookupResult,
     types::{TypeId, TypeKind},
 };
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 use crate::syntax::{ast, storage::List};
-use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy)]
 pub(super) enum AssociationContext {

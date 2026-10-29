@@ -7,8 +7,8 @@ use super::{
     graph::{EntityId, ScopeId},
     types::TypeKind,
 };
+use crate::support::hash::HashMap;
 use crate::{lex::vocabulary::Keyword, support::source::SourceOffset, syntax::ast};
-use std::collections::HashMap;
 
 type Written = HashMap<EntityId, ast::MemInitializer>;
 type Designations<'a> = HashMap<EntityId, Option<&'a ast::MemInitializer>>;
@@ -73,7 +73,7 @@ impl Analyzer<'_> {
             written,
             scope,
             location,
-            &mut Designations::new(),
+            &mut Designations::default(),
             deferred,
         )
     }

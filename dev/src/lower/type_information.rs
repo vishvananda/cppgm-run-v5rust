@@ -4,6 +4,7 @@ use super::{
     Error, Symbols,
     vtables::{InformationKind as K, address, define, integer},
 };
+use crate::support::hash::HashMap;
 use crate::{
     abi::encoder::{Encoder, Target},
     lowir::{
@@ -12,7 +13,6 @@ use crate::{
     },
     sema::lowering::{Scalar, TypeId, TypeView},
 };
-use std::collections::HashMap;
 #[derive(Default)]
 pub(super) struct Information {
     objects: HashMap<TypeId, SymbolId>,

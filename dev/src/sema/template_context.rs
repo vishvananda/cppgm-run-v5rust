@@ -8,8 +8,8 @@ use super::{
     procedural_statements::BodyContext,
     templates::HeadId,
 };
+use crate::support::hash::HashMap;
 use crate::{support::source::SourceOffset, syntax::ast};
-use std::collections::HashMap;
 
 // analyzer.h::kInstantiationDepthLimit. This logical limit is independent of
 // the genuine native stack-byte budget (Annex B requires at least 1024).

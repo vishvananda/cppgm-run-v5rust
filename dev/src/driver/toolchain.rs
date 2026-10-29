@@ -437,7 +437,7 @@ fn apply_option_checks(
 // Follow stat identity, including aliases, while retaining first spellings and
 // nonexistent/non-directory entries just as the frozen driver does.
 fn prune_include_paths(options: &mut DriverOptions) {
-    let mut seen = std::collections::HashSet::new();
+    let mut seen = crate::support::hash::HashSet::default();
     for paths in [
         &mut options.system_include_paths,
         &mut options.include_paths,

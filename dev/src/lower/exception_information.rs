@@ -5,6 +5,8 @@ use super::{
     type_information::TypeObject,
     vtables::{InformationKind as K, address, define, integer},
 };
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 use crate::{
     lowir::{
         model::{DataItem, Global, GlobalInit, Metadata, Program, SymbolId},
@@ -12,7 +14,6 @@ use crate::{
     },
     sema::lowering::{Scalar, TypeId, TypeView},
 };
-use std::collections::{HashMap, HashSet};
 
 #[derive(Default)]
 pub(super) struct Information {

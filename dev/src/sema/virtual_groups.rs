@@ -8,8 +8,9 @@ use super::{
     virtual_members::SlotKind,
     vtable_groups::{GroupEntry, SegmentId, VtableGroup},
 };
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 use crate::support::source::SourceOffset;
-use std::collections::{HashMap, HashSet};
 
 impl Analyzer<'_> {
     pub(super) fn virtual_table_primary(
@@ -30,8 +31,8 @@ impl Analyzer<'_> {
         if bases.is_empty() {
             return Ok(None);
         }
-        let mut indirect = HashSet::new();
-        let mut expanded = HashSet::new();
+        let mut indirect = HashSet::default();
+        let mut expanded = HashSet::default();
         let mut work: Vec<_> = self
             .graph
             .entity(class)
@@ -201,7 +202,7 @@ impl VtableGroup {
     fn outside(&mut self, graph: &mut Graph, class: EntityId) -> Result<(), Error> {
         // Each virtual base lists only the subobjects that have it. The chain
         // candidate is memoized per head, function and virtual base.
-        let mut holders: HashMap<EntityId, Vec<SegmentId>> = HashMap::new();
+        let mut holders: HashMap<EntityId, Vec<SegmentId>> = HashMap::default();
         for (index, segment) in self.segments.iter().enumerate() {
             for base in graph.virtual_base_order(segment.class) {
                 holders
@@ -344,7 +345,7 @@ impl VtableGroup {
             };
             offsets.push(offset);
         }
-        let mut claimants: HashMap<(EntityId, u64), SegmentId> = HashMap::new();
+        let mut claimants: HashMap<(EntityId, u64), SegmentId> = HashMap::default();
         for (index, segment) in self.segments.iter().enumerate().skip(1).rev() {
             if graph.nonvirtual_table_primary(segment.class)?.is_none()
                 && let Some(primary) = graph.lower_virtual_class(segment.class)?.primary
@@ -352,7 +353,7 @@ impl VtableGroup {
                 claimants.insert((primary, offsets[index]), SegmentId::new(index)?);
             }
         }
-        let mut chained = HashSet::new();
+        let mut chained = HashSet::default();
         let mut link = Some(class);
         while let Some(class) = link {
             if graph.nonvirtual_table_primary(class)?.is_none() {
@@ -360,7 +361,7 @@ impl VtableGroup {
             }
             link = graph.nonvirtual_table_primary(class)?;
         }
-        let mut levels = HashMap::new();
+        let mut levels = HashMap::default();
         for (index, &offset) in offsets.iter().enumerate().skip(1) {
             let id = SegmentId::new(index)?;
             let segment = &mut self.segments[index];

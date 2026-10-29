@@ -1,6 +1,7 @@
 // Translated from lower/object_lowering.cpp and cleanup_lowering.cpp. See NOTICE.
 //! Completed automatic objects and interned cleanup continuations belong to one body.
 use super::{Error, function::Function, types};
+use crate::support::hash::HashMap;
 use crate::{
     lowir::{
         model::{Arguments, BlockId, Facts, InstructionKind as I, RuntimeInstruction as R, Value},
@@ -9,7 +10,6 @@ use crate::{
     sema::lowering::{EntityId, TypeId, TypeView},
     syntax::ast,
 };
-use std::collections::HashMap;
 
 #[derive(Clone, Copy)]
 pub(super) struct Cleanup {

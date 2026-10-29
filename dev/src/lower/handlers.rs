@@ -1,6 +1,7 @@
 // Translated from lower/exception_lowering.cpp. See NOTICE.
 //! Source handlers retain syntax identity; contexts and selectors live for one function.
 use super::{Error, function::Function, types};
+use crate::support::hash::HashMap;
 use crate::{
     lowir::{
         model::{BlockId, Call, Facts, InstructionKind as I, RuntimeInstruction as R, Value},
@@ -9,7 +10,6 @@ use crate::{
     sema::lowering::{TypeId, TypeView},
     syntax::{ast, storage::List},
 };
-use std::collections::HashMap;
 
 #[derive(Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub(super) struct ContextId(u32);

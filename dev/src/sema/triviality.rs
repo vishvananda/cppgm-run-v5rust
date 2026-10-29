@@ -7,7 +7,7 @@ use super::{
     graph::{EntityId, FunctionAvailability},
     types::{Cv, RefKind, TypeId, TypeKind},
 };
-use std::collections::HashMap;
+use crate::support::hash::HashMap;
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct Kind {
     reference: RefKind,

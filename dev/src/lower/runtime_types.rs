@@ -8,7 +8,7 @@ use crate::lowir::{
     vocabulary::{Binding, Role, Type},
 };
 use crate::sema::lowering::EntityId;
-use std::collections::HashMap;
+use crate::support::hash::HashMap;
 
 #[derive(Clone, Copy, Default)]
 struct Hint {
@@ -45,7 +45,7 @@ fn walk_hints(
     base: Option<EntityId>,
 ) -> Result<Option<HashMap<EntityId, Hint>>, Error> {
     let mut work = vec![(derived, 0_u64, true, false)];
-    let mut facts = HashMap::<EntityId, Hint>::new();
+    let mut facts = HashMap::<EntityId, Hint>::default();
     let mut visits = 0_u32;
     while let Some((class, offset, public, virtual_path)) = work.pop() {
         visits += 1;

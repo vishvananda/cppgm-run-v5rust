@@ -35,8 +35,8 @@ pub(super) enum DeferredUse {
 pub(super) struct QueryContext {
     pub deferring: u32,
     pub uses: Vec<DeferredUse>,
-    layouts: std::collections::HashSet<TypeId>,
-    requests: std::collections::HashSet<(Option<EntityId>, TypeId)>,
+    layouts: crate::support::hash::HashSet<TypeId>,
+    requests: crate::support::hash::HashSet<(Option<EntityId>, TypeId)>,
 }
 impl Graph {
     pub(crate) fn lower_class_complete(&self, class: EntityId) -> bool {

@@ -11,12 +11,12 @@ use super::{
     graph::{BindingKind, EntityId, Graph, ScopeKind},
     types::TypeKind,
 };
+use crate::support::hash::HashMap;
 use crate::{
     lex::pp_lexer::Punctuator as P,
     support::{source::SourceOffset, stack::StackBudget},
     syntax::ast::{self, ExprKind, StmtKind, Tree},
 };
-use std::collections::HashMap;
 
 #[derive(PartialEq, Eq, Hash)]
 pub(super) struct Key {

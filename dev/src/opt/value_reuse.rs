@@ -14,10 +14,10 @@ use crate::lowir::{
     },
     vocabulary::{Binary, Compare, Convert, Projection, Type, Unary},
 };
-use std::{
-    collections::{HashMap, hash_map::DefaultHasher},
-    hash::{Hash, Hasher},
-};
+use crate::support::hash::HashMap;
+use crate::support::hash::Hasher as Fingerprint;
+use std::hash::Hash;
+use std::hash::Hasher;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Operation {
@@ -88,7 +88,7 @@ impl<'a, 'p> Simplifier<'a, 'p> {
             first_opener: vec![None; blocks],
             handler_reached: vec![false; blocks],
             walked: vec![false; blocks],
-            table: HashMap::new(),
+            table: HashMap::default(),
             changed: false,
             edited: false,
         }
@@ -281,7 +281,7 @@ impl<'a, 'p> Simplifier<'a, 'p> {
         };
         let mut sum = 0_u64;
         for &(block, v) in pairs {
-            let mut h = DefaultHasher::new();
+            let mut h = Fingerprint::default();
             block.hash(&mut h);
             (if Some(v) == inst.result.map(Value::Temp) {
                 PhiOperand::SelfValue
@@ -304,7 +304,7 @@ impl<'a, 'p> Simplifier<'a, 'p> {
         if ta != tb || pa.len() != pb.len() {
             return false;
         }
-        let mut inputs = HashMap::new();
+        let mut inputs = HashMap::default();
         for &(pred, v) in pb {
             inputs.entry(pred).or_insert(v);
         }
@@ -325,7 +325,7 @@ impl<'a, 'p> Simplifier<'a, 'p> {
             .copied()
             .take_while(|&id| matches!(self.context.body.instruction(id).kind, I::Phi(..)))
             .collect::<Vec<_>>();
-        let mut chains: HashMap<(Type, usize, u64), Vec<InstId>> = HashMap::new();
+        let mut chains: HashMap<(Type, usize, u64), Vec<InstId>> = HashMap::default();
         for id in ids.iter().copied() {
             let mut instruction = self.context.body.instruction(id).clone();
             if let I::Phi(_, pairs) = &mut instruction.kind {

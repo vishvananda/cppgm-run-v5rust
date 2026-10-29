@@ -46,7 +46,7 @@ pub struct Encoder<'a> {
     graph: &'a Graph,
     // One target's dictionary is sparse in the unit's growing ABI graph.
     // Initializing a graph-sized vector per symbol would make lowering quadratic.
-    slots: std::collections::HashMap<NodeId, u32>,
+    slots: crate::support::hash::HashMap<NodeId, u32>,
     entries: u32,
     output: &'a mut Vec<u8>,
     budget: StackBudget,
@@ -81,7 +81,7 @@ impl<'a> Encoder<'a> {
         let start = output.len();
         let mut encoder = Self {
             graph,
-            slots: std::collections::HashMap::new(),
+            slots: crate::support::hash::HashMap::default(),
             entries: 0,
             output,
             budget,

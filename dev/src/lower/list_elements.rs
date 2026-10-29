@@ -48,7 +48,7 @@ struct ElementRun {
 /// Sparse cleanup facts and their contiguous addresses end with this function.
 #[derive(Default)]
 pub(super) struct SavedElements {
-    runs: std::collections::HashMap<Value, ElementRun>,
+    runs: crate::support::hash::HashMap<Value, ElementRun>,
     values: Vec<Value>,
 }
 impl SavedElements {

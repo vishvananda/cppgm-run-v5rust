@@ -9,12 +9,12 @@ use super::{
     lookup::{Filter, LookupResult},
     types::{RefKind, Scalar, TypeId, TypeKind},
 };
+use crate::support::hash::HashSet;
 use crate::{
     lex::{pp_lexer::Punctuator as P, vocabulary::SimpleToken},
     syntax::ast,
     types::FundamentalType as F,
 };
-use std::collections::HashSet;
 
 #[derive(Default)]
 pub(super) struct OperatorLookup {

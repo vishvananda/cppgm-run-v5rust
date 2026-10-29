@@ -192,7 +192,7 @@ impl super::graph::Graph {
         analyzer.set_lowering();
         analyzer.stack_base = stack_base;
         let action = analyzer.internal_copy_action(copy);
-        *self = analyzer.graph;
+        *self = analyzer.into_graph();
         let action = action?;
         if result_copy {
             if let Some(mut step) = self.expression_facts.function_conversion(id) {

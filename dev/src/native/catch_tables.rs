@@ -9,10 +9,9 @@ use crate::lowir::{
         BlockId, InstId, InstructionKind as I, RuntimeInstruction as Runtime, SymbolId, Value,
     },
 };
-use std::{
-    collections::{HashMap, HashSet},
-    ops::Range,
-};
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
+use std::ops::Range;
 
 struct Chains {
     identity: bool,
@@ -98,8 +97,8 @@ impl Chains {
         ranges[0] = Some(0..0);
         Ok(Self {
             identity,
-            type_index: HashMap::new(),
-            filters: HashMap::new(),
+            type_index: HashMap::default(),
+            filters: HashMap::default(),
             entries: Vec::new(),
             ranges,
             work: vec![0; a.body.blocks().len()],
@@ -268,7 +267,7 @@ impl Chains {
                 own.push(0);
             }
             let first = self.entries.len();
-            let mut seen = HashSet::new();
+            let mut seen = HashSet::default();
             let mut cleanup = false;
             let mut ended = catch_all;
             for filter in own {
@@ -314,7 +313,7 @@ impl Chains {
             .extend_from_slice(&self.entries[range]);
         let filters = first..a.plan.tables.filters.len();
         let first = a.plan.tables.map.len();
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         let mut translate = a.mid_clauses;
         for &id in &a.body.block(block).instructions {
             let kind = &a.body.instruction(id).kind;

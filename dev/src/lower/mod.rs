@@ -302,8 +302,8 @@ fn emit_source_definitions(
     budget: StackBudget,
 ) -> Result<(), Error> {
     let mut declarations = anonymous_names::Declarations::new(&*cx.tree, declarations);
-    let mut emitted = std::collections::HashSet::new();
-    let mut emitted_entries = std::collections::HashSet::new();
+    let mut emitted = crate::support::hash::HashSet::default();
+    let mut emitted_entries = crate::support::hash::HashSet::default();
     while let Some((id, explicit_specialization)) = declarations.next(
         &*cx.tree,
         &*cx.graph,
@@ -524,8 +524,8 @@ fn emit_pending(
     output: &mut globals::GlobalOutput<'_>,
     cx: &mut crate::lower::unit_frontend::Context<'_, '_, '_>,
     (emitted, entries): (
-        &mut std::collections::HashSet<sema::lowering::EntityId>,
-        &mut std::collections::HashSet<construction::Entry>,
+        &mut crate::support::hash::HashSet<sema::lowering::EntityId>,
+        &mut crate::support::hash::HashSet<construction::Entry>,
     ),
     budget: StackBudget,
 ) -> Result<(), Error> {

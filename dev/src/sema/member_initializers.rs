@@ -7,7 +7,7 @@ use super::{
     analyzer::{Analyzer, DeferredMember},
     graph::{BindingId, EntityId, ScopeId},
 };
-use std::collections::HashMap;
+use crate::support::hash::HashMap;
 
 #[derive(Clone, Copy)]
 struct Pending {

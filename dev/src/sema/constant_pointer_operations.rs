@@ -20,10 +20,10 @@ use crate::{
 /// and live/published object lookup. Only complete layouts enter this cache;
 /// distinct specializations have distinct class IDs and need no invalidation.
 #[derive(Default)]
-pub(super) struct MemberSpans(std::collections::HashMap<EntityId, ClassSpans>);
+pub(super) struct MemberSpans(crate::support::hash::HashMap<EntityId, ClassSpans>);
 struct ClassSpans {
     ordinary: Vec<MemberSpan>,
-    empty: std::collections::HashSet<EntityId>,
+    empty: crate::support::hash::HashSet<EntityId>,
     large: bool,
 }
 impl MemberSpans {
@@ -664,7 +664,7 @@ impl Analyzer<'_> {
     ) -> Result<(), Error> {
         if !self.graph.constant_member_spans.0.contains_key(&class) {
             let mut spans = Vec::with_capacity(self.graph.entity(class).members.len());
-            let mut empty = std::collections::HashSet::new();
+            let mut empty = crate::support::hash::HashSet::default();
             for index in 0..self.graph.entity(class).members.len() {
                 let member = self.graph.entity(class).members[index];
                 if self.graph.entity(member).bit_field.is_some() {

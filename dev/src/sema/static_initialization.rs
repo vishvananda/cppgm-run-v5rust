@@ -55,7 +55,7 @@ impl super::graph::Graph {
             }
             Ok(())
         })();
-        *self = analyzer.graph;
+        *self = analyzer.into_graph();
         result
     }
     /// The shared lowering policy for automatic array images. Class leaves

@@ -4,10 +4,9 @@ use super::{
     Error,
     model::{BlockId, BlockName, Body, NameId, Names},
 };
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::Write as _,
-};
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
+use std::fmt::Write as _;
 
 #[derive(Clone, Copy)]
 pub(super) enum SlotName {
@@ -20,7 +19,7 @@ pub(super) enum SlotName {
     Parameter(usize),
 }
 pub(super) fn record_shadows(labels: &mut [SlotName]) {
-    let mut seen = HashSet::new();
+    let mut seen = HashSet::default();
     for label in labels {
         if let SlotName::Source(name) = *label
             && !seen.insert(name)
@@ -70,7 +69,7 @@ impl<'a> LocalNames<'a> {
         let mut range_for = 0_u32;
         let shadows = (0..self.body.slots().len())
             .any(|index| matches!(self.body.slot_name(index), SlotName::Shadow(_)));
-        let mut counts = HashMap::<NameId, u32>::new();
+        let mut counts = HashMap::<NameId, u32>::default();
         self.slots.resize(self.body.slots().len(), 0);
         for index in 0..self.slots.len() {
             self.slots[index] = match self.body.slot_name(index) {

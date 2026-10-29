@@ -5,12 +5,12 @@ use super::{
     analyzer::Analyzer,
     graph::{BindingId, BindingKind, EntityId, Graph, ScopeId},
 };
+use crate::support::hash::HashMap;
 use crate::{
     lex::identifiers::NameId,
     support::source::SourceOffset,
     syntax::{ast, storage::List},
 };
-use std::collections::HashMap;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) enum Owner {

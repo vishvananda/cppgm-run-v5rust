@@ -8,11 +8,11 @@ use super::{
     graph::{Binding, BindingKind, EntityId, FunctionProperties, Graph, ScopeId, ScopeKind},
     types::{Cv, Scalar, TypeId, TypeKind},
 };
+use crate::support::hash::HashMap;
 use crate::{
     lex::{pp_lexer::Punctuator, vocabulary::Keyword},
     syntax::{ast, storage::List},
 };
-use std::collections::HashMap;
 
 #[derive(Clone, Copy)]
 pub(crate) enum ClosureContext {
@@ -881,7 +881,7 @@ mod tests {
             .collect();
         numbers.sort_unstable();
         assert_eq!(numbers, [0, 1, 2, 3]);
-        let contexts: std::collections::HashSet<_> = members
+        let contexts: crate::support::hash::HashSet<_> = members
             .iter()
             .map(|closure| closure.naming_context.unwrap())
             .collect();
@@ -913,7 +913,7 @@ mod tests {
         analyzer.set_lowering();
         let graph = analyzer.analyze(declarations).unwrap();
         assert_eq!(graph.closures.records.len(), 3);
-        let contexts: std::collections::HashSet<_> = graph
+        let contexts: crate::support::hash::HashSet<_> = graph
             .closures
             .records
             .values()

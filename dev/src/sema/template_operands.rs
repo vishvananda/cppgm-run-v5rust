@@ -9,14 +9,13 @@ use super::{
     graph::{Binding, BindingKind, EntityId, ScopeId, ScopeKind},
     types::{Cv, TypeId, TypeKind},
 };
+use crate::support::hash::BuildHasher as Fingerprints;
+use crate::support::hash::HashMap;
 use crate::{
     lex::{identifiers::NameId, vocabulary::Keyword},
     syntax::ast,
 };
-use std::{
-    collections::{HashMap, hash_map::RandomState},
-    hash::BuildHasher,
-};
+use std::hash::BuildHasher;
 
 #[expect(
     clippy::struct_excessive_bools,
@@ -122,7 +121,7 @@ enum OperandKind {
 pub(super) struct Operands {
     index: HashMap<u64, EntityId>,
     words: HashMap<EntityId, Vec<KeyWord>>,
-    fingerprints: RandomState,
+    fingerprints: Fingerprints,
     patterns: HashMap<EntityId, Pattern>,
     equivalents: HashMap<(ScopeId, Vec<KeyWord>, bool, Option<TypeId>), EntityId>,
     substitutions: HashMap<Key, CachedOperand>,
@@ -1887,7 +1886,7 @@ impl Analyzer<'_> {
         }
         // A type may itself name a retained operand. Its named positions also
         // belong to this key; visit shared type DAG nodes only once.
-        let mut visited = std::collections::HashSet::new();
+        let mut visited = crate::support::hash::HashSet::default();
         while let Some(ty) = types.pop() {
             if !visited.insert(ty) {
                 continue;

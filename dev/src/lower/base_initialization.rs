@@ -22,7 +22,7 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<(), Error> {
         // Plan order governs tail occupancy; construction order is a separate
         // projection. Index each shared occurrence once for this ABI entry.
-        let mut selected = std::collections::HashMap::new();
+        let mut selected = crate::support::hash::HashMap::default();
         for (index, base) in self.graph.lower_constructor(owner).bases.iter().enumerate() {
             if self
                 .graph

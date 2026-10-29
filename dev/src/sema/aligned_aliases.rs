@@ -8,8 +8,8 @@ use super::{
     specifiers::Specifiers,
     types::TypeKind,
 };
+use crate::support::hash::HashMap;
 use crate::{lex::pp_lexer::Punctuator as P, syntax::ast};
-use std::collections::HashMap;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum AlignmentTarget {

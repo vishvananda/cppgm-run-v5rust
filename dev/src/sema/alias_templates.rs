@@ -9,8 +9,8 @@ use super::{
     templates::HeadId,
     types::{Cv, TypeId, TypeKind},
 };
+use crate::support::hash::HashMap;
 use crate::{lex::vocabulary::Keyword, support::source::SourceOffset};
-use std::collections::HashMap;
 
 #[derive(PartialEq, Eq, Hash)]
 struct Key {
@@ -423,7 +423,7 @@ impl Analyzer<'_> {
         let depth = self.graph.templates.depth(head);
         let mut named = 0u64;
         let mut work = vec![(ty, 0u16)];
-        let mut visited = HashMap::new();
+        let mut visited = HashMap::default();
         let mut children = Vec::new();
         while let Some((ty, level)) = work.pop() {
             if level > 256 {

@@ -7,7 +7,7 @@ use super::{
     scopes::{Binding, Categories, Category, Guesses},
     storage::List,
 };
-use std::collections::HashMap;
+use crate::support::hash::HashMap;
 
 #[derive(Clone, Copy)]
 pub(super) struct StatementConflict {

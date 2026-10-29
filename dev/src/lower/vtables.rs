@@ -3,6 +3,7 @@
 #[path = "construction_tables.rs"]
 mod construction_tables;
 use super::{Symbols, type_information::TypeObject};
+use crate::support::hash::HashMap;
 use crate::{
     abi::encoder::{Encoder, Target},
     lex::vocabulary::Keyword,
@@ -16,7 +17,6 @@ use crate::{
     },
     sema::lowering::{Emission, EntityId, SlotKind},
 };
-use std::collections::HashMap;
 
 #[derive(Clone, Copy)]
 pub(super) enum InformationKind {
@@ -46,9 +46,9 @@ pub(super) struct Tables {
     pending_thunk: usize,
     thunk_families: HashMap<(EntityId, ThisAdjustment), crate::lower::definition_order::FamilyId>,
     thunk_symbols: HashMap<ThunkKey, usize>,
-    definition_classes: std::collections::HashSet<EntityId>,
+    definition_classes: crate::support::hash::HashSet<EntityId>,
     definitions_indexed: bool,
-    construction_sensitive: std::collections::HashSet<EntityId>,
+    construction_sensitive: crate::support::hash::HashSet<EntityId>,
     definition_targets: DefinitionTargets,
     own_entry_thunks: HashMap<(EntityId, usize), bool>,
     contexts: construction_tables::Contexts,
@@ -897,7 +897,7 @@ impl Symbols<'_, '_> {
         // occurrences, but descend through each shared virtual base only once.
         // The bounded walk's repeat flag disables the runtime's shortcuts.
         let mut work = vec![class];
-        let mut marks = HashMap::<EntityId, u8>::new();
+        let mut marks = HashMap::<EntityId, u8>::default();
         let mut flags = 0;
         let mut visits = 0_u32;
         while let Some(class) = work.pop() {

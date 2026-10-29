@@ -6,6 +6,7 @@ use super::{
     graph::{BindingKind, Graph, ScopeId, ScopeKind},
     types::TypeKind,
 };
+use crate::support::hash::HashMap;
 use crate::{
     lex::identifiers::{Identifiers, NameId},
     syntax::{
@@ -13,7 +14,6 @@ use crate::{
         cloning::{Cloner, PackExpander},
     },
 };
-use std::collections::HashMap;
 
 struct FrameMap {
     lengths: HashMap<NameId, usize>,
@@ -21,7 +21,7 @@ struct FrameMap {
 }
 impl FrameMap {
     fn new(graph: &Graph, scope: ScopeId) -> Self {
-        let mut lengths = HashMap::new();
+        let mut lengths = HashMap::default();
         let mut scope = Some(scope);
         while let Some(current) = scope {
             let node = graph.scope(current);

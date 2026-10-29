@@ -10,7 +10,7 @@ use super::{
     types::{Cv, TypeId, TypeKind},
 };
 use crate::lex::{identifiers::NameId, vocabulary::Keyword};
-use std::collections::HashMap;
+use crate::support::hash::HashMap;
 
 #[derive(Clone, Copy)]
 pub(super) struct Member {

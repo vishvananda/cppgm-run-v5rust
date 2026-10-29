@@ -4,7 +4,7 @@ use super::{
     region_flow::Tables,
 };
 use crate::lowir::{Error, model::SymbolId};
-use std::collections::HashMap;
+use crate::support::hash::HashMap;
 
 #[derive(Default)]
 pub(super) struct Lsda {
@@ -101,7 +101,7 @@ pub(super) fn encode(frame: &Frame, tables: &Tables) -> Result<Lsda, Error> {
         return Ok(out);
     }
     let mut records = Vec::<Record>::new();
-    let mut index = HashMap::new();
+    let mut index = HashMap::default();
     let mut first = vec![None; tables.landings.len()];
     let mut typed = false;
     for (l, landing) in tables.landings.iter().enumerate() {

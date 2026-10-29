@@ -498,7 +498,7 @@ impl Analyzer<'_> {
     }
 }
 
-use std::collections::HashSet;
+use crate::support::hash::HashSet;
 
 impl super::graph::Graph {
     fn type_has_template_owner(&self, entity: super::graph::EntityId) -> bool {
@@ -525,7 +525,7 @@ impl super::graph::Graph {
 
     pub(super) fn dependent_type(&self, root: TypeId) -> bool {
         let mut work = vec![root];
-        let mut visited = HashSet::new();
+        let mut visited = HashSet::default();
         while let Some(ty) = work.pop() {
             if !visited.insert(ty) {
                 continue;

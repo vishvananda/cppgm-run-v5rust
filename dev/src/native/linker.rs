@@ -5,11 +5,10 @@ use super::{
     object::{Binding, Definition, Object, SectionId, SectionKind, SymbolId},
 };
 use crate::lowir::Error;
-use std::{
-    collections::{HashMap, HashSet},
-    path::Path,
-    sync::Arc,
-};
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
+use std::path::Path;
+use std::sync::Arc;
 const MAX_ALIGN: u64 = 1 << 24;
 const MAX_SEGMENT: u64 = 1 << 46;
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -174,8 +173,8 @@ impl Linker {
         Self {
             statistics: super::link_statistics::Statistics::default(),
             objects,
-            names: HashMap::new(),
-            groups: HashSet::new(),
+            names: HashMap::default(),
+            groups: HashSet::default(),
             globals: Vec::new(),
             global_of: Vec::new(),
             kept: Vec::new(),
@@ -183,7 +182,7 @@ impl Linker {
             image: Image::new(0),
             array_bounds: [0; 4],
             got: 0,
-            local_got: HashMap::new(),
+            local_got: HashMap::default(),
             align: [1; 4],
         }
     }

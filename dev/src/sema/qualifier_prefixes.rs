@@ -8,7 +8,8 @@ use super::{
     templates::HeadId,
     types::{TypeId, TypeKind},
 };
-use std::collections::{HashMap, HashSet};
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum AbiDemand {

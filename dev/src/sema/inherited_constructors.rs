@@ -13,8 +13,8 @@ use super::{
     },
     types::{Cv, Scalar, TypeKind},
 };
+use crate::support::hash::HashMap;
 use crate::{lex::vocabulary::Keyword, support::source::SourceOffset, syntax::ast};
-use std::collections::HashMap;
 
 fn constructor_properties() -> FunctionProperties {
     FunctionProperties {
@@ -50,10 +50,7 @@ struct Inheritance {
 pub(super) struct InheritedConstructors {
     bases: HashMap<EntityId, EntityId>,
     sources: HashMap<EntityId, Inheritance>,
-    #[expect(
-        clippy::box_collection,
-        reason = "Demand-only cache keeps the by-value semantic graph out of the measured oversized analyze_unit stack frame"
-    )]
+    // Keep the demand-only cache off the large by-value semantic graph.
     specializations: Option<Box<HashMap<InstanceKey, Instance>>>,
 }
 impl InheritedConstructors {
@@ -775,7 +772,7 @@ mod tests {
             entries
                 .iter()
                 .map(|(key, _)| key.source)
-                .collect::<std::collections::HashSet<_>>()
+                .collect::<crate::support::hash::HashSet<_>>()
                 .len(),
             1
         );
@@ -783,7 +780,7 @@ mod tests {
             entries
                 .iter()
                 .map(|(key, _)| key.class)
-                .collect::<std::collections::HashSet<_>>()
+                .collect::<crate::support::hash::HashSet<_>>()
                 .len(),
             2
         );

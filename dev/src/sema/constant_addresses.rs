@@ -8,12 +8,12 @@ use super::{
     graph::{BindingKind, EntityId, ScopeId},
     types::{Scalar, TypeId, TypeKind},
 };
+use crate::support::hash::HashMap;
 use crate::{
     lex::{PostTokenKind, pp_lexer::Punctuator as P, vocabulary::Keyword},
     support::source::SourceOffset,
     syntax::ast::{self, ExprKind},
 };
-use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum Root {
@@ -143,10 +143,10 @@ pub(super) enum ArgumentContext {
 pub(super) struct Addresses {
     arguments: HashMap<EntityId, TypeId>,
     argument_functions: HashMap<ArgumentContext, Vec<EntityId>>,
-    argument_function_set: std::collections::HashSet<(ArgumentContext, EntityId)>,
+    argument_function_set: crate::support::hash::HashSet<(ArgumentContext, EntityId)>,
     values: HashMap<EntityId, State>,
-    stored_references: std::collections::HashSet<EntityId>,
-    evaluated_references: std::collections::HashSet<EntityId>,
+    stored_references: crate::support::hash::HashSet<EntityId>,
+    evaluated_references: crate::support::hash::HashSet<EntityId>,
 }
 impl Addresses {
     pub(super) fn argument(&self, binding: EntityId) -> Option<TypeId> {

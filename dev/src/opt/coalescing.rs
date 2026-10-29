@@ -143,7 +143,7 @@ impl Copies<'_, '_> {
         let Some(last) = pairs.last() else {
             return true;
         };
-        let mut pending = std::collections::HashMap::new();
+        let mut pending = crate::support::hash::HashMap::default();
         for pair in pairs {
             let Some(temp) = self.context.body.instruction(pair.load).result else {
                 return false;

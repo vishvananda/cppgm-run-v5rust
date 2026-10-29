@@ -133,8 +133,8 @@ pub(super) struct Constructors {
     records: Vec<Constructor>,
     // The class retains one selected function, declared or implicit, before
     // its structural/default facts. Absence is never a cached failure.
-    default_functions: std::collections::HashMap<EntityId, DefaultFunction>,
-    const_default_classes: std::collections::HashSet<EntityId>,
+    default_functions: crate::support::hash::HashMap<EntityId, DefaultFunction>,
+    const_default_classes: crate::support::hash::HashSet<EntityId>,
 }
 #[derive(Clone, Copy)]
 pub(super) struct DefaultFunction {
@@ -552,7 +552,7 @@ impl Analyzer<'_> {
         if !self.graph.lower_dynamic_class(class) {
             return Vec::new();
         }
-        let direct: std::collections::HashSet<_> = self
+        let direct: crate::support::hash::HashSet<_> = self
             .graph
             .entity(class)
             .bases
@@ -977,7 +977,7 @@ impl Analyzer<'_> {
             .entity(class)
             .scope
             .ok_or(Error::Invariant("constructor owner without scope"))?;
-        let mut written = std::collections::HashMap::new();
+        let mut written = crate::support::hash::HashMap::default();
         for syntax_index in 0..self.tree.mem_initializers.get(body.initializers).len() {
             let syntax_item = self.tree.mem_initializers.get(body.initializers)[syntax_index];
             let initializer = &syntax_item;
@@ -1046,7 +1046,7 @@ impl Analyzer<'_> {
         &mut self,
         class: EntityId,
         base: EntityId,
-        written: &std::collections::HashMap<EntityId, ast::MemInitializer>,
+        written: &crate::support::hash::HashMap<EntityId, ast::MemInitializer>,
         scope: ScopeId,
         location: SourceOffset,
         deferred: &mut bool,
@@ -1075,7 +1075,7 @@ impl Analyzer<'_> {
         &mut self,
         class: EntityId,
         base: EntityId,
-        written: &std::collections::HashMap<EntityId, ast::MemInitializer>,
+        written: &crate::support::hash::HashMap<EntityId, ast::MemInitializer>,
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<BaseInitialization, Error> {

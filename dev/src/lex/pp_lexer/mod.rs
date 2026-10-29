@@ -288,7 +288,17 @@ impl<'a> PpLexer<'a> {
         self.dirty = true;
     }
 
+    #[inline]
     fn append(&mut self, c: SourceChar) -> Result<(), SourceError> {
+        if !self.dirty && c.code < 0x80 && c.begin == self.clean_end && c.end.0 - c.begin.0 == 1 {
+            self.clean_end = c.end;
+            self.end = c.end;
+            return Ok(());
+        }
+        self.append_translated(c)
+    }
+
+    fn append_translated(&mut self, c: SourceChar) -> Result<(), SourceError> {
         let scalar = char::from_u32(c.code)
             .ok_or_else(|| SourceError::new(c.begin, "invalid universal character value"))?;
         if !self.dirty
@@ -304,6 +314,7 @@ impl<'a> PpLexer<'a> {
         Ok(())
     }
 
+    #[inline]
     fn take(&mut self, c: SourceChar) -> Result<(), SourceError> {
         self.append(c)?;
         self.current = self.after(c)?;
@@ -314,6 +325,7 @@ impl<'a> PpLexer<'a> {
         self.current = self.after(c)?;
         Ok(())
     }
+    #[inline]
     fn after(&self, c: SourceChar) -> Result<SourceChar, SourceError> {
         self.reader().logical(c.end)
     }

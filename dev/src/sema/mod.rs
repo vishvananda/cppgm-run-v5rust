@@ -122,6 +122,7 @@ mod literal_types;
 mod local_classes;
 mod local_constants;
 mod local_names;
+mod locality;
 mod lookup;
 pub(crate) mod lowering;
 mod member_construction;

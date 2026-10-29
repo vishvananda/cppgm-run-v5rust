@@ -7,8 +7,9 @@ use super::{
     graph::{EntityId, ScopeId, ScopeKind},
     templates::HeadId,
 };
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 use crate::syntax::ast;
-use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy)]
 struct Pattern {
@@ -829,8 +830,8 @@ mod tests {
             .collect();
         assert_eq!(analyzer.graph.class_templates.definitions.states.len(), 2);
         assert!(analyzer.graph.entity(classes[2]).scope.is_none());
-        let mut scopes = std::collections::HashSet::new();
-        let mut fields = std::collections::HashSet::new();
+        let mut scopes = crate::support::hash::HashSet::default();
+        let mut fields = crate::support::hash::HashSet::default();
         for &class in &classes[..2] {
             assert!(analyzer.graph.entity(class).complete);
             let scope = analyzer.graph.entity(class).scope.unwrap();

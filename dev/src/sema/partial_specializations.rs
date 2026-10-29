@@ -8,8 +8,9 @@ use super::{
     templates::HeadId,
     types::{Cv, TypeId, TypeKind},
 };
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 use crate::support::source::SourceOffset;
-use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) enum IndexArgument {
@@ -549,8 +550,8 @@ impl Analyzer<'_> {
     fn type_pattern_parameters(&self, arguments: &[TypeId], depth: u32) -> HashSet<usize> {
         let mut work = Vec::new();
         self.deducible_pattern_list(arguments, true, &mut work);
-        let mut visited = HashSet::new();
-        let mut deduced = HashSet::new();
+        let mut visited = HashSet::default();
+        let mut deduced = HashSet::default();
         while let Some(ty) = work.pop() {
             if !visited.insert(ty) {
                 continue;
@@ -717,7 +718,7 @@ mod tests {
         }
         assert_eq!(
             analyzer.type_pattern_parameters(&[ty, ty], analyzer.graph.templates.depth(head)),
-            HashSet::from([0])
+            HashSet::from_iter([0])
         );
     }
 
@@ -759,7 +760,7 @@ mod tests {
         );
         assert_eq!(
             analyzer.type_pattern_parameters(&[first, expansion], depth),
-            HashSet::from([0, 1])
+            HashSet::from_iter([0, 1])
         );
         let function = analyzer
             .graph
@@ -777,7 +778,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             analyzer.type_pattern_parameters(&[function], depth),
-            HashSet::from([0])
+            HashSet::from_iter([0])
         );
     }
 }

@@ -5,8 +5,9 @@ use super::{
     Base, Cloner, ExprId, ExprKind, List, Lists, MemInitializer, NameKind, ParseError,
     TemplateArgument, TemplateArgumentKind,
 };
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 use crate::{lex::identifiers::NameId, support::source::SourceOffset, syntax::ast};
-use std::collections::{HashMap, HashSet};
 
 pub(crate) trait PackExpander {
     fn pack_length(&self, name: NameId) -> Option<usize>;

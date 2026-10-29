@@ -11,12 +11,12 @@ use super::{
     predicates::PredicateTypes,
     types::{RefKind, Scalar, TypeId, TypeKind},
 };
+use crate::support::hash::HashMap;
 use crate::{
     lex::{pp_lexer::Punctuator, predicates::TypePredicate as T, vocabulary::SimpleToken},
     support::source::SourceOffset,
     syntax::ast,
 };
-use std::collections::HashMap;
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct Key {

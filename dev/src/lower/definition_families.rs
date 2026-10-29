@@ -2,12 +2,12 @@
 //! Query-owned family identities and typed ranks shared by both `LowIR` views.
 use super::{Error, Symbols};
 use crate::lower::{construction::Entry, definition_order::FamilyId};
+use crate::support::hash::HashMap;
 use crate::{
     abi,
     lowir::model::{NameId, Program},
     sema::lowering::{ConstructorId, EntityId, FunctionName},
 };
-use std::collections::HashMap;
 
 #[derive(Default)]
 pub(super) struct Families {

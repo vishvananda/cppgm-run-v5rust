@@ -15,7 +15,7 @@ use crate::{
     syntax::ast::{self, ExprKind},
 };
 
-use std::collections::HashMap;
+use crate::support::hash::HashMap;
 
 #[derive(Clone, Copy)]
 struct CompleteObject {

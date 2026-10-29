@@ -16,8 +16,9 @@ use super::{
     types::{TypeId, TypeKind},
     user_conversions::{ConversionSite, UserCandidate},
 };
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 use crate::{support::source::SourceOffset, syntax::ast};
-use std::collections::{HashMap, HashSet};
 
 /// Completed declarations have a unit-owned immutable set. A class still being
 /// defined has a query-owned snapshot, which nested lookup cannot overwrite.
@@ -406,9 +407,9 @@ impl Analyzer<'_> {
         let complete = self.graph.entity(class).complete;
         if !complete || !self.graph.conversion_sets.contains_key(&class) {
             let mut out = Vec::new();
-            let mut hiding = HashMap::<(TypeId, bool), u32>::new();
-            let mut seen = HashMap::<EntityId, u8>::new();
-            let mut functions = HashSet::new();
+            let mut hiding = HashMap::<(TypeId, bool), u32>::default();
+            let mut seen = HashMap::<EntityId, u8>::default();
+            let mut functions = HashSet::default();
             let mut work = vec![(class, false)];
             while let Some((current, leaving)) = work.pop() {
                 if !leaving {

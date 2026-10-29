@@ -36,7 +36,7 @@ pub(super) struct UnitState {
     pub keyed_sizeof_packs: bool,
     pub arguments: super::procedural_calls::ArgumentPolicy,
     pub substitution: super::substitution_state::State,
-    pub text_literals: std::collections::HashMap<crate::lex::identifiers::NameId, ast::ExprId>,
+    pub text_literals: crate::support::hash::HashMap<crate::lex::identifiers::NameId, ast::ExprId>,
     pub library_nans: [Option<super::graph::BindingId>; 3],
     pub type_info: Option<super::graph::EntityId>,
     pub defaulted_constexpr: Vec<(super::graph::EntityId, SourceOffset)>,
@@ -61,7 +61,8 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) stack_base: usize,
     pub(super) lookup_location: SourceOffset,
     pub(super) deferred: Vec<DeferredMember>,
-    pub(super) deferred_constexpr: std::collections::HashMap<super::graph::EntityId, DeferredBody>,
+    pub(super) deferred_constexpr:
+        crate::support::hash::HashMap<super::graph::EntityId, DeferredBody>,
     pub(super) class_depth: usize,
     pub(super) flexible_initialization:
         Option<super::aggregate_initialization::FlexibleInitialization>,
@@ -97,7 +98,7 @@ pub(crate) struct Analyzer<'tree> {
     // Origin of storage-only initializer analysis. Unlike expression context,
     // this survives nested instantiations until an actual body owns the use.
     pub(super) initializer_demand_owner: Option<super::graph::EntityId>,
-    pub(super) parenthesized_elements: std::collections::HashSet<ast::ExprId>,
+    pub(super) parenthesized_elements: crate::support::hash::HashSet<ast::ExprId>,
     pub(super) static_addresses: super::static_addresses::Queries,
     pub(super) static_initializers:
         Vec<(super::graph::EntityId, Option<ast::Initializer>, ScopeId)>,
@@ -113,7 +114,7 @@ pub(crate) struct Analyzer<'tree> {
     pub(super) type_queries: super::type_queries::QueryContext,
     pub(super) template_arguments: u32,
     pub(super) decltype_call: Option<ast::ExprId>,
-    pub(super) builtin_names: super::builtin_calls::BuiltinNames,
+    pub(super) builtin_names: std::rc::Rc<super::builtin_calls::BuiltinNames>,
     pub(super) pretyped_callable: Option<ast::ExprId>,
     pub(super) pretyped_object: Option<ast::ExprId>,
     pub(super) callee_name: Option<ast::ExprId>,
@@ -263,7 +264,13 @@ impl<'tree> Analyzer<'tree> {
         });
         let [func, function, pretty] = predefined_names;
         let predefined_names = [func?, function?, pretty?];
-        let builtin_names = super::builtin_calls::BuiltinNames::new(cursor)?;
+        let builtin_names = match previous
+            .as_ref()
+            .and_then(|graph| graph.builtin_names.as_ref())
+        {
+            Some(names) => std::rc::Rc::clone(names),
+            None => std::rc::Rc::new(super::builtin_calls::BuiltinNames::new(cursor)?),
+        };
         let decltype_name = cursor
             .intern_name(b"decltype(...)")
             .map_err(Error::identifier_interning)?;
@@ -271,10 +278,12 @@ impl<'tree> Analyzer<'tree> {
             .intern_name(b"override")
             .map_err(Error::identifier_interning)?;
         let (identifiers, positions) = cursor.post.input_mut().semantic_context();
-        let graph = match previous {
+        let mut graph = match previous {
             Some(previous) => std::mem::replace(previous, graph),
             None => graph,
         };
+        graph.builtin_names = Some(std::rc::Rc::clone(&builtin_names));
+        graph.localities.begin_analysis();
         let mut analyzer = Self {
             deduced_pack_element: None,
             decltype_name,
@@ -292,7 +301,7 @@ impl<'tree> Analyzer<'tree> {
             stack_base: 0,
             lookup_location: SourceOffset(0),
             deferred: Vec::new(),
-            deferred_constexpr: std::collections::HashMap::new(),
+            deferred_constexpr: crate::support::hash::HashMap::default(),
             class_depth: 0,
             member_initializer_class: None,
             flexible_initialization: None,
@@ -324,7 +333,7 @@ impl<'tree> Analyzer<'tree> {
             initializing: None,
             initializing_declarator: None,
             initializer_demand_owner: None,
-            parenthesized_elements: std::collections::HashSet::new(),
+            parenthesized_elements: crate::support::hash::HashSet::default(),
             static_addresses: super::static_addresses::Queries::default(),
             static_initializers: Vec::new(),
             body_context: None,
@@ -431,7 +440,11 @@ impl<'tree> Analyzer<'tree> {
         if self.lowering() {
             self.finish_qualifier_arguments()?;
         }
-        Ok(self.graph)
+        Ok(self.into_graph())
+    }
+    pub(super) fn into_graph(self) -> Graph {
+        self.graph.localities.begin_reading();
+        self.graph
     }
     pub(super) fn check_stack(&self) -> Result<(), Error> {
         let marker = 0u8;

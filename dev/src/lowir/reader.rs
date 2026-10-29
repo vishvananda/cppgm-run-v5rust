@@ -8,7 +8,8 @@ use super::{
     },
     vocabulary::{Binding, Effects, ObjectClasses, Pass, Role, Storage, Type},
 };
-use std::{collections::HashSet, path::Path};
+use crate::support::hash::HashSet;
+use std::path::Path;
 pub(super) struct Parser<'a> {
     pub(super) program: &'a mut Program,
     pub(super) lexer: Lexer<'a>,
@@ -224,7 +225,7 @@ impl<'a> Parser<'a> {
         };
         let signature_line = self.lexer.token.line;
         self.expect(Kind::LParen, "(")?;
-        let mut names = HashSet::new();
+        let mut names = HashSet::default();
         if !self.at(Kind::RParen) {
             loop {
                 let name = self.name(Kind::Temp, "parameter name")?;
@@ -262,7 +263,7 @@ impl<'a> Parser<'a> {
     }
     fn parameter_metadata(&mut self, parameter: &mut Parameter) -> Result<(), Error> {
         self.advance()?;
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         loop {
             if !self.at(Kind::Word) {
                 return Err(self.fail("invalid parameter metadata"));
@@ -367,7 +368,7 @@ impl<'a> Parser<'a> {
         result: Type,
         on_global: bool,
     ) -> Result<(), Error> {
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         while self.accept(Kind::LBracket)? {
             loop {
                 if !self.at(Kind::Word) {

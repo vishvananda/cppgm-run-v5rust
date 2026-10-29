@@ -8,8 +8,8 @@ use super::{
     types::TypeId,
     variable_instances::Definition,
 };
+use crate::support::hash::HashMap;
 use crate::{support::source::SourceOffset, syntax::ast};
-use std::collections::HashMap;
 
 #[derive(PartialEq, Eq, Hash)]
 struct Key {

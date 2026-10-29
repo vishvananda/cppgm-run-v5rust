@@ -7,8 +7,8 @@ use super::{
     graph::{BindingKind, EntityId, ScopeId, ScopeKind},
     types::{TypeId, TypeKind},
 };
+use crate::support::hash::HashMap;
 use crate::{lex::identifiers::NameId, support::source::SourceOffset};
-use std::collections::HashMap;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Language {

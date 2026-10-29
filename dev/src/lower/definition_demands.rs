@@ -12,13 +12,13 @@ use crate::sema::lowering::EntityId;
 // initializers reached by that later work do not retroactively join the roots.
 pub(super) struct RootArguments {
     functions: Vec<EntityId>,
-    seen: Option<std::collections::HashSet<EntityId>>,
+    seen: Option<crate::support::hash::HashSet<EntityId>>,
 }
 impl RootArguments {
     pub(super) fn new(functions: impl Iterator<Item = EntityId>) -> Self {
         let mut roots = Self {
             functions: Vec::new(),
-            seen: Some(std::collections::HashSet::new()),
+            seen: Some(crate::support::hash::HashSet::default()),
         };
         for function in functions {
             roots.note(function);

@@ -39,13 +39,13 @@ struct DemandCursor {
 }
 pub(super) struct DemandMarks {
     next_epoch: u32,
-    latest: std::collections::HashMap<DemandKey, DemandCursor>,
+    latest: crate::support::hash::HashMap<DemandKey, DemandCursor>,
 }
 impl Default for DemandMarks {
     fn default() -> Self {
         Self {
             next_epoch: DemandEpoch::ROOT.0,
-            latest: std::collections::HashMap::new(),
+            latest: crate::support::hash::HashMap::default(),
         }
     }
 }
@@ -189,11 +189,12 @@ impl Analyzer<'_> {
 /// oracle's separate implicit/member queues. This is a presentation query;
 /// it never analyzes a body or looks up a name.
 pub(super) fn trailing(graph: &super::graph::Graph) -> Vec<Demand> {
-    use std::collections::{HashSet, VecDeque};
+    use crate::support::hash::HashSet;
+    use std::collections::VecDeque;
     let mut constructors = VecDeque::new();
     let mut members = VecDeque::new();
-    let mut seen_constructors = HashSet::new();
-    let mut seen_members: HashSet<EntityId> = HashSet::new();
+    let mut seen_constructors = HashSet::default();
+    let mut seen_members: HashSet<EntityId> = HashSet::default();
     let mut output = Vec::new();
     let mut schedule =
         |demands: &[Demand], constructors: &mut VecDeque<_>, members: &mut VecDeque<_>| {

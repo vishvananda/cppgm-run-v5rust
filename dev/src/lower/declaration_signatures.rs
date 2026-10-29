@@ -4,7 +4,7 @@
 use super::{Error, Metadata, Program, SymbolId};
 use crate::lower::{construction::Entry, function, unit_frontend::Context};
 use crate::lowir::model::{InstructionKind, SignatureId, Value};
-use std::collections::HashMap;
+use crate::support::hash::HashMap;
 
 #[derive(Clone, Copy)]
 struct Declaration {

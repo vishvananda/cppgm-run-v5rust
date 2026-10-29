@@ -5,13 +5,13 @@ use super::{
     graph::{Graph, Node, NodeId},
     statistics::Statistics,
 };
+use crate::support::hash::HashMap;
 use crate::support::stack::StackBudget;
-use std::{
-    collections::HashMap,
-    fs::File,
-    io::{BufRead, BufReader, Write},
-    path::PathBuf,
-};
+use std::fs::File;
+use std::io::BufRead;
+use std::io::BufReader;
+use std::io::Write;
+use std::path::PathBuf;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum DefinitionKind {
@@ -82,7 +82,7 @@ impl<'a, 'g> CaseReader<'a, 'g> {
             words,
             lines,
             definitions: Vec::new(),
-            index: HashMap::new(),
+            index: HashMap::default(),
             budget,
             stack_base: 0,
         }

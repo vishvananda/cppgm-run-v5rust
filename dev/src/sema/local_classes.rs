@@ -6,7 +6,7 @@ use super::{
     graph::{EntityId, Graph, ScopeId, ScopeKind},
 };
 use crate::lex::identifiers::NameId;
-use std::collections::HashMap;
+use crate::support::hash::HashMap;
 
 #[derive(Default)]
 pub(super) struct LocalClasses {
@@ -137,13 +137,9 @@ impl Graph {
         Ok(!self.lower_entity_unit_local(class)?)
     }
     pub(crate) fn lower_private_type_name(&self, ty: super::types::TypeId) -> Result<bool, Error> {
-        self.lower_type_entity_locality(
-            ty,
-            Self::lower_private_entity_name,
-            Self::address_argument_object_local,
-        )
+        self.lower_type_entity_locality(ty, super::locality::Mode::Private)
     }
-    fn lower_private_entity_name(&self, mut class: EntityId) -> Result<bool, Error> {
+    pub(super) fn lower_private_entity_name(&self, mut class: EntityId) -> Result<bool, Error> {
         if !self.lower_object_type_unit_local(self.lower_entity_type(class)?)? {
             return Ok(false);
         }
@@ -386,13 +382,7 @@ impl Graph {
     pub(crate) fn lower_class_no_linkage(&self, class: EntityId) -> Result<bool, Error> {
         self.entity(class)
             .ty
-            .map(|ty| {
-                self.lower_type_entity_locality(
-                    ty,
-                    |graph, entity| Ok(graph.lower_entity_scope_no_linkage(entity)),
-                    |graph, entity| Ok(graph.lower_entity_scope_no_linkage(entity)),
-                )
-            })
+            .map(|ty| self.lower_type_entity_locality(ty, super::locality::Mode::NoLinkage))
             .transpose()
             .map(|local| local.unwrap_or(false))
     }
@@ -606,6 +596,31 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn cached_locality_keeps_source_and_object_modes_separate() {
+        let source = SourceBuffer::new(b"inline void f(){struct Local{};}".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"locality-modes").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let class = *graph
+            .local_classes
+            .by_outer_function
+            .values()
+            .flatten()
+            .next()
+            .unwrap();
+        let ty = graph.lower_entity_type(class).unwrap();
+        for _ in 0..3 {
+            assert!(graph.lower_type_unit_local(ty).unwrap());
+            // The inline function's named local class is shared in host objects.
+            assert!(!graph.lower_object_type_unit_local(ty).unwrap());
+        }
+    }
 
     #[test]
     fn deferred_local_names_require_a_written_member_body() {

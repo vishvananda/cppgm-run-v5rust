@@ -1000,7 +1000,7 @@ impl Graph {
     }
     pub(crate) fn lower_names_bound_pack(&self, root: TypeId) -> bool {
         let mut work = vec![root];
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = crate::support::hash::HashSet::default();
         while let Some(ty) = work.pop() {
             if !seen.insert(ty) {
                 continue;
@@ -1301,25 +1301,47 @@ impl Graph {
         )
     }
     pub(crate) fn lower_type_unit_local(&self, ty: TypeId) -> Result<bool, Error> {
-        self.lower_type_entity_locality(
-            ty,
-            |graph, entity| graph.lower_entity_scope_local(entity, false),
-            Self::address_argument_unit_local,
-        )
+        self.lower_type_entity_locality(ty, super::locality::Mode::Source)
     }
     pub(crate) fn lower_object_type_unit_local(&self, ty: TypeId) -> Result<bool, Error> {
-        self.lower_type_entity_locality(
-            ty,
-            |graph, entity| graph.lower_entity_scope_local(entity, true),
-            Self::address_argument_object_local,
-        )
+        self.lower_type_entity_locality(ty, super::locality::Mode::Object)
     }
     pub(super) fn lower_type_entity_locality(
         &self,
-        mut ty: TypeId,
-        is_local: fn(&Self, EntityId) -> Result<bool, Error>,
-        address_is_local: fn(&Self, EntityId) -> Result<bool, Error>,
+        ty: TypeId,
+        mode: super::locality::Mode,
     ) -> Result<bool, Error> {
+        let ty = self.types.canonical_view(ty);
+        self.localities.query(ty, mode, |scratch| {
+            self.walk_type_locality(ty, mode, scratch)
+        })
+    }
+    fn walk_type_locality(
+        &self,
+        mut ty: TypeId,
+        mode: super::locality::Mode,
+        scratch: &mut super::locality::Scratch,
+    ) -> Result<bool, Error> {
+        use super::locality::Mode;
+        type Predicate = fn(&Graph, EntityId) -> Result<bool, Error>;
+        let (is_local, address_is_local): (Predicate, Predicate) = match mode {
+            Mode::Source => (
+                |graph, entity| graph.lower_entity_scope_local(entity, false),
+                Self::address_argument_unit_local,
+            ),
+            Mode::Object => (
+                |graph, entity| graph.lower_entity_scope_local(entity, true),
+                Self::address_argument_object_local,
+            ),
+            Mode::Private => (
+                Self::lower_private_entity_name,
+                Self::address_argument_object_local,
+            ),
+            Mode::NoLinkage => (
+                |graph, entity| Ok(graph.lower_entity_scope_no_linkage(entity)),
+                |graph, entity| Ok(graph.lower_entity_scope_no_linkage(entity)),
+            ),
+        };
         // Scalar/object and linear pointer shells need no scratch allocation.
         // Function components and class-template arguments share a DAG worklist.
         loop {
@@ -1351,8 +1373,8 @@ impl Graph {
                 _ => return Ok(false),
             }
         }
-        let mut work = vec![ty];
-        let mut seen = std::collections::HashSet::new();
+        let super::locality::Scratch { work, seen } = scratch;
+        work.push(ty);
         while let Some(ty) = work.pop() {
             let ty = self.types.canonical_view(ty);
             if !seen.insert(ty) {

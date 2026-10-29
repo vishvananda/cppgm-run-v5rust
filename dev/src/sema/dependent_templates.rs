@@ -11,11 +11,11 @@ use super::{
     lookup::Filter,
     types::{Cv, TypeId, TypeKind},
 };
+use crate::support::hash::HashMap;
 use crate::{
     lex::{identifiers::NameId, vocabulary::Keyword},
     syntax::ast,
 };
-use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) struct Name {

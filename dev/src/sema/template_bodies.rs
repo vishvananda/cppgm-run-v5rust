@@ -7,11 +7,12 @@ use super::{
     graph::{EntityId, ScopeKind},
     special_members::SpecialDefinition,
 };
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 use crate::{
     support::stack::StackBudget,
     syntax::{ParseError, ast, cursor::Cursor, storage::List},
 };
-use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy)]
 struct Pattern {
@@ -153,7 +154,7 @@ impl Graph {
                 }
                 Ok(available)
             });
-        *self = analyzer.graph;
+        *self = analyzer.into_graph();
         result
     }
 
@@ -1211,8 +1212,8 @@ mod tests {
             .collect();
         contexts.sort_unstable();
         assert_eq!(contexts, [(1, true), (2, false), (3, true), (4, false)]);
-        let mut bodies = HashSet::new();
-        let mut scopes = HashSet::new();
+        let mut bodies = HashSet::default();
+        let mut scopes = HashSet::default();
         for (&class, closure) in &analyzer.graph.closures.records {
             let call = analyzer.graph.entity(closure.call);
             assert!(closure.enclosing.is_none());
@@ -1594,8 +1595,8 @@ mod tests {
         let bodies = &graph.function_templates.bodies;
         assert_eq!(bodies.states.len(), 3);
         assert_eq!(bodies.demands.len(), 3);
-        let mut copies = HashSet::new();
-        let mut owners = HashSet::new();
+        let mut copies = HashSet::default();
+        let mut owners = HashSet::default();
         for &entity in &bodies.demands {
             let primary = graph
                 .binding(graph.function_templates.primary(entity).unwrap())
@@ -1661,7 +1662,7 @@ mod tests {
         let bodies = &graph.function_templates.bodies;
         assert_eq!(bodies.members.len(), 4);
         assert_eq!(bodies.member_links.len(), 4);
-        let mut completed = HashSet::new();
+        let mut completed = HashSet::default();
         for (&entity, &(pattern, _)) in &bodies.members {
             assert_eq!(graph.entity(entity).home, Some(graph.global));
             assert!(graph.within_class_instance(pattern.print));
@@ -1731,7 +1732,7 @@ mod tests {
         assert_eq!(bodies.member_definitions.len(), 2);
         assert_eq!(bodies.members.len(), 2);
         assert_eq!(bodies.states.len(), 2);
-        let mut copies = HashSet::new();
+        let mut copies = HashSet::default();
         for (&entity, &(definition, _)) in &bodies.members {
             let source = bodies.member_links[&entity];
             let original = bodies.member_definitions[&source].0;
@@ -1778,7 +1779,7 @@ mod tests {
         assert_eq!(bodies.demands.len(), 2);
         assert_eq!(bodies.states.len(), 2);
         assert_eq!(tree.bodies.mark(), original_bodies + 2);
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         for (&entity, &(pattern, _)) in &bodies.members {
             if let Some(body) = bodies.body(entity) {
                 assert_ne!(pattern.body, body);
@@ -2163,8 +2164,8 @@ mod tests {
         assert_eq!(bodies.patterns.len(), 2);
         assert_eq!(bodies.demands.len(), 2);
         assert_eq!(bodies.states.len(), 2);
-        let mut roots = HashSet::new();
-        let mut scopes = HashSet::new();
+        let mut roots = HashSet::default();
+        let mut scopes = HashSet::default();
         for &entity in &bodies.demands {
             let body = bodies.body(entity).unwrap();
             let ast::Body::Parsed(body) = *tree.bodies.get(body) else {

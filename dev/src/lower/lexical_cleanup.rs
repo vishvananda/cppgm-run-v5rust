@@ -6,11 +6,11 @@ use super::{
     function::Function,
     lifetime::{Cleanup, CleanupPlace},
 };
+use crate::support::hash::HashMap;
 use crate::{
     lowir::model::{BlockId, InstructionKind as I, RuntimeInstruction as R, Value},
     sema::lowering::TypeId,
 };
-use std::collections::HashMap;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum ReturnedKey {

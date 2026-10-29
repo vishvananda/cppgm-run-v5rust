@@ -1,6 +1,7 @@
 // Translated from lower/global_lowering.cpp's static data, string_object and constexpr_image. See NOTICE.
 //! Typed images become ordered `LowIR` items; unit-local caches share data without sharing local storage.
 use super::{Error, symbols::Symbols, types};
+use crate::support::hash::HashMap;
 use crate::{
     lex::PostTokenKind,
     lowir::{
@@ -14,7 +15,6 @@ use crate::{
     },
     syntax::ast,
 };
-use std::collections::HashMap;
 /// Static addresses may demand a template object's definition immediately.
 /// The unit initialization context follows namespace and function images;
 /// isolated generated bodies leave demand in their parent-owned queue.
@@ -44,7 +44,7 @@ pub(super) struct Objects {
     images: HashMap<Vec<DataItem>, SymbolId>,
     reference_temporaries: HashMap<crate::sema::lowering::EntityId, SymbolId>,
     constant_temporaries: HashMap<crate::sema::lowering::TemporaryId, SymbolId>,
-    defined_references: std::collections::HashSet<crate::sema::lowering::EntityId>,
+    defined_references: crate::support::hash::HashSet<crate::sema::lowering::EntityId>,
 }
 impl Objects {
     pub(super) fn take_string_units(&mut self) -> Vec<u64> {

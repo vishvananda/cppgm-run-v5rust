@@ -4,7 +4,7 @@ use super::token::{LEADING_SPACE, Token};
 use crate::lex::identifiers::{Identifiers, NameId};
 use crate::lex::pp_lexer::{PpTokenKind, Punctuator};
 use crate::preprocess::{error::PreprocessError, input::SourceInput};
-use std::collections::HashMap;
+use crate::support::hash::HashMap;
 use std::rc::Rc;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -214,7 +214,7 @@ impl<'a> Definition<'a> {
             variadic: false,
             builtin: None,
         };
-        let mut slots = HashMap::new();
+        let mut slots = HashMap::default();
         if function_like {
             definition.parse_parameters(source, names, &token, &mut slots)?;
             token = source.next_in_line(names)?;

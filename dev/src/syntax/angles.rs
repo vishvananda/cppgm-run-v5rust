@@ -9,7 +9,8 @@ use super::{
     storage::List,
 };
 use crate::lex::pp_lexer::Punctuator as P;
-use std::collections::{BTreeMap, HashSet};
+use crate::support::hash::HashSet;
+use std::collections::BTreeMap;
 
 #[derive(Clone, Copy)]
 struct Fence {

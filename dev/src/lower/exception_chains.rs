@@ -7,7 +7,7 @@ use super::{
     lifetime::Cleanup,
 };
 use crate::lowir::model::{BlockId, InstructionKind as I, RuntimeInstruction as R};
-use std::collections::HashMap;
+use crate::support::hash::HashMap;
 
 #[derive(Clone, Copy, Default)]
 pub(super) struct ObjectMemo {

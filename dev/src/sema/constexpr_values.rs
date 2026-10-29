@@ -9,8 +9,8 @@ use super::{
     graph::{EntityId, ScopeId},
     types::{TypeId, TypeKind},
 };
+use crate::support::hash::HashMap;
 use crate::{support::source::SourceOffset, syntax::ast};
-use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct TemporaryId(u32);
@@ -25,13 +25,13 @@ pub(super) struct Temporary {
 pub(super) struct Values {
     complete: HashMap<EntityId, Frozen>,
     constructing: HashMap<EntityId, Address>,
-    static_roots: std::collections::HashSet<Root>,
+    static_roots: crate::support::hash::HashSet<Root>,
     temporaries: Vec<Temporary>,
     deferred: HashMap<EntityId, super::deferred_constants::Initialization>,
 }
 pub(super) struct ConstructionSave {
     constructing: HashMap<EntityId, Address>,
-    static_roots: std::collections::HashSet<Root>,
+    static_roots: crate::support::hash::HashSet<Root>,
 }
 
 impl Values {

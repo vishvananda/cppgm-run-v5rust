@@ -7,7 +7,7 @@ use crate::lowir::{
 #[derive(Default)]
 pub(super) struct State {
     wrappers: HashMap<EntityId, SymbolId>,
-    used: std::collections::HashSet<EntityId>,
+    used: crate::support::hash::HashSet<EntityId>,
     unit: Option<Unit>,
 }
 pub(in crate::lower) struct Unit {

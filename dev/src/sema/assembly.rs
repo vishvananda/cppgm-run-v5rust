@@ -8,11 +8,11 @@ use super::{
     specifiers::InlinePreference,
     types::{Scalar, TypeKind},
 };
+use crate::support::hash::HashMap;
 use crate::{
     lex::{PostTokenKind, identifiers::NameId},
     syntax::ast,
 };
-use std::collections::HashMap;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Binding {

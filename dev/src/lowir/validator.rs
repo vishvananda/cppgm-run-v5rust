@@ -7,12 +7,12 @@ use super::{
     },
     vocabulary::{Binary, Convert, Role, Storage, Type, Unary},
 };
-use std::collections::HashSet;
+use crate::support::hash::HashSet;
 pub(super) fn validate(program: &Program) -> Result<(), Error> {
     validate_options(program, true)
 }
 fn validate_options(program: &Program, source_locations: bool) -> Result<(), Error> {
-    let mut roles = HashSet::new();
+    let mut roles = HashSet::default();
     let mut wrapped = vec![false; program.symbols().len()];
     for symbol in program.symbols() {
         if !symbol.declared() {
@@ -122,7 +122,7 @@ fn validate_body(
     }
     let mut positions = vec![usize::MAX; body.instructions().len()];
     let mut placed = vec![false; body.blocks().len()];
-    let mut predecessors = vec![HashSet::new(); body.blocks().len()];
+    let mut predecessors = vec![HashSet::default(); body.blocks().len()];
     let mut handlers = vec![false; body.blocks().len()];
     let mut position = 0;
     for &block in &body.layout {
@@ -487,7 +487,7 @@ fn phi_error(
     if pairs.is_empty() {
         return Some("phi requires predecessor/value pairs".into());
     }
-    let mut seen = HashSet::new();
+    let mut seen = HashSet::default();
     for &(from, value) in pairs {
         if !seen.insert(from) {
             return Some(format!(

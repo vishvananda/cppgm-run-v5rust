@@ -153,7 +153,7 @@ impl Analyzer<'_> {
             }
             state.place_base(&self.graph, base, Resolver::Virtual(index), 0, location)?;
         }
-        let virtual_offsets: std::collections::HashMap<_, _> =
+        let virtual_offsets: crate::support::hash::HashMap<_, _> =
             state.layout.bases.iter().copied().collect();
         for edge in &mut self.graph.entity_mut(class).bases {
             if edge.is_virtual {

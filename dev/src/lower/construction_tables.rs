@@ -1,6 +1,8 @@
 // Translated from lower/virtual_base_lowering.cpp's construction contexts. See NOTICE.
 //! Unit-owned context facts use complete subobject identity, independently of emission.
 use super::{TableContext, TableTarget, ThisAdjustment, address, define, integer};
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 use crate::{
     abi::encoder::{Encoder, Target},
     lower::{Error, symbols::Symbols},
@@ -10,7 +12,6 @@ use crate::{
     },
     sema::lowering::{EntityId, SlotKind},
 };
-use std::collections::{HashMap, HashSet};
 
 #[derive(Default)]
 pub(super) struct Contexts {
@@ -84,13 +85,13 @@ impl Symbols<'_, '_> {
                 ))?;
         let count = group.segments.len();
         let at = &self.state.vtables.contexts.offsets[&context];
-        let mut heads = HashMap::new();
+        let mut heads = HashMap::default();
         for (i, part) in group.segments.iter().enumerate().skip(1).rev() {
             if let Some((primary, true)) = self.graph.lower_itanium_primary(part.class) {
                 heads.insert((primary, at[i]), i);
             }
         }
-        let mut chained = HashSet::new();
+        let mut chained = HashSet::default();
         let mut link = Some(context.class);
         while let Some(class) = link {
             link = match self.graph.lower_itanium_primary(class) {
@@ -238,7 +239,7 @@ impl Symbols<'_, '_> {
             segments[segment] = index;
             index = index.checked_add(1).ok_or(crate::lowir::Error::Limit)?;
         }
-        let mut virtuals = HashMap::new();
+        let mut virtuals = HashMap::default();
         let mut index = self.vtt_size(class)?;
         for &(base, _) in self.graph.lower_virtual_bases(class) {
             virtuals.insert(base, index);

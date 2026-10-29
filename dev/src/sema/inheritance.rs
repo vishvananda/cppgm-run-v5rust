@@ -8,8 +8,9 @@ use super::{
     lookup::Filter,
     types::{TypeId, TypeKind},
 };
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 use crate::{lex::vocabulary::Keyword, support::source::SourceOffset, syntax::ast};
-use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum Derivation {
@@ -89,7 +90,7 @@ impl Graph {
         if base == derived || self.entity(derived).bases.is_empty() {
             return false;
         }
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         let mut work = vec![derived];
         while let Some(class) = work.pop() {
             if !seen.insert(class) {
@@ -131,7 +132,7 @@ impl Graph {
                 virtual_path: virtual_chain,
             };
         }
-        let mut counts = HashMap::new();
+        let mut counts = HashMap::default();
         counts.insert(
             base,
             BaseReachability {
@@ -140,7 +141,7 @@ impl Graph {
             },
         );
         let mut shared = 0u8;
-        let mut counted = HashSet::new();
+        let mut counted = HashSet::default();
         let mut work = vec![(root, 0usize)];
         while let Some((class, next)) = work.last_mut() {
             if counts.contains_key(class) {
@@ -229,7 +230,7 @@ impl Graph {
         // Retain only the first route. Query-local misses bound a shared
         // lattice to its edges, without copying a map of every path count.
         let mut pending = vec![(derived, 0usize)];
-        let mut misses = HashSet::new();
+        let mut misses = HashSet::default();
         let path = loop {
             let Some((class, next)) = pending.last_mut() else {
                 return Err(Error::Invariant("base path without an edge"));
@@ -469,7 +470,7 @@ impl Analyzer<'_> {
         class: EntityId,
         scope: ScopeId,
     ) -> Result<(), Error> {
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         for syntax_index in 0..self.tree.bases.get(node.bases).len() {
             let syntax_item = self.tree.bases.get(node.bases)[syntax_index];
             let base = &syntax_item;
@@ -609,7 +610,7 @@ impl Analyzer<'_> {
     ) -> bool {
         // Access is a query over edges, independent of subobject multiplicity.
         // Repeated static members, enumerators and type names may be accessible.
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         let mut work = vec![derived];
         while let Some(class) = work.pop() {
             if class == base {
@@ -644,7 +645,7 @@ impl Analyzer<'_> {
         let &(last, index) = edges.last().ok_or(Error::Invariant("empty base path"))?;
         let base = self.graph.entity(last).bases[index].class;
         let mut class = derived;
-        let mut memo = HashMap::new();
+        let mut memo = HashMap::default();
         while class != base {
             let bases = &self.graph.entity(class).bases;
             let edge = if bases.len() > 1 {

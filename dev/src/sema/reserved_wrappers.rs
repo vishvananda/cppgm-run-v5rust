@@ -18,10 +18,10 @@ pub(super) struct Context {
 
 #[derive(Default)]
 pub(super) struct Deferrals {
-    bodies: std::collections::HashSet<EntityId>,
-    undeduced: std::collections::HashSet<EntityId>,
-    initializers: std::collections::HashSet<EntityId>,
-    expressions: std::collections::HashSet<ast::ExprId>,
+    bodies: crate::support::hash::HashSet<EntityId>,
+    undeduced: crate::support::hash::HashSet<EntityId>,
+    initializers: crate::support::hash::HashSet<EntityId>,
+    expressions: crate::support::hash::HashSet<ast::ExprId>,
 }
 impl Deferrals {
     pub(super) fn note_undeduced(&mut self, entity: EntityId) {

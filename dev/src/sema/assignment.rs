@@ -12,8 +12,9 @@ use super::{
     special_members::SpecialDefinition,
     types::{Cv, RefKind, TypeId, TypeKind},
 };
+use crate::support::hash::HashSet;
 use crate::{lex::pp_lexer::Punctuator, support::source::SourceOffset};
-use std::{cmp::Ordering, collections::HashSet};
+use std::cmp::Ordering;
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum Origin {

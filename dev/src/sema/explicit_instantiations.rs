@@ -9,11 +9,11 @@ use super::{
     specifiers::{InlinePreference, Specifiers},
     types::{Scalar, TypeKind},
 };
+use crate::support::hash::HashMap;
 use crate::{
     support::source::SourceOffset,
     syntax::{ast, storage::List},
 };
-use std::collections::HashMap;
 
 #[derive(Clone, Copy, Default)]
 pub(super) struct MemberPolicy {

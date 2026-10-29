@@ -30,7 +30,7 @@ impl EffectConstructor {
 }
 #[derive(Default)]
 pub(super) struct ConstructorEffects {
-    entries: std::collections::HashMap<(EffectConstructor, bool), Effects>,
+    entries: crate::support::hash::HashMap<(EffectConstructor, bool), Effects>,
 }
 impl ConstructorEffects {
     fn get(&self, graph: &crate::sema::Graph, id: ConstructorId, hidden: bool) -> Option<Effects> {

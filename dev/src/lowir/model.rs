@@ -7,7 +7,8 @@ use super::{
         Projection, Role, Storage, Type, Unary,
     },
 };
-use std::collections::{HashMap, HashSet};
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -71,7 +72,7 @@ impl Default for Names {
         let empty: Arc<[u8]> = Arc::from(&b""[..]);
         Self {
             text: vec![Arc::clone(&empty)],
-            index: HashMap::from([(empty, NameId(0))]),
+            index: HashMap::from_iter([(empty, NameId(0))]),
             #[cfg(feature = "telemetry")]
             logical: vec![true],
             #[cfg(feature = "telemetry")]
@@ -155,7 +156,7 @@ pub(crate) struct Program {
     forward_boundaries: Vec<Option<(SignatureId, Metadata)>>,
     forward_globals: Vec<Option<ForwardGlobal>>,
     immediate_declarations: Vec<SymbolId>,
-    immediate_declaration_set: std::collections::HashSet<SymbolId>,
+    immediate_declaration_set: crate::support::hash::HashSet<SymbolId>,
     pub(crate) names: Names,
     functions: Vec<Function>,
     unpublished_functions: HashSet<SymbolId>,
@@ -467,7 +468,7 @@ impl Program {
     /// Replace only function-definition positions, as `ProgramLowering`'s retained
     /// order does; globals and declarations retain their publication positions.
     pub(crate) fn order_retained_definitions(&mut self, completed: &[SymbolId]) {
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         let completed: Vec<_> = completed
             .iter()
             .copied()

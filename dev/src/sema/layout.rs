@@ -38,14 +38,15 @@ pub(super) struct Boundaries {
     root_count: usize,
     explicit_roots: bool,
     definition_groups: Option<usize>,
-    seen_tables: std::collections::HashSet<EntityId>,
-    seen_constructors: std::collections::HashSet<super::construction::ConstructorId>,
-    seen: std::collections::HashSet<EntityId>,
-    signatures: std::collections::HashSet<super::types::TypeId>,
-    destruction_edges: std::collections::HashMap<EntityId, Vec<EntityId>>,
-    constructor_edges: std::collections::HashMap<EntityId, Vec<super::construction::ConstructorId>>,
-    layouts: std::collections::HashMap<EntityId, Vec<(StorageDemand, SourceOffset)>>,
-    class_informations: std::collections::HashMap<EntityId, Vec<EntityId>>,
+    seen_tables: crate::support::hash::HashSet<EntityId>,
+    seen_constructors: crate::support::hash::HashSet<super::construction::ConstructorId>,
+    seen: crate::support::hash::HashSet<EntityId>,
+    signatures: crate::support::hash::HashSet<super::types::TypeId>,
+    destruction_edges: crate::support::hash::HashMap<EntityId, Vec<EntityId>>,
+    constructor_edges:
+        crate::support::hash::HashMap<EntityId, Vec<super::construction::ConstructorId>>,
+    layouts: crate::support::hash::HashMap<EntityId, Vec<(StorageDemand, SourceOffset)>>,
+    class_informations: crate::support::hash::HashMap<EntityId, Vec<EntityId>>,
 }
 pub(super) fn round_up(value: u64, alignment: u64) -> u64 {
     value.wrapping_add(alignment - 1) / alignment * alignment
@@ -154,8 +155,8 @@ impl Analyzer<'_> {
         &mut self,
         constructor: super::construction::ConstructorId,
         root_count: &mut usize,
-        seen_constructors: &mut std::collections::HashSet<super::construction::ConstructorId>,
-        seen_tables: &mut std::collections::HashSet<EntityId>,
+        seen_constructors: &mut crate::support::hash::HashSet<super::construction::ConstructorId>,
+        seen_tables: &mut crate::support::hash::HashSet<EntityId>,
         work: &mut Vec<EntityId>,
         constructors: &mut Vec<super::construction::ConstructorId>,
     ) -> Result<(), Error> {

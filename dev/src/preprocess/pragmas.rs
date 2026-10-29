@@ -6,6 +6,7 @@ use super::{
     input::SourceInput,
     macros::{definition::Definitions, expander::Expander, token::Token},
 };
+use crate::support::hash::HashSet;
 use crate::{
     lex::{
         identifiers::Identifiers,
@@ -14,7 +15,6 @@ use crate::{
     },
     support::source::SourceBuffer,
 };
-use std::collections::HashSet;
 
 pub(crate) struct Pragmas {
     pack: u32,
@@ -27,7 +27,7 @@ impl Pragmas {
         Self {
             pack: 0,
             pack_stack: Vec::new(),
-            once_files: HashSet::new(),
+            once_files: HashSet::default(),
             identity_query,
         }
     }

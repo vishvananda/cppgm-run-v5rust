@@ -9,8 +9,8 @@ use super::{
     templates::{HeadId, ParameterInfo},
     types::{Cv, TypeId, TypeKind},
 };
+use crate::support::hash::HashMap;
 use crate::{lex::vocabulary::Keyword, support::source::SourceOffset, syntax::ast};
-use std::collections::HashMap;
 
 /// Immutable canonical-name keys own undefined shells for this semantic unit.
 /// Definition/default changes cannot invalidate these name identities.

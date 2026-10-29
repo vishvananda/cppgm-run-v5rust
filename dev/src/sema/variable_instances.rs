@@ -11,8 +11,9 @@ use super::{
     templates::HeadId,
     types::{TypeId, TypeKind},
 };
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 use crate::{support::source::SourceOffset, syntax::ast};
-use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy)]
 pub(super) struct Pattern {

@@ -9,8 +9,8 @@ use super::{
     lookup::Filter,
     templates::HeadId,
 };
+use crate::support::hash::HashMap;
 use crate::syntax::ast;
-use std::collections::HashMap;
 
 #[derive(Clone, Copy)]
 struct Pattern {

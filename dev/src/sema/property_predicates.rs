@@ -8,8 +8,8 @@ use super::{
     special_members::SpecialDefinition,
     types::{Scalar, TypeId, TypeKind},
 };
+use crate::support::hash::HashMap;
 use crate::{lex::predicates::TypePredicate as T, support::source::SourceOffset};
-use std::collections::HashMap;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Question {

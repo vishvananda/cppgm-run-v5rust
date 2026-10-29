@@ -11,7 +11,7 @@ use crate::{
 pub(super) struct DefinitionOutput<'a> {
     pub program: &'a mut crate::lowir::model::Program,
     pub definitions: &'a mut super::definition_order::Definitions,
-    pub emitted: &'a mut std::collections::HashSet<EntityId>,
+    pub emitted: &'a mut crate::support::hash::HashSet<EntityId>,
 }
 pub(super) fn lower_definitions(
     output: DefinitionOutput<'_>,

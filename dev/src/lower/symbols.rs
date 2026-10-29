@@ -41,6 +41,7 @@ mod type_information;
 mod virtual_bases;
 #[path = "vtables.rs"]
 mod vtables;
+use crate::support::hash::HashMap;
 use crate::{
     abi::{
         self,
@@ -56,7 +57,7 @@ use crate::{
     syntax::{ast, cursor::Cursor},
     types::FundamentalType as F,
 };
-use std::{collections::HashMap, fmt::Write};
+use std::fmt::Write;
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum DebugLocations {
     #[default]
@@ -66,7 +67,7 @@ pub(super) enum DebugLocations {
 #[derive(Default)]
 pub(super) struct SymbolTable {
     pub(super) work: super::observations::Work,
-    deferred_globals: std::collections::HashSet<SymbolId>,
+    deferred_globals: crate::support::hash::HashSet<SymbolId>,
     pub(super) object_mode: bool,
     pub(super) debug_locations: DebugLocations,
     pub(super) host_objects: bool,

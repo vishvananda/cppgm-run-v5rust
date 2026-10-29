@@ -11,11 +11,10 @@ use super::{
     templates::HeadId,
     types::{Cv, RefKind, Scalar, TypeId, TypeKind},
 };
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 use crate::{support::source::SourceOffset, syntax::ast};
-use std::{
-    cmp::Ordering,
-    collections::{HashMap, HashSet},
-};
+use std::cmp::Ordering;
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct SpecializationKey {
@@ -1237,7 +1236,7 @@ impl Analyzer<'_> {
         }
         let pattern = self.bare_type(pattern)?;
         let mut work = vec![class];
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         let mut trial = arguments.to_vec();
         let mut found: Option<Vec<Option<TypeId>>> = None;
         let mut unique = true;
@@ -1304,7 +1303,7 @@ impl Analyzer<'_> {
         }
         let ty = self.graph.types.canonical_function(ty)?;
         let mut work = vec![ty];
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         while let Some(ty) = work.pop() {
             if !seen.insert(ty) {
                 continue;
@@ -2176,7 +2175,7 @@ impl Analyzer<'_> {
 
     fn names_operand(&self, root: TypeId) -> bool {
         let mut work = vec![root];
-        let mut visited = HashSet::new();
+        let mut visited = HashSet::default();
         while let Some(ty) = work.pop() {
             if !visited.insert(ty) {
                 continue;

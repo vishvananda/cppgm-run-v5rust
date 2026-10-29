@@ -10,8 +10,8 @@ use super::{
     templates::HeadId,
     types::{Cv, TypeId, TypeKind},
 };
+use crate::support::hash::HashMap;
 use crate::{support::source::SourceOffset, syntax::ast};
-use std::collections::HashMap;
 
 #[derive(PartialEq, Eq, Hash)]
 struct Key {
@@ -738,7 +738,7 @@ mod tests {
         let size = cursor.intern_name(b"size").unwrap();
         let unused = cursor.intern_name(b"unused").unwrap();
         let mut classes = Vec::new();
-        let mut bodies = std::collections::HashSet::new();
+        let mut bodies = crate::support::hash::HashSet::default();
         for name in [b"Int".as_slice(), b"Long", b"Again"] {
             let name = cursor.intern_name(name).unwrap();
             let binding = graph
@@ -870,8 +870,8 @@ mod tests {
             true,
         )
         .unwrap();
-        let mut scopes = std::collections::HashSet::new();
-        let mut shared = std::collections::HashSet::new();
+        let mut scopes = crate::support::hash::HashSet::default();
+        let mut shared = crate::support::hash::HashSet::default();
         for instance in graph.class_templates.instances.values() {
             let Some(head) = graph.entity(instance.primary).template_head else {
                 continue;
@@ -1031,7 +1031,7 @@ mod tests {
         assert_eq!(graph.class_templates.instances.len(), 3);
         assert_eq!(graph.class_templates.defaults.len(), 3);
         assert_eq!(graph.class_templates.specializations.len(), 3);
-        let mut primaries = std::collections::HashSet::new();
+        let mut primaries = crate::support::hash::HashSet::default();
         let mut dependent = 0;
         for (&entity, instance) in &graph.class_templates.instances {
             primaries.insert(instance.primary);

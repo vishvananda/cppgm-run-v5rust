@@ -173,7 +173,7 @@ impl Analyzer<'_> {
         class: super::graph::EntityId,
     ) -> Result<bool, Error> {
         let mut work = vec![class];
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = crate::support::hash::HashSet::default();
         while let Some(class) = work.pop() {
             if !seen.insert(class) {
                 continue;

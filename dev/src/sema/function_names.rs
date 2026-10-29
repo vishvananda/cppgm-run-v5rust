@@ -129,7 +129,7 @@ mod tests {
         let mut graph = analyzer.analyze(declarations).unwrap();
         let functions: Vec<_> = graph.functions_at(graph.global, f.into()).collect();
         assert_eq!(functions.len(), 4);
-        let entities: std::collections::HashSet<_> = functions
+        let entities: crate::support::hash::HashSet<_> = functions
             .iter()
             .map(|&binding| graph.binding(binding).entity)
             .collect();

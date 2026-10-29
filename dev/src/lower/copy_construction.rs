@@ -154,7 +154,7 @@ impl Function<'_, '_, '_, '_> {
             first = 0;
         }
         if variant != Variant::Base {
-            let mut planned = std::collections::HashMap::new();
+            let mut planned = crate::support::hash::HashMap::default();
             let mut later = false;
             for (index, &action) in actions.iter().enumerate() {
                 if let Some(base) = self.shared_copy_base(class, action) {

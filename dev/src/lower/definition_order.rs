@@ -2,11 +2,10 @@
 //! Serialized spans or retained IDs carry completion and special-member order.
 use super::Error;
 use crate::lowir::model::{NameId, Program, SymbolId};
-use std::{
-    collections::HashMap,
-    io::{self, Write},
-    ops::Range,
-};
+use crate::support::hash::HashMap;
+use std::io;
+use std::io::Write;
+use std::ops::Range;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) struct FamilyId(u32);

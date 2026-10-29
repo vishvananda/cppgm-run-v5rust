@@ -7,12 +7,12 @@ use super::{
     lookup::Filter,
     types::{Cv, TypeId, TypeKind},
 };
+use crate::support::hash::HashMap;
 use crate::{
     lex::{identifiers::NameId, vocabulary::Keyword},
     support::source::SourceOffset,
     syntax::ast,
 };
-use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) struct HeadId(u32);

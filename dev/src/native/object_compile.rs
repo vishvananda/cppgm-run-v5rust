@@ -8,6 +8,7 @@ use super::{
     },
     runtime::{self, Symbols},
 };
+use crate::support::hash::HashMap;
 use crate::{
     lowir::{
         Error,
@@ -16,7 +17,6 @@ use crate::{
     },
     types::floating::FloatingScanner,
 };
-use std::collections::HashMap;
 /// Exception runtime and object ABI chosen by the output dialect.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ObjectModel {
@@ -227,7 +227,7 @@ impl ObjectBuilder {
             lsda: Vec::new(),
             type_fields: Vec::new(),
             cells: Vec::new(),
-            cell_index: HashMap::new(),
+            cell_index: HashMap::default(),
             group_members: Vec::new(),
             out: Object::new(Vec::new()),
             image,
@@ -238,11 +238,11 @@ impl ObjectBuilder {
             pending: Vec::new(),
             placements: Vec::new(),
             object_symbols: Vec::new(),
-            by_name: HashMap::new(),
-            host_names: HashMap::new(),
+            by_name: HashMap::default(),
+            host_names: HashMap::default(),
             shared: [None; 6],
             own_names: [None; 6],
-            named: HashMap::new(),
+            named: HashMap::default(),
             grouped: Vec::new(),
             relro: None,
             relro_name: None,

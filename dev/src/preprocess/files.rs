@@ -28,11 +28,12 @@ pub struct FileServices {
 }
 
 use super::error::PreprocessError;
+use crate::support::hash::HashMap;
 use crate::{
     lex::identifiers::NameId,
     support::source::{SourceBuffer, SourceImage},
 };
-use std::{collections::HashMap, rc::Rc};
+use std::rc::Rc;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FileId(u32);
@@ -65,9 +66,10 @@ impl<'a> SourceFiles<'a> {
                 identity,
                 guard: None,
             }],
-            paths: HashMap::from([(name.to_vec(), Some(id))]),
-            identities: identity
-                .map_or_else(HashMap::new, |identity| HashMap::from([(identity, id)])),
+            paths: HashMap::from_iter([(name.to_vec(), Some(id))]),
+            identities: identity.map_or_else(HashMap::default, |identity| {
+                HashMap::from_iter([(identity, id)])
+            }),
             services,
         }
     }

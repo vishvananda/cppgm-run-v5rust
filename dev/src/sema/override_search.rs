@@ -1,7 +1,7 @@
 // Translated from analyzer_virtual.cpp::push_override_bases/override_facts. See NOTICE.
 //! A shared base can be revisited when its primary-table path arrives later.
 use super::graph::{EntityId, Graph};
-use std::collections::HashMap;
+use crate::support::hash::HashMap;
 
 pub(super) struct OverrideSearch {
     pending: Vec<(EntityId, bool)>,
@@ -11,7 +11,7 @@ impl OverrideSearch {
     pub(super) fn new(graph: &Graph, class: EntityId, primary: Option<EntityId>) -> Self {
         let mut search = Self {
             pending: Vec::new(),
-            visits: HashMap::new(),
+            visits: HashMap::default(),
         };
         search.descend(graph, class, primary);
         search

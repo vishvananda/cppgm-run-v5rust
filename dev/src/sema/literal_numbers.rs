@@ -1,14 +1,13 @@
 // Translated from analyzer_literals.cpp and expression_lowering.cpp::literal. See NOTICE.
 //! Cooked numeric operands own decoding, cached once at explicit value demand.
 use super::Error;
+use crate::support::hash::HashMap;
 use crate::{
     syntax::ast,
     types::{FundamentalType, floating::FloatingScanner},
 };
-use std::{
-    cell::{OnceCell, RefCell},
-    collections::HashMap,
-};
+use std::cell::OnceCell;
+use std::cell::RefCell;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct NumberId(u32);

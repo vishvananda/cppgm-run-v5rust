@@ -8,8 +8,8 @@ use super::{
     templates::HeadId,
     types::{TypeId, TypeKind},
 };
+use crate::support::hash::HashSet;
 use crate::support::source::SourceOffset;
-use std::collections::HashSet;
 
 #[derive(Default)]
 pub(super) struct PackPattern {
@@ -79,8 +79,8 @@ impl Analyzer<'_> {
     pub(super) fn type_pack_pattern(&self, root: TypeId, placeholders: bool) -> PackPattern {
         let mut packs = PackPattern::default();
         let mut work = vec![root];
-        let mut visited = HashSet::new();
-        let mut parameters = HashSet::new();
+        let mut visited = HashSet::default();
+        let mut parameters = HashSet::default();
         while let Some(ty) = work.pop() {
             if !visited.insert(ty) {
                 continue;

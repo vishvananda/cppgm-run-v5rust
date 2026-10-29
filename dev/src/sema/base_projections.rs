@@ -6,7 +6,8 @@ use super::{
     inheritance::BasePathId,
 };
 
-use std::collections::{HashMap, HashSet};
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 
 #[derive(Clone, Copy)]
 pub(crate) struct BaseRoute {
@@ -63,7 +64,7 @@ impl BaseRoutes {
         let std::collections::hash_map::Entry::Vacant(entry) = self.holders.entry(from) else {
             return;
         };
-        let mut holders = HashMap::new();
+        let mut holders = HashMap::default();
         let mut work = Vec::new();
         for &(base, _) in graph.lower_virtual_bases(from) {
             work.push(base);
@@ -160,7 +161,7 @@ impl BaseOffsetQuery {
     pub(super) fn new(base: EntityId) -> Self {
         Self {
             base,
-            misses: HashSet::new(),
+            misses: HashSet::default(),
         }
     }
 }
@@ -470,7 +471,7 @@ impl Graph {
         // Relative offsets are memoized by class, so repeated subobjects do
         // not repeat a search. The first nonvirtual path in declaration order
         // is the route chosen by the C++ ABI query, after semantic covariance.
-        let mut known = HashMap::new();
+        let mut known = HashMap::default();
         known.insert(base, Some(0_u64));
         let mut work = vec![(derived, 0_usize)];
         while let Some((class, next)) = work.last_mut() {

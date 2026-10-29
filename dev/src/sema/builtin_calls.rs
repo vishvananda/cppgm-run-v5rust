@@ -49,6 +49,34 @@ mod tests {
     };
 
     #[test]
+    fn resumed_analysis_reuses_unit_vocabulary_and_rechecks_changed_locality() {
+        use crate::sema::lookup::Filter;
+        let source = SourceBuffer::new(b"struct S {};".to_vec()).unwrap();
+        let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"resumed").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let name = cursor.intern_name(b"S").unwrap();
+        let analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        let vocabulary = std::rc::Rc::clone(&analyzer.builtin_names);
+        let mut graph = analyzer.analyze(declarations).unwrap();
+        let entity = graph
+            .binding(graph.own(graph.global, name, Filter::Ordinary).unwrap())
+            .entity;
+        let ty = graph.lower_entity_type(entity).unwrap();
+        assert!(!graph.lower_type_unit_local(ty).unwrap());
+        assert!(!graph.lower_type_unit_local(ty).unwrap());
+        let mut analyzer =
+            Analyzer::with_graph(tree, cursor, StackBudget::default(), Some(&mut graph)).unwrap();
+        assert!(std::rc::Rc::ptr_eq(&vocabulary, &analyzer.builtin_names));
+        // Model publication of a new declaration context during a semantic
+        // demand. An old read snapshot must not mask that changed dependency.
+        analyzer.graph.entity_mut(entity).home = None;
+        assert!(analyzer.graph.lower_type_unit_local(ty).unwrap());
+        let graph = analyzer.into_graph();
+        assert!(graph.lower_type_unit_local(ty).unwrap());
+    }
+
+    #[test]
     fn builtin_template_rejection_leaves_call_operands_undemanded() {
         for name in [
             "__builtin_constant_p",

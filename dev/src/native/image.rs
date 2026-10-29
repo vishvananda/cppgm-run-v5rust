@@ -4,7 +4,8 @@ use super::{
     x86::{Assembler, CodeFixup, invariant},
 };
 use crate::lowir::{Error, model::SymbolId};
-use std::{collections::HashMap, path::Path};
+use crate::support::hash::HashMap;
+use std::path::Path;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) struct LocalSymbol(u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -89,7 +90,7 @@ impl Image {
             locals: Vec::new(),
             fixups: Vec::new(),
             data_fixups: Vec::new(),
-            constants: HashMap::new(),
+            constants: HashMap::default(),
         }
     }
     pub(super) fn reserve_symbols(&mut self, count: usize) {

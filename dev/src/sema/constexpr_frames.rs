@@ -7,8 +7,8 @@ use super::{
     graph::{EntityId, ScopeId},
     types::TypeId,
 };
+use crate::support::hash::HashMap;
 use crate::support::source::SourceOffset;
-use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) struct ObjectId {
@@ -174,7 +174,7 @@ impl Frame {
             role,
             peak_depth: 0,
             parent_call: None,
-            places: HashMap::new(),
+            places: HashMap::default(),
             locals: Vec::new(),
         }
     }
@@ -231,7 +231,10 @@ impl Frames {
     ) -> Result<Frozen, Error> {
         let range = self.cells(spans, place, location)?;
         let mut cells = self.cells[range.clone()].to_vec();
-        let mut index = HashMap::with_capacity(cells.len());
+        let mut index = HashMap::with_capacity_and_hasher(
+            cells.len(),
+            crate::support::hash::BuildHasher::default(),
+        );
         let first = u32::try_from(range.start)
             .map_err(|_| Error::Limit("published constant cell limit"))?;
         for (i, cell) in cells.iter_mut().enumerate() {
@@ -260,7 +263,7 @@ impl Frames {
                 cells[i].value = cells[i].value.map(&mut publish).transpose()?;
             }
         }
-        let mut members = HashMap::new();
+        let mut members = HashMap::default();
         for (i, cell) in cells.iter().enumerate() {
             if let (Some(parent), Some(member)) = (cell.parent, cell.member)
                 && cells[parent.0 as usize].union

@@ -1,6 +1,8 @@
 // Translated from lower/virtual_base_lowering.cpp's body state. See NOTICE.
 //! Each ABI entry owns its VTT parameter, block-local row cache and base-call context.
 use super::{Error, function::Function};
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 use crate::{
     lowir::{
         model::{Facts, InstructionKind as I, Value},
@@ -8,7 +10,6 @@ use crate::{
     },
     sema::lowering::{EntityId, TypeId},
 };
-use std::collections::{HashMap, HashSet};
 #[derive(Default)]
 pub(super) struct FunctionContext {
     pub class: Option<EntityId>,

@@ -2,6 +2,7 @@
 // See NOTICE.
 //! Course object parameter classes are memoized by canonical class per unit.
 use super::{Error, types};
+use crate::support::hash::HashMap;
 use crate::{
     lowir::vocabulary::{EightbyteClass as Eightbyte, ObjectClasses, Type},
     sema::{
@@ -10,7 +11,6 @@ use crate::{
     },
     support::stack::StackBudget,
 };
-use std::collections::HashMap;
 
 const MEMORY: u16 = 0x100;
 const UNMODELED: u16 = 0x200;

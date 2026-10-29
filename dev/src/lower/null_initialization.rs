@@ -2,6 +2,7 @@
 // object_lowering.cpp::null_data_member_pointers. See NOTICE.
 //! Null images retain ordered subobject ranges and complete/base context.
 use super::{Error, function::Function, types};
+use crate::support::hash::HashMap;
 use crate::{
     lowir::{
         literals::Constant,
@@ -14,7 +15,7 @@ use crate::{
     },
     support::stack::StackBudget,
 };
-use std::{collections::HashMap, ops::Range};
+use std::ops::Range;
 
 #[derive(Clone, Copy)]
 struct Piece {

@@ -8,7 +8,7 @@ use crate::lowir::{
     construction_names::SlotName,
     vocabulary::{Binding, Type},
 };
-use std::collections::HashSet;
+use crate::support::hash::HashSet;
 
 fn problem(
     program: &Program,
@@ -46,7 +46,7 @@ fn names(
     values: impl IntoIterator<Item = NameId>,
     duplicate: &str,
 ) -> Result<(), Error> {
-    let mut seen = HashSet::new();
+    let mut seen = HashSet::default();
     for name in values {
         if name.0 as usize >= program.names.text.len() {
             return Err(problem(program, function, "invalid name", None));

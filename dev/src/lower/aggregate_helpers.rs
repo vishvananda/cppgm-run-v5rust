@@ -1,6 +1,7 @@
 // Translated from lower/aggregate_lowering.cpp and program_lowering.cpp. See NOTICE.
 //! Demand-owned aggregate helper shapes; one body is built and released at a time.
 use super::{Error, conversions::Context, function::Function, symbols::Symbols, types};
+use crate::support::hash::HashMap;
 use crate::{
     lowir::{
         builder::FunctionBuilder,
@@ -15,7 +16,6 @@ use crate::{
     },
     syntax::ast::{self, ExprKind},
 };
-use std::collections::HashMap;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) struct Key {

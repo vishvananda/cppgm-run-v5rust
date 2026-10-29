@@ -88,7 +88,7 @@ impl VtableGroup {
         graph: &Graph,
         top: Option<EntityId>,
         class: EntityId,
-        chain: Option<&std::collections::HashMap<EntityId, SegmentId>>,
+        chain: Option<&crate::support::hash::HashMap<EntityId, SegmentId>>,
     ) -> Result<(), Error> {
         let Some(group) = graph.virtuals.groups.get(&class) else {
             return Ok(());
@@ -147,7 +147,7 @@ impl VtableGroup {
         class: EntityId,
         segment: SegmentId,
     ) -> Result<(), Error> {
-        let mut chain = std::collections::HashMap::new();
+        let mut chain = crate::support::hash::HashMap::default();
         let mut parent = segment;
         let mut link = class;
         loop {

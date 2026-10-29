@@ -1,7 +1,8 @@
 // Translated from abi/itanium/abi_graph.cpp's tag queries. See NOTICE.
 //! Bounded memoized sets keep shared type DAGs linear; large sets use a query walk.
 use super::graph::{Graph, Modifier, Node, NodeId};
-use std::collections::{HashMap, HashSet};
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 
 #[derive(Clone, Copy, Default)]
 enum Set {
@@ -112,7 +113,7 @@ impl Graph {
         }
 
         let mut result = Vec::new();
-        let mut visited = HashSet::new();
+        let mut visited = HashSet::default();
         let mut work = vec![(root, false)];
         while let Some((id, written)) = work.pop() {
             let id = self.tag_node(id);

@@ -87,7 +87,7 @@ impl Symbols<'_, '_> {
     }
     pub(super) fn declared_type_dependent(&self, ty: TypeId) -> Result<bool, Error> {
         let mut work = vec![ty];
-        let mut visited = std::collections::HashSet::new();
+        let mut visited = crate::support::hash::HashSet::default();
         while let Some(ty) = work.pop() {
             if !visited.insert(ty) {
                 continue;

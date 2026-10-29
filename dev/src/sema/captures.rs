@@ -15,7 +15,7 @@ pub(super) struct Frame {
     object: Option<TypeId>,
     default: Option<ast::CaptureDefault>,
     captures: Vec<EntityId>,
-    captured: std::collections::HashMap<EntityId, bool>,
+    captured: crate::support::hash::HashMap<EntityId, bool>,
     mutable: bool,
     location: SourceOffset,
     this_captured: bool,
@@ -28,7 +28,7 @@ struct FrameId(u32);
 #[derive(Default)]
 pub(super) struct Frames {
     records: Vec<Frame>,
-    by_call: std::collections::HashMap<EntityId, FrameId>,
+    by_call: crate::support::hash::HashMap<EntityId, FrameId>,
     crossed: Vec<FrameId>,
 }
 impl Frames {
@@ -277,7 +277,7 @@ impl Analyzer<'_> {
             object,
             default: lambda.capture_default,
             captures: Vec::new(),
-            captured: std::collections::HashMap::new(),
+            captured: crate::support::hash::HashMap::default(),
             mutable: lambda.is_mutable,
             location: SourceOffset(0),
             this_captured: closure.this_member.is_some(),
@@ -311,7 +311,7 @@ impl Analyzer<'_> {
             object: self.current_object_type()?,
             default: lambda.capture_default,
             captures: Vec::new(),
-            captured: std::collections::HashMap::new(),
+            captured: crate::support::hash::HashMap::default(),
             mutable: lambda.is_mutable,
             location,
             this_captured: false,

@@ -6,8 +6,8 @@ use super::{
     graph::{BindingKind, EntityId, Graph, ScopeKind},
     specifiers::{StaticSpecifier, ThreadStorage},
 };
+use crate::support::hash::HashMap;
 use crate::syntax::{ast, storage::List};
-use std::collections::HashMap;
 
 #[derive(Default)]
 struct Attributes {

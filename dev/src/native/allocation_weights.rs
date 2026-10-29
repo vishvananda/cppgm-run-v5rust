@@ -167,7 +167,7 @@ impl Weights {
             false
         };
         let mut first = vec![0; n + 1];
-        let back_edges: std::collections::HashSet<_> = walk.back.iter().copied().collect();
+        let back_edges: crate::support::hash::HashSet<_> = walk.back.iter().copied().collect();
         let mut probabilities = Vec::new();
         let mut backward = Vec::new();
         for (index, _) in body.blocks().iter().enumerate() {

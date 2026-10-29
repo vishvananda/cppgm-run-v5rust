@@ -5,7 +5,7 @@ use super::{
     types::{TypeId, Types},
 };
 use crate::lex::{identifiers::NameId, vocabulary::Keyword};
-use std::collections::HashMap;
+use crate::support::hash::HashMap;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct ScopeId(u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -280,6 +280,9 @@ struct FunctionSignature {
 }
 
 pub(crate) struct Graph {
+    pub(super) localities: Box<super::locality::Queries>,
+    // Immutable name identities survive every temporary analyzer facade.
+    pub(super) builtin_names: Option<std::rc::Rc<super::builtin_calls::BuiltinNames>>,
     pub(super) analysis: Box<super::analyzer::UnitState>,
     pub(super) work: Box<super::work::Observations>,
     pub(super) names: Box<super::lookup::Names>,
@@ -320,7 +323,7 @@ pub(crate) struct Graph {
     declaration_count: usize,
     binding_scopes: Vec<ScopeId>,
     binding_access: Vec<Access>,
-    member_imports: std::collections::HashSet<EntityId>,
+    member_imports: crate::support::hash::HashSet<EntityId>,
     pub(super) anonymous_enums: u32,
     pub(super) local_types: u32,
     pub(super) block_linkages: super::linkage::BlockLinkages,
@@ -328,7 +331,7 @@ pub(crate) struct Graph {
     pub(super) boundary_roots: Vec<super::graph::EntityId>,
     // One unit-owned scheduler; keep its growing indexes off native call frames.
     pub(super) boundaries: Box<super::layout::Boundaries>,
-    pub(super) rtti_types: std::collections::HashMap<TypeId, TypeId>,
+    pub(super) rtti_types: crate::support::hash::HashMap<TypeId, TypeId>,
     pub(super) class_information_uses: Vec<(Option<EntityId>, EntityId)>,
     pub(super) instantiation_levels: super::template_context::Levels,
     pub(super) storage_layouts: Vec<(
@@ -379,7 +382,7 @@ pub(crate) struct Graph {
     pub(super) constexpr_selections: Vec<Option<bool>>,
     pub(super) statement_readings: Vec<Option<crate::syntax::ast::StmtId>>,
     arithmetic_types: Vec<Option<(TypeId, TypeId)>>,
-    condition_functions: std::collections::HashMap<
+    condition_functions: crate::support::hash::HashMap<
         crate::syntax::ast::DeclaratorId,
         super::conversion_functions::FunctionConversion,
     >,
@@ -626,6 +629,8 @@ impl Graph {
     }
     pub(super) fn new() -> Self {
         Self {
+            localities: Box::default(),
+            builtin_names: None,
             analysis: Box::default(),
             work: Box::default(),
             names: Box::default(),
@@ -662,7 +667,7 @@ impl Graph {
                 children: Vec::new(),
                 anonymous_namespace: None,
                 bindings: Vec::new(),
-                index: HashMap::new(),
+                index: HashMap::default(),
                 directives: Vec::new(),
                 inline_members: Vec::new(),
                 is_inline: false,
@@ -684,15 +689,15 @@ impl Graph {
             declaration_count: 0,
             binding_scopes: Vec::new(),
             binding_access: Vec::new(),
-            member_imports: std::collections::HashSet::new(),
+            member_imports: crate::support::hash::HashSet::default(),
             anonymous_enums: 0,
             local_types: 0,
             block_linkages: super::linkage::BlockLinkages::default(),
-            conversion_sets: HashMap::new(),
+            conversion_sets: HashMap::default(),
             boundary_roots: Vec::new(),
             boundaries: Box::default(),
             class_information_uses: Vec::new(),
-            rtti_types: std::collections::HashMap::new(),
+            rtti_types: crate::support::hash::HashMap::default(),
             instantiation_levels: super::template_context::Levels::default(),
             storage_layouts: Vec::new(),
             constructor_boundaries: Vec::new(),
@@ -705,8 +710,8 @@ impl Graph {
             resolved_names: Vec::new(),
             enum_declarations: Vec::new(),
             dependent_bindings: Vec::new(),
-            binding_labels: HashMap::new(),
-            special_labels: HashMap::new(),
+            binding_labels: HashMap::default(),
+            special_labels: HashMap::default(),
             constant_facts: Vec::new(),
             floating_constants: super::constant_floats::Floats::default(),
             constant_member_spans: super::constant_pointer_operations::MemberSpans::default(),
@@ -733,19 +738,19 @@ impl Graph {
             statement_readings: Vec::new(),
             constexpr_selections: Vec::new(),
             arithmetic_types: Vec::new(),
-            condition_functions: std::collections::HashMap::new(),
+            condition_functions: crate::support::hash::HashMap::default(),
             condition_conversions: Vec::new(),
             case_values: Vec::new(),
             call_bindings: Vec::new(),
-            member_functions: HashMap::new(),
-            prototype_parameters: HashMap::new(),
-            parameter_objects: HashMap::new(),
-            special_values: HashMap::new(),
-            function_sets: HashMap::new(),
-            function_positions: HashMap::new(),
-            visible_function_sets: HashMap::new(),
-            function_signatures: HashMap::new(),
-            function_origins: HashMap::new(),
+            member_functions: HashMap::default(),
+            prototype_parameters: HashMap::default(),
+            parameter_objects: HashMap::default(),
+            special_values: HashMap::default(),
+            function_sets: HashMap::default(),
+            function_positions: HashMap::default(),
+            visible_function_sets: HashMap::default(),
+            function_signatures: HashMap::default(),
+            function_origins: HashMap::default(),
             friendships: super::friendships::Friendships::default(),
         }
     }
@@ -815,7 +820,7 @@ impl Graph {
             children: Vec::new(),
             anonymous_namespace: None,
             bindings: Vec::new(),
-            index: HashMap::new(),
+            index: HashMap::default(),
             directives: Vec::new(),
             inline_members: Vec::new(),
             is_inline: false,

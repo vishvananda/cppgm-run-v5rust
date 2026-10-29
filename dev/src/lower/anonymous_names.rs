@@ -2,6 +2,7 @@
 // and local_mangling.cpp::anonymous_name. See NOTICE.
 //! Unit-owned ABI identities number a class's unnamed member types once.
 use super::Error;
+use crate::support::hash::HashMap;
 use crate::{
     abi::graph::{Graph as AbiGraph, Node, NodeId},
     sema::{
@@ -9,7 +10,6 @@ use crate::{
         lowering::{EntityId, ScopeId, UnnamedNumbering},
     },
 };
-use std::collections::HashMap;
 #[derive(Default)]
 pub(super) struct Names {
     numbered: HashMap<EntityId, u32>,
@@ -90,7 +90,7 @@ impl Names {
 #[derive(Default)]
 struct Deferred {
     work: Vec<(crate::syntax::ast::DeclId, bool)>,
-    named: std::collections::HashSet<ScopeId>,
+    named: crate::support::hash::HashSet<ScopeId>,
     scopes: Vec<ScopeId>,
 }
 impl Deferred {

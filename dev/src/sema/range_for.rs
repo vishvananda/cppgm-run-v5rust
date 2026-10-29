@@ -10,6 +10,8 @@ use super::{
     lookup::{Filter, LookupResult},
     types::{Cv, RefKind, Scalar, TypeId, TypeKind},
 };
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 use crate::{
     lex::{identifiers::NameId, pp_lexer::Punctuator as P, vocabulary::SimpleToken},
     support::source::SourceOffset,
@@ -18,7 +20,6 @@ use crate::{
         storage::List,
     },
 };
-use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy)]
 enum RangeVariable {
@@ -883,7 +884,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(graph.range_loops.records.len(), 2);
-        let mut types = HashSet::new();
+        let mut types = HashSet::default();
         for facts in graph.range_loops.records.values() {
             let entity = graph.lower_declared(facts.declaration.declarator).unwrap();
             let ty = graph.lower_entity_type(entity).unwrap();

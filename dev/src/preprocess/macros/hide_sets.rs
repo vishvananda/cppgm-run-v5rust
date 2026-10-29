@@ -2,7 +2,7 @@
 //! Interned ordered additions, logarithmic ancestor unions and lazy persistent membership tries.
 use super::super::error::PreprocessError;
 use crate::lex::identifiers::NameId;
-use std::collections::HashMap;
+use crate::support::hash::HashMap;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub(crate) struct HideSetId(u32);
@@ -47,7 +47,7 @@ impl Default for HideSets {
                 summary: 0,
                 index: Some(TrieRef::Empty),
             }],
-            additions: HashMap::new(),
+            additions: HashMap::default(),
             branches: Vec::new(),
             merged: None,
         }

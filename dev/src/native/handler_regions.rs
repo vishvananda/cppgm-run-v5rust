@@ -1,6 +1,6 @@
 //! Interned static handler stacks and monotone joins (`select/host_eh.cpp`). See NOTICE.
 use crate::lowir::{Error, model::BlockId};
-use std::collections::HashMap;
+use crate::support::hash::HashMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub(super) struct State(u32);
@@ -86,7 +86,7 @@ impl Default for Regions {
     fn default() -> Self {
         Self {
             nodes: vec![Node::default()],
-            index: HashMap::new(),
+            index: HashMap::default(),
         }
     }
 }

@@ -1,6 +1,7 @@
 // Translated from lower/function_lowering.cpp and statement_lowering.cpp. See NOTICE.
 //! Each body owns local places, temporary numbering, and byte-budget recursion guards.
 use super::{Error, symbols::Symbols, types};
+use crate::support::hash::HashMap;
 use crate::{
     lowir::{
         builder::FunctionBuilder,
@@ -14,7 +15,6 @@ use crate::{
     support::stack::StackBudget,
     syntax::ast::{self, DeclKind},
 };
-use std::collections::HashMap;
 #[derive(Clone, Copy)]
 pub(super) struct RValue {
     pub value: Value,
@@ -61,7 +61,7 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     pub symbols: &'symbols mut super::symbols::State,
     pub locals: HashMap<EntityId, Value>,
     pub parameter_slots: Vec<Value>,
-    pub untyped_places: std::collections::HashSet<Value>,
+    pub untyped_places: crate::support::hash::HashSet<Value>,
     pub empty_storage: super::member_initialization::EmptyStorage,
     pub bit_initialization: super::bit_fields::Initialization,
     pub named_path: Vec<super::aggregates::Step>,
@@ -182,7 +182,7 @@ pub(super) fn lower(
             "function parameter binding mismatch",
         )));
     }
-    let mut reserved = std::collections::HashSet::new();
+    let mut reserved = crate::support::hash::HashSet::default();
     for &Parameter { name, .. } in &parameter_bindings {
         if let Some(name) = name {
             reserved.insert(
@@ -423,9 +423,9 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
             builder,
             cursor,
             symbols,
-            locals: HashMap::new(),
+            locals: HashMap::default(),
             parameter_slots: Vec::new(),
-            untyped_places: std::collections::HashSet::new(),
+            untyped_places: crate::support::hash::HashSet::default(),
             empty_storage: super::member_initialization::EmptyStorage::Owned,
             bit_initialization: super::bit_fields::Initialization::default(),
             named_path: Vec::new(),
@@ -450,9 +450,9 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
             reference_lifetimes: super::reference_lifetimes::Extensions::default(),
             next_static: 0,
             jumps: Vec::new(),
-            switch_blocks: HashMap::new(),
-            label_memo: HashMap::new(),
-            labels: HashMap::new(),
+            switch_blocks: HashMap::default(),
+            label_memo: HashMap::default(),
+            labels: HashMap::default(),
             folded_targets: Vec::new(),
             conditional_slot: None,
             lifetime: super::lifetime::Lifetime::default(),
@@ -1104,7 +1104,7 @@ enum SignatureNames<'a> {
     Declaration,
     Definition {
         bindings: &'a [Parameter],
-        reserved: &'a std::collections::HashSet<String>,
+        reserved: &'a crate::support::hash::HashSet<String>,
         implicit_copy: bool,
     },
 }

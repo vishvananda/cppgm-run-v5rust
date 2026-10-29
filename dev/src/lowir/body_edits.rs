@@ -5,7 +5,7 @@ use super::{
 };
 use crate::lowir::construction_names::SlotName;
 use crate::lowir::literals::Constant;
-use std::collections::HashSet;
+use crate::support::hash::HashSet;
 
 pub(super) trait Remap {
     fn value(&mut self, value: Value) -> Result<Value, Error>;
@@ -650,7 +650,7 @@ impl Remap for Compactor<'_> {
 }
 impl Body {
     fn unique_names(&mut self) -> Result<(), Error> {
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         self.temp_index.clear();
         for (index, temp) in self.temps.iter_mut().enumerate() {
             if temp.generated || temp.name == NameId(0) {

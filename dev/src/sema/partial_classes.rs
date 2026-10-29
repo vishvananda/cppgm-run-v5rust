@@ -9,8 +9,8 @@ use super::{
     partial_specializations::PartialLists,
     types::{Cv, TypeId, TypeKind},
 };
+use crate::support::hash::HashMap;
 use crate::{lex::vocabulary::Keyword, support::source::SourceOffset, syntax::ast};
-use std::collections::HashMap;
 
 #[derive(Default)]
 pub(super) struct ClassPartials {

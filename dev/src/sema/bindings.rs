@@ -8,12 +8,13 @@ use super::{
     specifiers::Specifiers,
     types::{Cv, TypeId, TypeKind},
 };
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 use crate::{
     lex::vocabulary::Keyword,
     support::source::SourceOffset,
     syntax::{ast, storage::List},
 };
-use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy)]
 pub(crate) enum BindingTarget {
@@ -298,7 +299,7 @@ impl Analyzer<'_> {
         }
         let mut holder = None;
         let mut pending = vec![class];
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         while let Some(current) = pending.pop() {
             if !seen.insert(current) {
                 continue;

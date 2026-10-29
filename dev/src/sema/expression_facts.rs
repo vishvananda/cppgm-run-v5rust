@@ -299,68 +299,70 @@ enum CallView {
 pub(super) struct ExpressionFacts {
     // Successful, class-specific designated-list shapes; source operands have
     // stable types before ranking. No candidate publishes conversions here.
-    designated_lists: std::collections::HashMap<
+    designated_lists: crate::support::hash::HashMap<
         (ast::ExprId, super::graph::EntityId),
         super::aggregate_initialization::AggregateInitialization,
     >,
     // Only explicit union designations need this sparse fact. Normalized list
     // identities are unique per source list and completed candidate class.
-    union_lists: std::collections::HashMap<
+    union_lists: crate::support::hash::HashMap<
         crate::syntax::storage::List<ast::ExprId>,
         super::graph::EntityId,
     >,
     // C++ builtin rewrites leave selected callee shells untyped. Keep full
     // Rust designation facts and retain their sparse presentation provenance
     // independently of the typed facts consumed by lowering.
-    call_views: std::collections::HashMap<ast::ExprId, CallView>,
+    call_views: crate::support::hash::HashMap<ast::ExprId, CallView>,
     // Atomic calls are sparse; keep the dense fact record at its existing size.
-    complex_constructions: std::collections::HashSet<ast::ExprId>,
-    constant_evaluation_queries: std::collections::HashSet<ast::ExprId>,
+    complex_constructions: crate::support::hash::HashSet<ast::ExprId>,
+    constant_evaluation_queries: crate::support::hash::HashSet<ast::ExprId>,
     stack_intrinsics:
-        std::collections::HashMap<ast::ExprId, super::stack_intrinsics::StackIntrinsic>,
+        crate::support::hash::HashMap<ast::ExprId, super::stack_intrinsics::StackIntrinsic>,
     source_locations:
-        std::collections::HashMap<ast::ExprId, super::source_locations::SourceLocation>,
+        crate::support::hash::HashMap<ast::ExprId, super::source_locations::SourceLocation>,
     runtime_intrinsics:
-        std::collections::HashMap<ast::ExprId, super::runtime_intrinsics::RuntimeIntrinsic>,
+        crate::support::hash::HashMap<ast::ExprId, super::runtime_intrinsics::RuntimeIntrinsic>,
     integer_intrinsics:
-        std::collections::HashMap<ast::ExprId, super::integer_intrinsics::BitOperation>,
+        crate::support::hash::HashMap<ast::ExprId, super::integer_intrinsics::BitOperation>,
     atomic_intrinsics:
-        std::collections::HashMap<ast::ExprId, super::atomic_operations::AtomicIntrinsic>,
+        crate::support::hash::HashMap<ast::ExprId, super::atomic_operations::AtomicIntrinsic>,
     // Allocated only when a floating builtin publishes a value. Its compact
     // handle is indexed directly without enlarging every expression record.
     floating_values: Vec<Option<super::constant_floats::FloatingId>>,
-    call_object_effects: std::collections::HashMap<ast::ExprId, super::call_tables::ObjectEffect>,
-    initializer_arrays: std::collections::HashMap<ast::ExprId, TypeId>,
-    runtime_casts: std::collections::HashMap<ast::ExprId, super::dynamic_casts::RuntimeCast>,
-    type_queries: std::collections::HashMap<ast::ExprId, super::type_queries::TypeQuery>,
-    type_identities: std::collections::HashSet<ast::ExprId>,
+    call_object_effects:
+        crate::support::hash::HashMap<ast::ExprId, super::call_tables::ObjectEffect>,
+    initializer_arrays: crate::support::hash::HashMap<ast::ExprId, TypeId>,
+    runtime_casts: crate::support::hash::HashMap<ast::ExprId, super::dynamic_casts::RuntimeCast>,
+    type_queries: crate::support::hash::HashMap<ast::ExprId, super::type_queries::TypeQuery>,
+    type_identities: crate::support::hash::HashSet<ast::ExprId>,
     records: Vec<Option<ExprFacts>>,
     // Qualified addresses keep their original lookup independently of the
     // specialization set. The dense use fact carries only a compact identity.
     member_addresses: Vec<MemberAddress>,
     // The source function list survives resolving its separate overload flag.
     function_declarations:
-        std::collections::HashMap<ast::ExprId, super::function_resolution::OverloadId>,
+        crate::support::hash::HashMap<ast::ExprId, super::function_resolution::OverloadId>,
     // Only nonelided class copies own a lowering action. Selection remains
     // on the source facts, independently of its existing operand conversion.
-    copy_actions: std::collections::HashMap<ast::ExprId, super::copy_initialization::CopyAction>,
+    copy_actions:
+        crate::support::hash::HashMap<ast::ExprId, super::copy_initialization::CopyAction>,
     // Parentheses share facts, as in the C++ owner. Chains are flattened at publication.
     aliases: Vec<Option<ast::ExprId>>,
     // Only differing-class glvalue conditionals need a base-subobject route.
     conditional_paths:
-        std::collections::HashMap<ast::ExprId, [Option<super::inheritance::BasePathId>; 2]>,
+        crate::support::hash::HashMap<ast::ExprId, [Option<super::inheritance::BasePathId>; 2]>,
     // Converting class-subobject initializations are sparse use facts. Keep
     // them separate from the source's original type and argument conversion.
-    class_conversions: std::collections::HashMap<ast::ExprId, ClassConversion>,
+    class_conversions: crate::support::hash::HashMap<ast::ExprId, ClassConversion>,
     function_conversions:
-        std::collections::HashMap<ast::ExprId, super::conversion_functions::FunctionConversion>,
-    allocations: std::collections::HashMap<ast::ExprId, super::allocation::Allocation>,
-    deletions: std::collections::HashMap<ast::ExprId, super::allocation::Deletion>,
+        crate::support::hash::HashMap<ast::ExprId, super::conversion_functions::FunctionConversion>,
+    allocations: crate::support::hash::HashMap<ast::ExprId, super::allocation::Allocation>,
+    deletions: crate::support::hash::HashMap<ast::ExprId, super::allocation::Deletion>,
     // The member access owns a bounded selected-call chain over its original base.
-    arrow_calls: std::collections::HashMap<ast::ExprId, Vec<super::arrow_calls::ArrowStep>>,
+    arrow_calls: crate::support::hash::HashMap<ast::ExprId, Vec<super::arrow_calls::ArrowStep>>,
     // A callable object's designation remains independent of operator()'s
     // implicit object conversion, including when the object is itself a member.
-    callable_receivers: std::collections::HashMap<ast::ExprId, CallReceiver>,
+    callable_receivers: crate::support::hash::HashMap<ast::ExprId, CallReceiver>,
 }
 impl ExpressionFacts {
     pub(super) fn union_list_member(

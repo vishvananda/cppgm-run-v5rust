@@ -240,7 +240,7 @@ impl super::graph::Graph {
         analyzer.set_lowering();
         analyzer.stack_base = stack_base;
         let result = analyzer.function_may_throw(function).map(|throws| !throws);
-        *self = analyzer.graph;
+        *self = analyzer.into_graph();
         result
     }
 }

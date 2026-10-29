@@ -9,11 +9,11 @@ use super::{
     static_initialization::Value,
     types::{Scalar, TypeId, TypeKind},
 };
+use crate::support::hash::HashMap;
 use crate::{
     lex::PostTokenKind,
     syntax::ast::{self, ExprKind},
 };
-use std::collections::HashMap;
 
 #[derive(Clone, Copy)]
 pub(crate) enum Item {

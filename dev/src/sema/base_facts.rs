@@ -1,10 +1,9 @@
 // Translated from analyzer_member_pointers.cpp and analyzer_access.cpp. See NOTICE.
 //! Bounded completed-class subobject facts and per-access reachability scratch.
 use super::graph::{EntityId, Graph};
-use std::{
-    cell::RefCell,
-    collections::{HashMap, HashSet},
-};
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
+use std::cell::RefCell;
 
 #[derive(Clone, Copy, Default)]
 pub(super) struct Fact {
@@ -53,7 +52,7 @@ impl Tables {
         if let Some(&simple) = self.simple.borrow().get(&class) {
             return simple;
         }
-        let mut seen = HashSet::from([class]);
+        let mut seen = HashSet::from_iter([class]);
         let mut pending = vec![class];
         let mut simple = true;
         'walk: while let Some(class) = pending.pop() {
@@ -96,7 +95,7 @@ impl Tables {
             if cache.entries + order.len() > 1 << 18 {
                 cache.tables.insert(bottom, None);
             } else {
-                let mut facts = HashMap::from([(bottom, Fact::one())]);
+                let mut facts = HashMap::from_iter([(bottom, Fact::one())]);
                 for &class in order.iter().rev() {
                     let above = facts[&class];
                     for edge in &graph.entity(class).bases {
@@ -121,7 +120,7 @@ impl Tables {
 }
 fn postorder(graph: &Graph, root: EntityId) -> Vec<EntityId> {
     let mut order = Vec::new();
-    let mut seen = HashSet::from([root]);
+    let mut seen = HashSet::from_iter([root]);
     let mut pending = vec![(root, 0usize)];
     while let Some((class, next)) = pending.last_mut() {
         if let Some(edge) = graph.entity(*class).bases.get(*next) {

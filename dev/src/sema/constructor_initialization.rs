@@ -188,8 +188,8 @@ pub(super) struct ClassInput {
 }
 #[derive(Default)]
 pub(super) struct InitializerConstructors {
-    values: std::collections::HashMap<EntityId, Vec<ConstructorId>>,
-    deductions: std::collections::HashMap<ast::DeclaratorId, Vec<ConstructorId>>,
+    values: crate::support::hash::HashMap<EntityId, Vec<ConstructorId>>,
+    deductions: crate::support::hash::HashMap<ast::DeclaratorId, Vec<ConstructorId>>,
     first: Option<ConstructorId>,
 }
 impl InitializerConstructors {

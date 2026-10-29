@@ -5,7 +5,7 @@ use crate::lowir::{
     model::{Body, InstructionKind as I, Program, RuntimeInstruction as R, Value},
     vocabulary::{Effects, Type},
 };
-use std::collections::HashMap;
+use crate::support::hash::HashMap;
 
 pub(super) fn signed_word(bits: u128) -> i64 {
     let b = bits.to_le_bytes();
@@ -270,7 +270,7 @@ pub(super) struct Saved {
 impl Contents {
     pub(super) fn new() -> Self {
         Self {
-            index: HashMap::new(),
+            index: HashMap::default(),
             facts: Vec::new(),
             undo: Vec::new(),
             live: Vec::new(),

@@ -24,7 +24,23 @@ impl<'a> TranslationReader<'a> {
         }
     }
 
-    pub fn logical(&self, mut offset: SourceOffset) -> Result<SourceChar, SourceError> {
+    #[inline]
+    pub fn logical(&self, offset: SourceOffset) -> Result<SourceChar, SourceError> {
+        if let Some(&byte) = self.bytes.get(offset.index())
+            && byte < 0x80
+            && byte != b'\\'
+            && byte != b'?'
+        {
+            return Ok(SourceChar {
+                code: u32::from(byte),
+                begin: offset,
+                end: SourceOffset(offset.0 + 1),
+            });
+        }
+        self.logical_slow(offset)
+    }
+
+    fn logical_slow(&self, mut offset: SourceOffset) -> Result<SourceChar, SourceError> {
         if !self.translate {
             return self.raw(offset);
         }
@@ -67,6 +83,7 @@ impl<'a> TranslationReader<'a> {
         self.raw(offset)
     }
 
+    #[inline]
     pub fn raw(&self, offset: SourceOffset) -> Result<SourceChar, SourceError> {
         let bytes = &self.bytes[offset.index()..];
         let Some(&lead) = bytes.first() else {
@@ -114,6 +131,33 @@ impl<'a> TranslationReader<'a> {
                 })
             }
             Err(error) => Err(SourceError::new(offset, error.message())),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ascii_path_preserves_translation_and_error_boundaries() {
+        let mut input: Vec<u8> = (0..=127).collect();
+        input.extend_from_slice(b"\\\n??/\n??=??!??x\xc2\xaa\x80\xff");
+        let source = SourceBuffer::for_token_text(input).unwrap();
+        for translate in [false, true] {
+            let reader = TranslationReader::new(&source, translate);
+            for index in 0..=source.bytes().len() {
+                let offset = SourceOffset(u32::try_from(index).unwrap());
+                let value = |result: Result<SourceChar, SourceError>| {
+                    result
+                        .map(|c| (c.code, c.begin, c.end))
+                        .map_err(|error| (error.offset, error.message))
+                };
+                assert_eq!(
+                    value(reader.logical(offset)),
+                    value(reader.logical_slow(offset))
+                );
+            }
         }
     }
 }

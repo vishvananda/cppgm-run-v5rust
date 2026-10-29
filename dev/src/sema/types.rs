@@ -1,11 +1,10 @@
 // Translated from sema/type_table.cpp. See NOTICE.
 //! Canonical, immutable type identity owned by one semantic unit.
 use super::{Error, graph::EntityId};
+use crate::support::hash::BuildHasher as Fingerprints;
+use crate::support::hash::HashMap;
 use crate::types::FundamentalType;
-use std::{
-    collections::{HashMap, hash_map::RandomState},
-    hash::BuildHasher,
-};
+use std::hash::BuildHasher;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct TypeId(u32);
@@ -129,7 +128,7 @@ pub(super) struct Types {
     // Fingerprints index store-owned records. Dense collision links retain
     // exact structural equality without a second owned parameter vector.
     index: HashMap<u64, TypeId>,
-    fingerprints: RandomState,
+    fingerprints: Fingerprints,
     collisions: Vec<Option<TypeId>>,
     canonical: Vec<Option<TypeId>>,
     declarations: Vec<Option<TypeId>>,

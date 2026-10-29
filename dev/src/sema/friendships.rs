@@ -7,8 +7,9 @@ use super::{
     graph::{BindingId, EntityId, ScopeId, ScopeKind},
     types::TypeKind,
 };
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 use crate::support::source::SourceOffset;
-use std::collections::{HashMap, HashSet};
 
 #[derive(Default)]
 pub(super) struct Friendships {

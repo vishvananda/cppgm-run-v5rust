@@ -16,7 +16,7 @@ use crate::{lex::vocabulary::Keyword, support::source::SourceOffset, syntax::ast
 #[derive(Default)]
 pub(super) struct ProjectionQuery {
     work: Vec<(TypeId, i64)>,
-    visited: std::collections::HashSet<(TypeId, i64)>,
+    visited: crate::support::hash::HashSet<(TypeId, i64)>,
 }
 
 #[derive(Clone, Copy)]

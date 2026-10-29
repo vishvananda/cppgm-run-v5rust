@@ -9,8 +9,9 @@ use super::{
     specifiers::{Friendship, Specifiers, Virtuality},
     types::{TypeId, TypeKind},
 };
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 use crate::{lex::vocabulary::Keyword, support::source::SourceOffset, syntax::ast};
-use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy, Default, Debug)]
 pub(super) struct VirtualFunction {
@@ -588,7 +589,7 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("virtual class scope"))?;
         let mut entries = Vec::new();
         let mut key = None;
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         for index in 0..self.graph.virtual_member_count(class)? {
             let Some(function) = self.graph.virtual_member_at(class, index)? else {
                 continue;

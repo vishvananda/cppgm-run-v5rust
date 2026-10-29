@@ -780,7 +780,7 @@ mod tests {
                     assert!(record.subobjects[0].is_none());
                     assert!(!analyzer.constant_constructor_eligible(
                         id,
-                        &mut std::collections::HashMap::new()
+                        &mut crate::support::hash::HashMap::default()
                     )?);
                     assert_eq!(analyzer.base_object, Some(good));
                     let current = analyzer.graph.analysis.substitution.current();

@@ -4,7 +4,8 @@ use super::{
     object::{Binding, Definition, Object, SectionKind, SymbolKind},
 };
 use crate::lowir::Error;
-use std::{collections::HashMap, path::Path};
+use crate::support::hash::HashMap;
+use std::path::Path;
 #[derive(Default)]
 struct Section<'a> {
     name: u32,
@@ -99,7 +100,7 @@ impl<'a> Encoder<'a> {
             contents,
             relas,
             symbols,
-            section_names: HashMap::new(),
+            section_names: HashMap::default(),
             symtab,
             strtab,
             shstrtab,

@@ -39,7 +39,7 @@ pub fn observe<T>(read: impl FnOnce() -> T) -> Counter<T> {
 }
 
 #[cfg(feature = "telemetry")]
-pub(crate) type Set<T> = std::collections::HashSet<T>;
+pub(crate) type Set<T> = crate::support::hash::HashSet<T>;
 #[cfg(not(feature = "telemetry"))]
 pub(crate) use disabled::Set;
 

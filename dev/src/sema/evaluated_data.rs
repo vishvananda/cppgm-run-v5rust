@@ -11,8 +11,8 @@ use super::{
     static_initialization::Value,
     types::{Scalar, TypeId, TypeKind},
 };
+use crate::support::hash::HashMap;
 use crate::support::source::SourceOffset;
-use std::collections::HashMap;
 
 // A shared or straddling field contributes only the bytes its value covers.
 // Ordinary units keep their original width and stable declaration order.
@@ -129,7 +129,7 @@ impl Analyzer<'_> {
         }
         let scalar_array = element != ty && self.graph.class_of(element).is_none();
         let mut placements = Vec::new();
-        let mut tables = std::collections::HashSet::new();
+        let mut tables = crate::support::hash::HashSet::default();
         let mut bits = BitImage::default();
         for PlacementValue {
             depth,

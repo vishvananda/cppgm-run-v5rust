@@ -10,6 +10,8 @@ use super::{
     graph::{Binding, BindingId, BindingKind, EntityId, ScopeId},
     types::{RefKind, Scalar, TypeId, TypeKind},
 };
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 use crate::{
     lex::vocabulary::Keyword,
     support::source::SourceOffset,
@@ -18,7 +20,6 @@ use crate::{
         storage::List,
     },
 };
-use std::collections::{HashMap, HashSet};
 
 #[derive(Default)]
 pub(super) struct SourceExceptions {

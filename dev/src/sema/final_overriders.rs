@@ -7,8 +7,9 @@ use super::{
     graph::{EntityId, Graph, MemberKind},
     types::TypeId,
 };
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 use crate::support::source::SourceOffset;
-use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) struct SubobjectId(u32);
@@ -108,7 +109,7 @@ impl Subobjects {
     fn build(graph: &Graph, class: EntityId) -> Result<Self, Error> {
         let mut result = Self::default();
         let root = result.add(class)?;
-        let mut shared = HashMap::new();
+        let mut shared = HashMap::default();
         let mut work = vec![(root, 0)];
         while let Some((parent, next)) = work.last_mut() {
             let cls = result.nodes[parent.index()].class;
@@ -342,8 +343,8 @@ impl Graph {
         };
         let mut declarations = Declarations::default();
         self.index_virtual_declarations(class, &mut declarations)?;
-        let mut signatures = HashMap::new();
-        let mut finals = FinalOverriders::new();
+        let mut signatures = HashMap::default();
+        let mut finals = FinalOverriders::default();
         for (&(subobject, function), &pure) in inherited {
             let signature = if let Some(&known) = signatures.get(&function) {
                 known
@@ -401,7 +402,7 @@ impl Graph {
             );
         }
         let mut memo = Candidates::default();
-        let mut finals = FinalOverriders::new();
+        let mut finals = FinalOverriders::default();
         for query in targets {
             objects.resolve(query, &declarations, &mut memo, location)?;
             let chosen = *memo.get(query)?.first().ok_or(Error::Invariant(

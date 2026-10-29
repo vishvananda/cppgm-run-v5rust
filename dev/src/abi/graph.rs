@@ -3,12 +3,12 @@ use super::{
     Error,
     vocabulary::{Builtin, Operation, Terminal},
 };
-use std::{
-    collections::{HashMap, hash_map::DefaultHasher},
-    hash::{Hash, Hasher},
-    num::NonZeroU32,
-    ops::Range,
-};
+use crate::support::hash::HashMap;
+use crate::support::hash::Hasher as Fingerprint;
+use std::hash::Hash;
+use std::hash::Hasher;
+use std::num::NonZeroU32;
+use std::ops::Range;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct NodeId(NonZeroU32);
@@ -298,7 +298,7 @@ impl Default for Graph {
             }],
             items: Vec::new(),
             text: Vec::new(),
-            index: HashMap::new(),
+            index: HashMap::default(),
             tags: super::tags::Tags::default(),
         }
     }
@@ -339,7 +339,7 @@ impl Graph {
         self.intern_with(Node::Text, &[], text)
     }
     fn intern_with(&mut self, node: Node, items: &[NodeId], text: &[u8]) -> Result<NodeId, Error> {
-        let mut hasher = DefaultHasher::new();
+        let mut hasher = Fingerprint::default();
         node.hash(&mut hasher);
         items.hash(&mut hasher);
         text.hash(&mut hasher);

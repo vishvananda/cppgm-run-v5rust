@@ -9,8 +9,8 @@ use super::{
     graph::{BindingId, EntityId, FunctionAvailability, ScopeId, ScopeKind},
     specifiers::{InlinePreference, Specifiers},
 };
+use crate::support::hash::HashSet;
 use crate::{support::source::SourceOffset, syntax::ast};
-use std::collections::HashSet;
 
 #[cfg(test)]
 mod pattern_tests {

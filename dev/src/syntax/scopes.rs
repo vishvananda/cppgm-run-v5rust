@@ -2,8 +2,10 @@
 //! Parsing categories only; indexed bindings and reversible mutations.
 use super::ParseError;
 use crate::lex::identifiers::NameId;
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::collections::BinaryHeap;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct ScopeId(u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -196,26 +198,26 @@ impl Default for Scopes {
                 edges: Vec::new(),
                 parameter_bases: Vec::new(),
             }],
-            bindings: HashMap::new(),
-            searches: HashMap::new(),
+            bindings: HashMap::default(),
+            searches: HashMap::default(),
             name_revisions: Vec::new(),
-            incoming: HashMap::new(),
+            incoming: HashMap::default(),
             invalidation_work: Vec::new(),
-            invalidation_seen: HashSet::new(),
+            invalidation_seen: HashSet::default(),
             unnamed_name: None,
             changes: Vec::new(),
             current: Some(ScopeId(0)),
             environment: 0,
             epoch: 0,
-            visited: HashSet::new(),
+            visited: HashSet::default(),
             pending: BinaryHeap::new(),
-            edge_targets: HashSet::new(),
+            edge_targets: HashSet::default(),
             name_marks: Vec::new(),
             search_work: Vec::new(),
             #[cfg(test)]
             search_visits: 0,
             next_identity: 1,
-            categories: HashMap::new(),
+            categories: HashMap::default(),
             conflicts: false,
             member_conflicts: false,
             uncertain: false,

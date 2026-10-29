@@ -1,6 +1,6 @@
 // Translated from lex/identifier_table.{h,cpp}. See NOTICE.
 //! Translation-unit name identity; spellings are interned once on lexer entry.
-use std::collections::HashMap;
+use crate::support::hash::HashMap;
 use std::rc::Rc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

@@ -2,6 +2,8 @@
 //! Query-owned routes and class-owned negative-row recipes, without emission demand.
 use super::{Error, Symbols};
 use crate::lower::function::Function;
+use crate::support::hash::HashMap;
+use crate::support::hash::HashSet;
 use crate::{
     lowir::{
         model::{Facts, InstructionKind as I, Value},
@@ -9,7 +11,6 @@ use crate::{
     },
     sema::lowering::{EntityId, TypeId, VcallSignature},
 };
-use std::collections::{HashMap, HashSet};
 
 pub(super) use crate::sema::lowering::BaseRoute as Route;
 #[derive(Clone, Copy)]
@@ -81,7 +82,7 @@ impl Symbols<'_, '_> {
         }
         for (class, full) in chain.into_iter().rev() {
             let mut rows = Vec::new();
-            let mut listed = HashSet::new();
+            let mut listed = HashSet::default();
             if !self.graph.lower_virtual_bases(class).is_empty() {
                 if let Some((primary, virtual_edge)) = self.graph.lower_itanium_primary(class) {
                     let inherited = if virtual_edge {
@@ -145,7 +146,7 @@ impl Symbols<'_, '_> {
             })
             .collect();
         let mut work = vec![(class, 0_u64, false)];
-        let mut visited = HashSet::new();
+        let mut visited = HashSet::default();
         while let Some((holder, offset, own)) = work.pop() {
             let primary = self
                 .graph
@@ -447,7 +448,7 @@ impl Symbols<'_, '_> {
         base: EntityId,
     ) -> Result<usize, Error> {
         if !self.state.base_routes.segments.contains_key(&class) {
-            let mut result = HashMap::new();
+            let mut result = HashMap::default();
             let group = self
                 .graph
                 .lower_vtable_group(class)
@@ -483,7 +484,7 @@ impl Symbols<'_, '_> {
         if let Some(order) = self.state.base_routes.vtt_orders.get(&class) {
             return Ok(order.clone());
         }
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         let mut result = Vec::new();
         let mut work = vec![(class, 0u64, false, 0usize)];
         while let Some((holder, offset, moral, next)) = work.last_mut() {
@@ -607,7 +608,7 @@ impl Symbols<'_, '_> {
             {
                 continue;
             }
-            let mut seen = HashSet::new();
+            let mut seen = HashSet::default();
             let mut order = Vec::new();
             for (base, shared) in self.graph.lower_inheritance_edges(top) {
                 if let Some(inherited) = self.state.base_routes.construction_orders.get(&base) {
