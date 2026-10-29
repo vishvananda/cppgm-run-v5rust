@@ -324,7 +324,7 @@ impl Function<'_, '_, '_, '_> {
             let logical = matches!(self.tree.expressions.get(root).kind,
                 ExprKind::Binary { op, .. } if matches!(op.token.as_punctuator(), Some(P::LogicalAnd | P::LogicalOr)))
                 && !self.graph.lower_operator_call(root)?;
-            if logical && !self.lifetime.cleanups.is_empty() && self.expression_throws(id)? {
+            if logical && !self.lifetime_chain_empty() && self.expression_throws(id)? {
                 let value = self.truth(id)?;
                 self.end_lifetime_expression(began)?;
                 self.effect(I::Branch(value.value, yes, no))?;

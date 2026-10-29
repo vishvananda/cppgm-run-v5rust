@@ -1,0 +1,11 @@
+declare function @factory() -> ptr [binding=strong, object=_Z7factoryv]
+
+function @bind() -> ptr [binding=strong, object=_Z4bindv] {
+  slot $object : ptr
+
+  block ^entry:
+    %t1 = call ptr @factory()
+    store typed ptr %t1, $object
+    %t2 = load typed ptr $object
+    return ptr %t2
+}

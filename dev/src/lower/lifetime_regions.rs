@@ -98,9 +98,13 @@ impl Function<'_, '_, '_, '_> {
             return Ok(());
         }
         self.close_lifetime_region()?;
-        if self.lifetime.cleanups.len() > self.lifetime.temporary_segment.floor()
-            && !self.static_initializer
-        {
+        let boundary = self.lifetime.temporary_segment.is_present()
+            && self
+                .handlers
+                .contexts
+                .last()
+                .is_some_and(|context| !context.attempt);
+        if (!self.lifetime_chain_empty() || boundary) && !self.static_initializer {
             let position = self.builder.position()?;
             self.open_temporary_region_at(Some(position))?;
         }
@@ -524,6 +528,18 @@ impl Function<'_, '_, '_, '_> {
         Ok(())
     }
     pub(super) fn before_lifetime_call(&mut self, throws: bool) -> Result<(), Error> {
+        // emit_call captures this before region_event can consume the pending
+        // segment. Later blocks still preserve results of the full-expression.
+        self.lifetime.call_coverage = if !throws
+            && !self.lifetime.region
+            && self.lifetime.region_start.is_pending()
+            && self.lifetime.call_marks.is_empty()
+            && !self.lifetime.temporary_segment.is_present()
+        {
+            super::lifetime::CallCoverage::Uncovered
+        } else {
+            super::lifetime::CallCoverage::Covered
+        };
         if throws
             && !self.lifetime.region
             && self
@@ -801,20 +817,14 @@ impl Function<'_, '_, '_, '_> {
         if throws && self.lifetime.full_expression {
             self.lifetime.call_marks.pop();
         }
-        let transient = !self.lifetime.full_expression && !self.lifetime.construction;
+        let coverage = std::mem::take(&mut self.lifetime.call_coverage);
         if std::mem::take(&mut self.lifetime.call_region) == super::lifetime::CallRegion::Transient
         {
             self.close_lifetime_region()?;
         }
-        // A pending outer call covers a nonthrowing receiver call's result
-        // before its region marker is inserted. It is not an uncovered call
-        // preceding all of the segment's calls and temporaries.
-        if !transient
+        if coverage != super::lifetime::CallCoverage::Uncovered
             && (throws || !self.has_tracked_region())
-            && (self.lifetime.region
-                || self.lifetime.full_expression
-                    && (self.lifetime.temporary_segment.is_present()
-                        || !throws && !self.lifetime.call_marks.is_empty()))
+            && (self.lifetime.full_expression || self.lifetime.construction && self.lifetime.region)
             && !matches!(ty, Type::Void | Type::Object { .. })
         {
             let slot = self.generated_slot("call", ty)?;

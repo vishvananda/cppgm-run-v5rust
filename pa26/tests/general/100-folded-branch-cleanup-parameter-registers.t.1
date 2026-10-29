@@ -1,0 +1,50 @@
+// Folded comparisons in a conditional cleanup must retire scratch clobbers.
+struct Result {
+  long data[8];
+  Result() { for (int i=0;i<8;++i) data[i]=0; }
+  ~Result() {}
+};
+struct Guard { Guard(); ~Guard(); };
+struct Node { int kind; };
+struct Options { bool flag; };
+struct Context { virtual Result evaluate(int&,const Node&)=0; };
+Result nested(const Node&);
+namespace {
+struct Analyzer {
+  Context& context;
+  int& scope;
+  const Options& options;
+  Result evaluate(const Node& child) const {
+    if (!options.flag && child.kind==20) {
+      Guard guard;
+      return nested(child);
+    }
+    return context.evaluate(scope,child);
+  }
+};
+}
+Result evaluate(Context& context,int& scope,const Options& options,const Node& node) {
+  Analyzer analyzer{context,scope,options};
+  return analyzer.evaluate(node);
+}
+int guards=0;
+Guard::Guard() { ++guards; }
+Guard::~Guard() { --guards; }
+Result nested(const Node& node) { Result value; value.data[0]=node.kind; return value; }
+struct Implementation : Context {
+  Result evaluate(int& scope,const Node& node) {
+    Result value;
+    value.data[0]=scope+node.kind;
+    return value;
+  }
+};
+int main() {
+  Implementation context;
+  int scope=7;
+  Options options{false};
+  Node node{20};
+  Result first=evaluate(context,scope,options,node);
+  node.kind=1;
+  Result second=evaluate(context,scope,options,node);
+  return first.data[0]==20 && second.data[0]==8 && guards==0 ? 0 : 1;
+}

@@ -167,6 +167,12 @@ pub(super) enum CallRegion {
     Transient,
 }
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum CallCoverage {
+    #[default]
+    Covered,
+    Uncovered,
+}
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum ChoiceRegion {
     #[default]
     Ordinary,
@@ -212,6 +218,7 @@ pub(super) struct Lifetime {
     pub region_entry: Option<BlockId>,
     pub dropped_chains: usize,
     pub call_region: CallRegion,
+    pub call_coverage: CallCoverage,
     pub region_start: RegionStart,
     pub region_depth: usize,
     pub regions_opened: usize,

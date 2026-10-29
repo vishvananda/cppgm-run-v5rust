@@ -1,0 +1,13 @@
+declare function @Owner__Owner(%arg0 : ptr [object_bytes=8]) -> void [binding=strong, object=_ZN5OwnerC1Ev]
+declare function @Owner___Owner(%arg0 : ptr [object_bytes=8]) -> void [unwind=no, binding=strong, object=_ZN5OwnerD1Ev]
+
+function @use_owner() -> void [binding=strong, object=_Z9use_ownerv] {
+  slot $owner : obj<8x8>
+
+  block ^entry:
+    %t1 = addr $owner
+    call void @Owner__Owner(%t1)
+    %t2 = addr $owner
+    call void @Owner___Owner(%t2)
+    return void
+}

@@ -1,0 +1,115 @@
+declare global @__external_rtti_vtable____class_type_info [role=rtti_class, binding=strong, object=_ZTVN10__cxxabiv117__class_type_infoE]
+
+declare function @__external_runtime____cxa_begin_catch(%arg0 : ptr) -> ptr [role=eh_begin_catch, linkage=c, binding=strong, object=__cxa_begin_catch]
+declare function @__external_runtime____cxa_end_catch() -> void [role=eh_end_catch, linkage=c, binding=strong, object=__cxa_end_catch]
+declare function @Member__Member(%arg0 : ptr [object_bytes=1]) -> void [binding=strong, object=_ZN6MemberC1Ev]
+declare function @profile(%arg0 : ptr [pass=indirect_result, object_bytes=24]) -> void [binding=strong, object=_Z7profilev]
+declare function @make(%arg0 : ptr [pass=indirect_result, object_bytes=1], %arg1 : ptr [pass=by_address, object_bytes=24]) -> void [binding=strong, object=_Z4makeRK7Profile]
+declare function @Member___Member(%arg0 : ptr [object_bytes=1]) -> void [unwind=no, binding=strong, object=_ZN6MemberD1Ev]
+
+global @__typeinfo_name__struct_Error [storage=readonly, binding=weak, object=_ZTS5Error] = {
+  i8 53
+  i8 69
+  i8 114
+  i8 114
+  i8 111
+  i8 114
+  i8 0
+}
+global @__rtti_struct_Error [storage=readonly, binding=weak, object=_ZTI5Error] = {
+  ptr addr @__external_rtti_vtable____class_type_info + 16
+  ptr addr @__typeinfo_name__struct_Error
+}
+
+function @evaluate() -> void [binding=strong, object=_Z8evaluatev] {
+  slot $outside : obj<1x1>
+  slot $object : obj<1x1>
+  slot $arg__1 : obj<24x4>
+
+  block ^entry:
+    %t1 = addr $outside
+    call void @Member__Member(%t1)
+    eh_try ^catch_dispatch_1
+    %t2 = addr $object
+    eh_try ^call_unwind_dispatch_5
+    %t3 = addr $arg__1
+    call void @profile(%t3)
+    eh_end
+    jump ^call_unwind_end_6
+
+  block ^cleanup_resume_4:
+    eh_end
+    eh_end
+    jump ^catch_entry_2
+
+  block ^call_unwind_dispatch_5:
+    eh_catch @__rtti_struct_Error, 1
+    eh_cleanup
+    jump ^cleanup_resume_4
+
+  block ^call_unwind_end_6:
+    call void @make(%t2, %t3)
+    %t4 = addr $object
+    call void @Object___Object(%t4)
+    eh_end
+    jump ^try_end_3
+
+  block ^catch_dispatch_1:
+    eh_catch @__rtti_struct_Error, 1
+    eh_cleanup
+    eh_end
+    jump ^catch_entry_2
+
+  block ^catch_entry_2:
+    %t5 = exception ptr
+    %t6 = exception_selector i32
+    %t7 = cmp eq i32 %t6, 1
+    branch %t7, ^catch_body_7, ^catch_next_8
+
+  block ^catch_body_7:
+    %t8 = call ptr @__external_runtime____cxa_begin_catch(%t5)
+    eh_cleanup ^catch_cleanup_9
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    jump ^try_end_3
+
+  block ^catch_cleanup_9:
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    %t9 = addr $outside
+    call void @Member___Member(%t9)
+    resume
+
+  block ^catch_next_8:
+    %t10 = addr $outside
+    call void @Member___Member(%t10)
+    resume
+
+  block ^try_end_3:
+    %t11 = addr $outside
+    call void @Member___Member(%t11)
+    return void
+}
+function @Object___Object(%this : ptr [object_bytes=1]) -> void [unwind=no, binding=weak, object=_ZN6ObjectD1Ev, inline_hint=yes] {
+  slot $this : ptr
+
+  block ^entry:
+    store typed ptr %this, $this
+    eh_cleanup ^destructor_cleanup_1
+    eh_end
+    %t1 = load typed ptr $this
+    %t2 = index i8 [projection=field] %t1, 0
+    call void @Member___Member(%t2)
+    jump ^destructor_end_2
+
+  block ^destructor_cleanup_1:
+    %t3 = load typed ptr $this
+    %t4 = index i8 [projection=field] %t3, 0
+    call void @Member___Member(%t4)
+    eh_end
+    resume
+
+  block ^destructor_end_2:
+    return void
+}
+alias object _ZN6ObjectD2Ev = @Object___Object

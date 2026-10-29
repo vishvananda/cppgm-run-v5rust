@@ -285,6 +285,15 @@ impl Analyzer<'_> {
             binding = Some(declared);
         }
         self.prepare_type_information(object)?;
+        if self.lowering() {
+            // define_typeinfo in the C++ lowering requests this class layout
+            // before reading its base offsets, even for a reference handler.
+            self.graph.storage_layouts.push((
+                self.body_context.as_ref().and_then(|body| body.function),
+                super::layout::StorageDemand::TypeInformation(object),
+                location,
+            ));
+        }
         self.graph
             .source_exceptions
             .handlers

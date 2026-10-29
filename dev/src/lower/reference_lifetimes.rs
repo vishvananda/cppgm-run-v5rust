@@ -203,8 +203,6 @@ impl Function<'_, '_, '_, '_> {
             .reference_lifetimes
             .root
             .replace(self.without_parentheses(id));
-        let expression = self.lifetime.full_expression;
-        self.lifetime.full_expression |= self.expression_throws(id)?;
         let result = self.bind_reference(id, ty, Context::Initialization);
         if result.is_ok() && own {
             self.extend_last_temporary(owner)?;
@@ -212,9 +210,6 @@ impl Function<'_, '_, '_, '_> {
         self.reference_lifetimes.owner = saved;
         self.reference_lifetimes.root = saved_root;
         self.reference_lifetimes.path.truncate(mark);
-        // The declaration closes the region after it stores the bound address.
-        // Keep a newly opened full-expression alive through that store.
-        self.lifetime.full_expression = expression || self.lifetime.region;
         result
     }
     fn reference_extension_path(&mut self, mut id: ast::ExprId) -> Result<(), Error> {

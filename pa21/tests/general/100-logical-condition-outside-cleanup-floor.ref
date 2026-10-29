@@ -1,0 +1,80 @@
+declare global @__external_rtti__int [role=rtti_data, binding=strong, object=_ZTIi]
+declare global @__external_rtti_vtable____fundamental_type_info [role=rtti_data, binding=strong, object=_ZTVN10__cxxabiv123__fundamental_type_infoE]
+
+declare function @__external_runtime____cxa_begin_catch(%arg0 : ptr) -> ptr [role=eh_begin_catch, linkage=c, binding=strong, object=__cxa_begin_catch]
+declare function @__external_runtime____cxa_end_catch() -> void [role=eh_end_catch, linkage=c, binding=strong, object=__cxa_end_catch]
+declare function @first() -> u8 [binding=strong, object=_Z5firstv]
+declare function @second() -> u8 [binding=strong, object=_Z6secondv]
+declare function @Guard___Guard(%arg0 : ptr [object_bytes=1]) -> void [unwind=no, binding=strong, object=_ZN5GuardD1Ev]
+
+global @__typeinfo_name__int [storage=readonly, binding=weak, object=_ZTSi] = {
+  i8 105
+  i8 0
+}
+global @__rtti_int [storage=readonly, binding=internal] = {
+  ptr addr @__external_rtti_vtable____fundamental_type_info + 16
+  ptr addr @__typeinfo_name__int
+}
+
+function @evaluate() -> u8 [binding=strong, object=_Z8evaluatev] {
+  slot $outside : obj<1x1>
+
+  block ^entry:
+    %t1 = addr $outside
+    eh_try ^catch_dispatch_1
+    %t2 = call u8 @first()
+    branch %t2, ^if_then_4, ^lor_rhs_6
+
+  block ^lor_rhs_6:
+    %t3 = call u8 @second()
+    branch %t3, ^if_then_4, ^if_else_5
+
+  block ^if_then_4:
+    eh_end
+    %t4 = addr $outside
+    call void @Guard___Guard(%t4)
+    return u8 1
+
+  block ^if_else_5:
+    jump ^if_end_7
+
+  block ^if_end_7:
+    eh_end
+    jump ^try_end_3
+
+  block ^catch_dispatch_1:
+    eh_catch @__external_rtti__int, 1
+    eh_cleanup
+    eh_end
+    jump ^catch_entry_2
+
+  block ^catch_entry_2:
+    %t5 = exception ptr
+    %t6 = exception_selector i32
+    %t7 = cmp eq i32 %t6, 1
+    branch %t7, ^catch_body_8, ^catch_next_9
+
+  block ^catch_body_8:
+    %t8 = call ptr @__external_runtime____cxa_begin_catch(%t5)
+    eh_cleanup ^catch_cleanup_10
+    eh_end
+    call void @__external_runtime____cxa_end_catch()
+    jump ^try_end_3
+
+  block ^catch_cleanup_10:
+    call void @__external_runtime____cxa_end_catch()
+    eh_end
+    %t9 = addr $outside
+    call void @Guard___Guard(%t9)
+    resume
+
+  block ^catch_next_9:
+    %t10 = addr $outside
+    call void @Guard___Guard(%t10)
+    resume
+
+  block ^try_end_3:
+    %t11 = addr $outside
+    call void @Guard___Guard(%t11)
+    return u8 0
+}

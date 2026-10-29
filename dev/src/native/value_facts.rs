@@ -677,6 +677,10 @@ impl Facts {
         body: &Body,
         calls: Option<&super::call_facts::Calls>,
     ) -> Result<(), Error> {
+        // Folding can retire instructions since the previous pass. Their old
+        // clobbers must not constrain retained parameters or global allocation.
+        // compute_clobbers in C++ rebuilds both maps from zero each time.
+        self.clobbers.fill((0, 0));
         let ids = self.flow.instructions.clone();
         for interval in &mut self.intervals {
             interval.forbid = 0;
@@ -876,6 +880,41 @@ fn alias_bits(bits: u128, ty: Type) -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fused_branch_retires_comparison_scratch_clobbers() -> Result<(), Error> {
+        let program = crate::lowir::test_program(
+            b"function @f(%x : i32) -> i32 {
+            block ^entry:
+%test = cmp eq i32 %x, 20
+branch %test, ^yes, ^no
+            block ^yes:
+return i32 1
+block ^no:
+return i32 0
+}",
+        )?;
+        let body = program.functions()[0].body.as_ref().ok_or(Error::Limit)?;
+        let flow = super::super::control_flow::Flow::analyze(body)?;
+        let slots = super::super::slot_analysis::analyze(body, &flow)?;
+        let mut facts = Facts::analyze(body, &slots, flow, 0)?;
+        let compare = facts
+            .flow
+            .instructions
+            .iter()
+            .position(|&id| matches!(body.instruction(id).kind, I::Compare(..)))
+            .ok_or(Error::Limit)?;
+        assert_ne!(facts.clobbers[compare].0 & (1 << R::RDX.code()), 0);
+        super::super::address_facts::Addresses::analyze(
+            &program,
+            body,
+            &mut facts,
+            super::super::object_compile::ObjectModel::Course,
+        )?;
+        assert!(!facts.active[compare]);
+        assert_eq!(facts.clobbers[compare], (0, 0));
+        Ok(())
+    }
 
     #[test]
     fn truncation_alias_requires_every_reader_to_ignore_upper_bits() -> Result<(), Error> {

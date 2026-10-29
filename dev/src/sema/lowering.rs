@@ -752,6 +752,13 @@ impl Graph {
     pub(crate) fn lower_explicit_variable_root(&self, entity: EntityId) -> bool {
         self.variable_instances.explicit_definition(entity)
     }
+    /// The declaration's ABI can be used without reaching a definition's
+    /// cleanup bodies. Match `program_lowering.cpp::demand_entry`'s boundary.
+    pub(crate) fn lower_has_available_body(&self, id: EntityId) -> bool {
+        self.entity(id).function_definition.is_some()
+            || self.lower_function_body(id).is_some()
+            || self.lower_has_synthesized_body(id)
+    }
     pub(crate) fn lower_has_synthesized_body(&self, id: EntityId) -> bool {
         self.lower_implicit_destructor(id)
             || self.entity(id).assignment.is_some()

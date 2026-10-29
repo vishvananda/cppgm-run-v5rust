@@ -186,6 +186,16 @@ impl Analyzer<'_> {
                 return Ok(());
             }
         }
+        if let Some(binding) = self.graph.constructors.get(constructor).binding {
+            let entity = self.graph.binding(binding).entity;
+            self.prepare_function_boundary(entity, work)?;
+            // A call needs the external declaration's ABI, not its member
+            // initialization or unwinding bodies (demand_entry in C++).
+            if !self.graph.lower_function_defined(entity) {
+                work.push(entity);
+                return Ok(());
+            }
+        }
         if !seen_constructors.insert(constructor) {
             return Ok(());
         }
@@ -426,7 +436,9 @@ impl Analyzer<'_> {
             if let Some(children) = constructor_edges.remove(&entity) {
                 constructors.extend(children);
             }
-            if let Some(destructors) = destruction_edges.remove(&entity) {
+            if self.graph.lower_has_available_body(entity)
+                && let Some(destructors) = destruction_edges.remove(&entity)
+            {
                 work.extend(destructors);
             }
             for demand in self.graph.entity(entity).demands.as_slice() {
@@ -458,6 +470,7 @@ impl Analyzer<'_> {
                     .entity(entity)
                     .member_function
                     .is_some_and(|key| key.kind == super::graph::MemberKind::Destructor)
+                    && self.graph.lower_has_available_body(entity)
                 {
                     self.prepare_destruction(class)?;
                     self.virtual_table_boundaries(class, seen_tables, &mut work)?;
@@ -475,7 +488,7 @@ impl Analyzer<'_> {
             for (owner, destructor) in std::mem::take(&mut self.graph.storage_destructions) {
                 if let Some(owner) = owner.filter(|owner| !seen.contains(owner)) {
                     destruction_edges.entry(owner).or_default().push(destructor);
-                } else {
+                } else if owner.is_none_or(|owner| self.graph.lower_has_available_body(owner)) {
                     work.push(destructor);
                 }
             }
