@@ -12,6 +12,69 @@ use crate::{
 };
 
 impl Function<'_, '_, '_, '_> {
+    pub(super) fn convert_function_result(
+        &mut self,
+        id: ast::ExprId,
+        value: RValue,
+        target: crate::sema::lowering::TypeId,
+        context: super::conversions::Context,
+    ) -> Result<RValue, Error> {
+        if self.graph.lower_member_pointer_type(value.source).is_some()
+            && self.graph.lower_member_pointer_type(target).is_some()
+        {
+            return self.convert_function_member_result(id, value, target);
+        }
+        if context != super::conversions::Context::Cast
+            && let Some(offset) = self.graph.lower_base_conversion(id)?
+        {
+            return self.convert_base_pointer(value, target, offset, !offset.is_zero(), true);
+        }
+        self.convert(value, target, context)
+    }
+
+    fn convert_function_member_result(
+        &mut self,
+        id: ast::ExprId,
+        value: RValue,
+        target: crate::sema::lowering::TypeId,
+    ) -> Result<RValue, Error> {
+        let (from, _) = self.graph.lower_member_pointer_type(value.source).ok_or(
+            crate::sema::Error::Invariant("conversion result without member pointer"),
+        )?;
+        let (to, _) =
+            self.graph
+                .lower_member_pointer_type(target)
+                .ok_or(crate::sema::Error::Invariant(
+                    "conversion target without member pointer",
+                ))?;
+        let adjustment = if from == to {
+            0
+        } else {
+            let crate::sema::lowering::TypeView::Class(base) = self.graph.lower_type(from)? else {
+                return Err(
+                    crate::sema::Error::Invariant("member result owner without class").into(),
+                );
+            };
+            let crate::sema::lowering::TypeView::Class(derived) = self.graph.lower_type(to)? else {
+                return Err(
+                    crate::sema::Error::Invariant("member target owner without class").into(),
+                );
+            };
+            // converted_value uses convert_implicit's member adjustment, not
+            // pointer_to_base. The reached base-offset search preserves source
+            // direct-base/first-route order and its failure at this boundary.
+            self.graph
+                .lower_nonvirtual_offset(derived, base)?
+                .ok_or_else(|| {
+                    crate::sema::Error::at(
+                        self.tree.expressions.get(id).location,
+                        "a conversion to a class that is not a base",
+                    )
+                })?
+        };
+        self.convert_member_pointer_at_offset(value, target, adjustment)
+    }
+
     pub(super) fn bind_function_conversion(
         &mut self,
         id: ast::ExprId,
@@ -29,7 +92,7 @@ impl Function<'_, '_, '_, '_> {
                     },
                 )?
                 .value;
-            return if let Some(offset) = self.graph.lower_base_conversion(id)? {
+            return if let Some(offset) = self.graph.lower_converted_reference_base(id)? {
                 self.base_projection(address, element, offset)
             } else {
                 Ok(address)
@@ -40,14 +103,19 @@ impl Function<'_, '_, '_, '_> {
             crate::sema::lowering::TypeView::Class(_)
         ) {
             let address = self.conversion_temporary(id, call, persistent)?;
-            return if let Some(offset) = self.graph.lower_base_conversion(id)? {
+            return if let Some(offset) = self.graph.lower_converted_reference_base(id)? {
                 self.base_projection(address, element, offset)
             } else {
                 Ok(address)
             };
         }
         let value = self.call_conversion(id, call)?;
-        let value = self.convert(value, element, super::conversions::Context::Initialization)?;
+        let value = self.convert_function_result(
+            id,
+            value,
+            element,
+            super::conversions::Context::Initialization,
+        )?;
         let value = self.fit(value, element)?;
         let storage = super::types::storage(&*self.graph, element)?;
         let slot = self.temporary_storage(element, persistent, "tmpref")?;

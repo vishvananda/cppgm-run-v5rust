@@ -369,6 +369,14 @@ impl Analyzer<'_> {
                 .copy_kind
                 .is_some(),
         };
+        let actually_elided = elided
+            && special
+            && candidate.argument.is_none()
+            && !selected.binding.temporary
+            && matches!(
+                self.graph.types.get(selected.binding.target).kind,
+                TypeKind::Reference { .. }
+            );
         if let Some(sequence) = candidate.argument {
             let target = if let CopyOrigin::Declared(binding) = selected.origin {
                 let ty = self
@@ -400,11 +408,14 @@ impl Analyzer<'_> {
         let action = if special
             && candidate.argument.is_none()
             && !selected.binding.temporary
-            && (elided
+            && (actually_elided
                 || own_class
                     && facts.category == V::Prvalue
                     && !written_move
-                    && self.selected_copy_properties(class, selected)?.trivial)
+                    && self
+                        .graph
+                        .copy_property_id(class, selected)?
+                        .is_some_and(|id| self.graph.copy_properties.get(id).trivial))
         {
             None
         } else {
@@ -414,10 +425,41 @@ impl Analyzer<'_> {
             }
             Some(action)
         };
+        if !actually_elided {
+            // Lowering may omit a trivial transfer even when source elision
+            // was not requested. That still names the selected constructor.
+            if action.is_none()
+                || matches!(action, Some(CopyAction::Storage { .. }))
+                    && matches!(selected.origin, CopyOrigin::Implicit { .. })
+            {
+                self.demand_selected_copy(class, selected)?;
+            }
+            self.note_throwing_copy(class, selected)?;
+        }
         self.graph.expression_facts.set_copy_action(id, action);
         facts.class_copy = Some(selected);
         self.graph.expression_facts.set(id, facts);
         Ok(())
+    }
+
+    pub(super) fn demand_selected_copy(
+        &mut self,
+        class: EntityId,
+        selected: CopySelection,
+    ) -> Result<(), Error> {
+        let binding = match selected.origin {
+            CopyOrigin::Declared(binding) => binding,
+            CopyOrigin::Implicit { .. } => {
+                let properties =
+                    self.graph
+                        .copy_property_id(class, selected)?
+                        .ok_or(Error::Invariant(
+                            "selected implicit copy without properties",
+                        ))?;
+                self.implicit_copy_binding(properties)?
+            }
+        };
+        self.demand_function(binding, true)
     }
 
     pub(super) fn copy_action(
@@ -1038,6 +1080,40 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+    #[test]
+    fn omitted_trivial_transfer_keeps_committed_use_distinct_from_elision() {
+        let source = SourceBuffer::new(
+            b"struct A{A(const A&)noexcept(false)=default;};A make();void take(A);\
+              void elided(){take(make());}\
+              void committed(bool c){take(c?make():make());}"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(
+            Preprocessor::with_name(&source, b"trivial-copy-selected-use").unwrap(),
+        );
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let declarations = tree.decl_lists.get(declarations).to_vec();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_semantics(true);
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        for (index, &declaration) in declarations.iter().enumerate() {
+            analyzer.declaration(declaration, global).unwrap();
+            assert_eq!(
+                analyzer.graph.analysis.potentially_throwing,
+                u32::from(index == 4)
+            );
+            let has_copy = analyzer.graph.root_demands.as_slice().iter().any(|demand| {
+                matches!(demand, super::super::function_demands::Demand::Function { binding, .. }
+                    if analyzer.graph.entity(analyzer.graph.binding(*binding).entity).copy_kind.is_some())
+            });
+            assert_eq!(has_copy, index == 4);
+        }
+    }
+
     #[test]
     fn failed_copy_selection_retains_null_conversion_without_a_copy_action() {
         for (constructors, expected) in [

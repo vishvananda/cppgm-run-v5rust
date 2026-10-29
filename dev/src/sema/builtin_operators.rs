@@ -233,19 +233,17 @@ impl Analyzer<'_> {
         sequence: ArgumentSequence,
         scope: ScopeId,
     ) -> Result<(), Error> {
-        let source = self.graph.expression_facts.get(id)?;
-        let selected = self.select_conversion_function(
-            source,
-            sequence,
-            scope,
-            self.tree.expressions.get(id).location,
-            super::conversion_functions::ConversionUse::Builtin,
-        )?;
-        // The ordinary builtin checker applies the final standard conversion
-        // to the conversion function's result, preserving the original receiver.
-        self.graph
-            .expression_facts
-            .set_function_conversion(id, selected);
+        let Some(super::procedural_calls::UserConversion::Function(binding)) =
+            sequence.user_conversion
+        else {
+            return Err(Error::Invariant(
+                "builtin conversion without selected function",
+            ));
+        };
+        let after = sequence.application.ok_or(Error::Invariant(
+            "builtin conversion without second sequence",
+        ))?;
+        self.builtin_function_conversion(id, binding, Some(after), scope)?;
         Ok(())
     }
 

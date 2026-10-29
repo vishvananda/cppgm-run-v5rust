@@ -55,13 +55,21 @@ pub(crate) struct BasePathId(u32);
 #[derive(Default)]
 pub(super) struct BasePaths {
     facts: super::base_facts::Tables,
-    records: Vec<Vec<(EntityId, usize)>>,
+    records: Vec<BasePath>,
     index: HashMap<(EntityId, EntityId), BasePathId>,
+    projections: HashMap<(EntityId, EntityId), BasePathId>,
 }
 
+struct BasePath {
+    edges: Vec<(EntityId, usize)>,
+    projection: bool,
+}
 impl BasePaths {
     pub(super) fn get(&self, id: BasePathId) -> &[(EntityId, usize)] {
-        &self.records[id.0 as usize]
+        &self.records[id.0 as usize].edges
+    }
+    pub(super) fn projection(&self, id: BasePathId) -> bool {
+        self.records[id.0 as usize].projection
     }
 }
 
@@ -193,6 +201,31 @@ impl Graph {
         if query.count() != 1 {
             return Err(Error::Invariant("retaining a nonunique base path"));
         }
+        self.store_base_path(derived, base, false)
+    }
+
+    pub(super) fn retain_projection_path(
+        &mut self,
+        derived: EntityId,
+        base: EntityId,
+    ) -> Result<BasePathId, Error> {
+        match self.base_query(derived, base).count() {
+            0 => return Err(Error::Invariant("projection without a base")),
+            1 => return self.retain_base_path(derived, base),
+            _ => (),
+        }
+        if let Some(&id) = self.base_paths.projections.get(&(derived, base)) {
+            return Ok(id);
+        }
+        self.store_base_path(derived, base, true)
+    }
+
+    fn store_base_path(
+        &mut self,
+        derived: EntityId,
+        base: EntityId,
+        projection: bool,
+    ) -> Result<BasePathId, Error> {
         // Retain only the first route. Query-local misses bound a shared
         // lattice to its edges, without copying a map of every path count.
         let mut pending = vec![(derived, 0usize)];
@@ -222,8 +255,16 @@ impl Graph {
             u32::try_from(self.base_paths.records.len())
                 .map_err(|_| Error::Limit("base path limit"))?,
         );
-        self.base_paths.records.push(path);
-        self.base_paths.index.insert((derived, base), id);
+        self.base_paths.records.push(BasePath {
+            edges: path,
+            projection,
+        });
+        let index = if projection {
+            &mut self.base_paths.projections
+        } else {
+            &mut self.base_paths.index
+        };
+        index.insert((derived, base), id);
         Ok(id)
     }
 }
@@ -255,6 +296,42 @@ impl Analyzer<'_> {
         location: SourceOffset,
         access: bool,
     ) -> Result<Option<BasePathId>, Error> {
+        let Some((derived, base)) = self.conversion_path_classes(facts, conversion)? else {
+            return Ok(None);
+        };
+        if conversion.second == super::expression_facts::ValueConversion::MemberToDerived {
+            self.checked_member_pointer_path(derived, base, scope, location, access, false)
+                .map(Some)
+        } else {
+            self.checked_base_path(derived, base, scope, location, access, false)
+                .map(Some)
+        }
+    }
+
+    pub(super) fn conversion_projection_path(
+        &mut self,
+        facts: super::expression_facts::ExprFacts,
+        conversion: super::expression_facts::Conversion,
+        location: SourceOffset,
+    ) -> Result<Option<BasePathId>, Error> {
+        let Some((derived, base)) = self.conversion_path_classes(facts, conversion)? else {
+            return Ok(None);
+        };
+        // Selected user-function result sequences retain endpoints. Their
+        // source owner does not repeat an ordinary base-conversion validation;
+        // the reached lowering operation chooses its route from these classes.
+        let path = self.graph.retain_projection_path(derived, base)?;
+        if self.lowering() {
+            self.demand_storage_layout(derived, location)?;
+        }
+        Ok(Some(path))
+    }
+
+    fn conversion_path_classes(
+        &self,
+        facts: super::expression_facts::ExprFacts,
+        conversion: super::expression_facts::Conversion,
+    ) -> Result<Option<(EntityId, EntityId)>, Error> {
         if conversion.second == super::expression_facts::ValueConversion::MemberToDerived {
             let TypeKind::MemberPointer { owner: base, .. } = self.graph.types.get(facts.ty).kind
             else {
@@ -273,9 +350,7 @@ impl Analyzer<'_> {
                 .graph
                 .class_of(derived)
                 .ok_or(Error::Invariant("member conversion derived"))?;
-            return self
-                .checked_member_pointer_path(derived, base, scope, location, access, false)
-                .map(Some);
+            return Ok(Some((derived, base)));
         }
         if conversion.second != super::expression_facts::ValueConversion::DerivedToBase {
             return Ok(None);
@@ -296,8 +371,7 @@ impl Analyzer<'_> {
             .graph
             .class_of(to)
             .ok_or(Error::Invariant("base conversion without target class"))?;
-        self.checked_base_path(derived, base, scope, location, access, false)
-            .map(Some)
+        Ok(Some((derived, base)))
     }
 
     pub(super) fn checked_base_path(

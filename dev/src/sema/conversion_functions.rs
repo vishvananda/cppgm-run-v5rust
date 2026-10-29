@@ -14,7 +14,7 @@ use super::{
     procedural_calls::{ArgumentSequence, UserConversion},
     specifiers::Explicitness,
     types::{TypeId, TypeKind},
-    user_conversions::UserCandidate,
+    user_conversions::{ConversionSite, UserCandidate},
 };
 use crate::{support::source::SourceOffset, syntax::ast};
 use std::collections::{HashMap, HashSet};
@@ -40,6 +40,24 @@ pub(super) enum ConversionUse {
     Scalar,
     Contextual,
     Builtin,
+}
+
+/// Application of a user conversion has an early, void-returning subobject
+/// failure; the caller still owns its outer conversion publication.
+pub(super) struct SelectedFunctionConversion {
+    pub conversion: FunctionConversion,
+    available: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum UserConversionUse {
+    Scalar,
+    Contextual,
+}
+
+enum ConversionReceiver {
+    Ready(Option<BasePathId>),
+    Unavailable,
 }
 
 #[derive(Clone, Copy)]
@@ -333,34 +351,57 @@ impl Analyzer<'_> {
         binding: BindingId,
         scope: ScopeId,
     ) -> Result<ExprFacts, Error> {
+        self.builtin_function_conversion(id, binding, None, scope)
+    }
+
+    pub(super) fn builtin_function_conversion(
+        &mut self,
+        id: ast::ExprId,
+        binding: BindingId,
+        after: Option<Conversion>,
+        scope: ScopeId,
+    ) -> Result<ExprFacts, Error> {
         let source = self.graph.expression_facts.get(id)?;
         let location = self.tree.expressions.get(id).location;
-        // unique_conversion counts declarations, not viable object sequences.
-        // convert_class_operand also omits the ordinary deletion check.
-        let path = self.conversion_function_receiver(source, binding, scope, location, false)?;
         let signature = self
             .graph
             .binding(binding)
             .ty
             .ok_or(Error::Invariant("conversion signature"))?;
+        // convert_class_operand publishes its counted result before checking
+        // the receiver. It omits the ordinary deleted-use check.
         let produced = self.call_result(signature)?;
-        let target = self.decayed_type(produced.ty)?;
-        let after = self
-            .standard_conversion(produced, target, false)?
-            .ok_or(Error::Invariant("converted operand identity"))?;
-        self.graph.expression_facts.set_function_conversion(
-            id,
-            FunctionConversion {
-                binding,
-                result: produced.ty,
-                category: produced.category,
-                path,
-                after,
-                after_path: None,
-                usage: ConversionUse::Builtin,
-                copy: None,
-            },
-        );
+        let after = if let Some(after) = after {
+            after
+        } else {
+            let target = self.decayed_type(produced.ty)?;
+            self.standard_conversion(produced, target, false)?
+                .ok_or(Error::Invariant("converted operand identity"))?
+        };
+        let mut selected = FunctionConversion {
+            binding,
+            result: produced.ty,
+            category: produced.category,
+            path: None,
+            after,
+            after_path: None,
+            usage: ConversionUse::Builtin,
+            copy: None,
+        };
+        self.graph
+            .expression_facts
+            .set_function_conversion(id, selected);
+        if let ConversionReceiver::Ready(path) =
+            self.conversion_function_receiver(source, binding, scope, location)?
+        {
+            selected.path = path;
+            self.graph
+                .expression_facts
+                .set_function_conversion(id, selected);
+        }
+        // Unlike apply_user_conversion, a soft nonunique receiver still
+        // reaches this use and its throwing event in convert_class_operand.
+        self.use_conversion_function(binding)?;
         Ok(produced)
     }
 
@@ -571,53 +612,55 @@ impl Analyzer<'_> {
         sequence: ArgumentSequence,
         scope: ScopeId,
         location: SourceOffset,
-        usage: ConversionUse,
-    ) -> Result<FunctionConversion, Error> {
+        usage: UserConversionUse,
+    ) -> Result<SelectedFunctionConversion, Error> {
         let Some(UserConversion::Function(binding)) = sequence.user_conversion else {
             return Err(Error::Invariant("conversion function without selection"));
         };
         let entity = self.graph.binding(binding).entity;
-        // convert_class_operand does not check deletion in the frozen builtin path.
-        if usage != ConversionUse::Builtin {
-            self.check_function_not_deleted(entity, location)?;
-        }
-        let defer_demand = usage == ConversionUse::Scalar
-            && matches!(
-                self.graph.types.get(sequence.conversion.target).kind,
-                TypeKind::Class(_)
-            );
-        let path =
-            self.conversion_function_receiver(source, binding, scope, location, defer_demand)?;
+        self.check_function_not_deleted(entity, location)?;
+        let receiver = self.conversion_function_receiver(source, binding, scope, location)?;
+        let (available, path) = match receiver {
+            ConversionReceiver::Ready(path) => (true, path),
+            ConversionReceiver::Unavailable => (false, None),
+        };
         let ty = self
             .graph
             .entity(entity)
             .ty
             .ok_or(Error::Invariant("conversion without signature"))?;
-        let produced = if usage == ConversionUse::Builtin {
-            self.call_result(ty)?
-        } else {
-            self.call_result_view(ty)?
-        };
+        let produced = self.call_result_view(ty)?;
         let after = sequence.application.ok_or(Error::Invariant(
             "conversion function without second sequence",
         ))?;
-        // The ordinary converted_value path projects the result, independently
-        // of the receiver. The frozen scalar path does not check access for
-        // this second step (the builtin checker does so when applying it).
-        let after_path = if usage == ConversionUse::Builtin {
-            None
+        let after_path = if available {
+            self.conversion_projection_path(produced, after, location)?
         } else {
-            self.conversion_base_path(produced, after, scope, location, false)?
+            None
         };
-        Ok(FunctionConversion {
-            binding,
-            result: produced.ty,
-            category: produced.category,
-            path,
-            usage,
-            after_path,
-            after,
-            copy: None,
+        let defer_demand = usage == UserConversionUse::Scalar
+            && matches!(
+                self.graph.types.get(sequence.conversion.target).kind,
+                TypeKind::Class(_)
+            );
+        if available && !defer_demand {
+            self.use_conversion_function(binding)?;
+        }
+        Ok(SelectedFunctionConversion {
+            available,
+            conversion: FunctionConversion {
+                binding,
+                result: produced.ty,
+                category: produced.category,
+                path,
+                usage: match usage {
+                    UserConversionUse::Scalar => ConversionUse::Scalar,
+                    UserConversionUse::Contextual => ConversionUse::Contextual,
+                },
+                after_path,
+                after,
+                copy: None,
+            },
         })
     }
 
@@ -627,8 +670,7 @@ impl Analyzer<'_> {
         binding: BindingId,
         scope: ScopeId,
         location: SourceOffset,
-        defer_demand: bool,
-    ) -> Result<Option<BasePathId>, Error> {
+    ) -> Result<ConversionReceiver, Error> {
         let class = self
             .graph
             .class_of(source.ty)
@@ -638,22 +680,33 @@ impl Analyzer<'_> {
             .and_then(|ty| self.graph.class_of(ty))
             .ok_or(Error::Invariant("conversion function without owner"))?;
         if self.graph.base_count(class, owner) > 1 {
-            return Err(Error::at(
+            self.emit_substitution_failure(
                 location,
                 "a conversion function of an ambiguous base class subobject",
-            ));
+                false,
+            )?;
+            return Ok(ConversionReceiver::Unavailable);
         }
         self.check_named_member_access(binding, class, class, scope, location)?;
         let path = if class == owner {
             None
         } else {
-            Some(self.checked_base_path(class, owner, scope, location, true, false)?)
+            // Access belongs to the introducing conversion declaration. A
+            // public using-declaration can expose a private base's function.
+            let path = self.graph.retain_base_path(class, owner)?;
+            if self.lowering() {
+                self.demand_storage_layout(class, location)?;
+            }
+            Some(path)
         };
-        if !defer_demand {
-            self.demand_specialization_body(binding);
-            self.demand_function(binding, true)?;
-        }
-        Ok(path)
+        Ok(ConversionReceiver::Ready(path))
+    }
+
+    fn use_conversion_function(&mut self, binding: BindingId) -> Result<(), Error> {
+        self.demand_specialization_body(binding);
+        self.demand_function(binding, true)?;
+        self.note_throwing_function(self.graph.binding(binding).entity);
+        Ok(())
     }
 
     pub(super) fn cast_conversion_function(
@@ -673,6 +726,7 @@ impl Analyzer<'_> {
                 sequence,
                 scope,
                 self.tree.expressions.get(id).location,
+                ConversionSite::Cast(self.tree.expressions.get(id).location),
             )?;
             return self.new_expression_facts(target, ValueCategory::Prvalue);
         }
@@ -681,30 +735,53 @@ impl Analyzer<'_> {
             "invalid explicit conversion",
         ))
     }
-    pub(super) fn apply_function_sequence(
+    fn check_function_binding_temporary(
         &mut self,
-        id: ast::ExprId,
-        sequence: ArgumentSequence,
+        conversion: Conversion,
         scope: ScopeId,
+        location: SourceOffset,
     ) -> Result<(), Error> {
-        self.apply_function_sequence_at(id, sequence, scope, self.tree.expressions.get(id).location)
+        // The outer binding owns this check. A selected user function prevents
+        // the ordinary fallback that destroys the original class prvalue.
+        if conversion.temporary
+            && self.graph.class_of(conversion.result).is_some()
+            && matches!(
+                self.graph.types.get(conversion.target).kind,
+                TypeKind::Reference { .. }
+            )
+        {
+            self.check_binding_temporary(
+                ExprFacts::new(conversion.result, ValueCategory::Prvalue),
+                conversion,
+                scope,
+                location,
+            )?;
+        }
+        Ok(())
     }
+
     pub(super) fn apply_function_sequence_at(
         &mut self,
         id: ast::ExprId,
         sequence: ArgumentSequence,
         scope: ScopeId,
         location: SourceOffset,
+        site: ConversionSite,
     ) -> Result<(), Error> {
         let source = self.graph.expression_facts.get(id)?;
-        let mut selected = self.select_conversion_function(
+        if site == ConversionSite::Parameter {
+            self.check_function_binding_temporary(sequence.conversion, scope, location)?;
+        }
+        let selected = self.select_conversion_function(
             source,
             sequence,
             scope,
             location,
-            ConversionUse::Scalar,
+            UserConversionUse::Scalar,
         )?;
-        if let Some(class) = self.graph.class_of(sequence.conversion.target) {
+        let available = selected.available;
+        let mut selected = selected.conversion;
+        if available && let Some(class) = self.graph.class_of(sequence.conversion.target) {
             let produced = ExprFacts::new(selected.result, selected.category);
             // operand_constructor elides only a prvalue of the destination's own
             // unqualified class; it does not select or demand a copy for it.
@@ -719,36 +796,49 @@ impl Analyzer<'_> {
                     self.select_result_constructor(class, produced, scope, location)?
             {
                 selected.after_path =
-                    self.conversion_base_path(produced, copy.binding, scope, location, true)?;
+                    self.conversion_projection_path(produced, copy.binding, location)?;
                 let action = self.copy_action(
                     class,
                     copy,
                     super::copy_initialization::CopyUse::Value { in_place: false },
                     location,
                 )?;
+                if matches!(
+                    action,
+                    super::copy_initialization::CopyAction::Storage { .. }
+                ) && matches!(
+                    copy.origin,
+                    super::copy_initialization::CopyOrigin::Implicit { .. }
+                ) {
+                    self.demand_selected_copy(class, copy)?;
+                }
+                self.note_throwing_copy(class, copy)?;
                 selected.copy = Some(ResultCopy {
                     selection: copy,
                     action,
                 });
-                self.check_binding_temporary(produced, copy.binding, scope, location)?;
             }
         }
-        if matches!(
-            self.graph.types.get(sequence.conversion.target).kind,
-            TypeKind::Reference { .. }
-        ) {
-            let produced = ExprFacts::new(selected.result, selected.category);
-            self.check_temporary_destruction(produced, scope, location)?;
+        if available
+            && matches!(
+                self.graph.types.get(sequence.conversion.target).kind,
+                TypeKind::Class(_)
+            )
+        {
+            // The selected result copy precedes use of the conversion function.
+            self.use_conversion_function(selected.binding)?;
         }
-        if matches!(
-            self.graph.types.get(sequence.conversion.target).kind,
-            TypeKind::Class(_)
-        ) {
-            // apply_user_conversion selects and demands the result's copy
-            // before odr_use of the conversion function. Keep that order on
-            // the owning demand list, independently of emission queues.
-            self.demand_specialization_body(selected.binding);
-            self.demand_function(selected.binding, true)?;
+        if matches!(site, ConversionSite::Call | ConversionSite::Operator) {
+            self.check_function_binding_temporary(sequence.conversion, scope, location)?;
+        }
+        if matches!(site, ConversionSite::Cast(_))
+            && matches!(
+                self.graph.types.get(sequence.conversion.target).kind,
+                TypeKind::Reference { .. }
+            )
+            && self.graph.analysis.substitution.current().failure.is_some()
+        {
+            return Err(Error::SubstitutionNull);
         }
         self.graph
             .expression_facts
@@ -768,6 +858,89 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn ambiguous_receiver_keeps_scalar_and_builtin_continuations_distinct() {
+        let source = SourceBuffer::new(
+            b"struct B{operator int();};struct L:B{};struct R:B{};struct D:L,R{};\
+              extern D value;int scalar=value;int builtin=+value;int condition=value?1:0;"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit = SyntaxUnit::new(
+            Preprocessor::with_name(&source, b"conversion-receiver-continuation").unwrap(),
+        );
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let declarations = tree.decl_lists.get(declarations).to_vec();
+        let base = cursor.intern_name(b"B").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_semantics(true);
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        for (index, &declaration) in declarations.iter().enumerate() {
+            if index < 5 {
+                analyzer.declaration(declaration, global).unwrap();
+            } else {
+                let failure = analyzer
+                    .with_substitution_soft(None, |analyzer| {
+                        analyzer.declaration(declaration, global)?;
+                        Ok(analyzer.graph.analysis.substitution.current().failure)
+                    })
+                    .unwrap();
+                assert_eq!(
+                    failure.unwrap().message,
+                    "a conversion function of an ambiguous base class subobject"
+                );
+                let ast::DeclKind::Simple { declarators, .. } =
+                    analyzer.tree.declarations.get(declaration).kind
+                else {
+                    panic!("initialized declaration");
+                };
+                let initializer = analyzer.tree.init_declarators.get(declarators)[0]
+                    .initializer
+                    .unwrap();
+                let ast::InitializerKind::Assign(mut expression) = initializer.kind else {
+                    panic!("initialized expression");
+                };
+                if let ast::ExprKind::Unary { operand, .. } =
+                    analyzer.tree.expressions.get(expression).kind
+                {
+                    expression = operand;
+                }
+                if let ast::ExprKind::Conditional { condition, .. } =
+                    analyzer.tree.expressions.get(expression).kind
+                {
+                    expression = condition;
+                }
+                let selected = analyzer
+                    .graph
+                    .expression_facts
+                    .function_conversion(expression)
+                    .unwrap();
+                assert!(selected.path.is_none());
+                assert_eq!(analyzer.graph.root_demands.as_slice().iter().any(|demand| matches!(
+                    demand,
+                    super::super::function_demands::Demand::Function { binding, .. } if *binding == selected.binding
+                )), index >= 6);
+                assert_eq!(
+                    analyzer.graph.analysis.potentially_throwing,
+                    u32::try_from(index - 5).unwrap()
+                );
+            }
+        }
+        let binding = analyzer
+            .graph
+            .own(global, base, super::super::lookup::Filter::Prefix)
+            .unwrap();
+        let base = analyzer.graph.binding(binding).entity;
+        let conversion = analyzer.graph.entity(base).declared_conversions[0];
+        assert!(analyzer.graph.root_demands.as_slice().iter().any(|demand| matches!(
+            demand,
+            super::super::function_demands::Demand::Function { binding, .. } if *binding == conversion
+        )));
+    }
 
     #[test]
     fn result_copy_is_demanded_before_its_conversion_function() {

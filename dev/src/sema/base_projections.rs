@@ -252,6 +252,9 @@ fn found_offset(work: &[OffsetFrame], extra: u64) -> Result<u64, Error> {
 }
 impl Graph {
     pub(crate) fn lower_path_projection(&self, path: BasePathId) -> Result<BaseProjection, Error> {
+        if self.base_paths.projection(path) {
+            return self.lower_member_route_projection(path);
+        }
         let edges = self.base_paths.get(path);
         if edges
             .iter()

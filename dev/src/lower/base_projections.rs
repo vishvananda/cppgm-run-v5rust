@@ -200,7 +200,17 @@ impl Function<'_, '_, '_, '_> {
         null_test: bool,
         reserve: bool,
     ) -> Result<RValue, Error> {
-        let delta = self.resolve_base_projection(delta)?;
+        let mut delta = self.resolve_base_projection(delta)?;
+        if let BaseProjection::Route { from, to } = delta {
+            let route = self
+                .symbols
+                .view(&*self.graph, &*self.tree, self.cursor)
+                .base_route(from, to)?;
+            if route.via.is_none() {
+                delta = BaseProjection::Fixed(route.offset);
+            }
+        }
+        let null_test = null_test && !delta.is_zero();
         if null_test && reserve && matches!(delta, BaseProjection::Route { .. }) {
             // pointer_to_base reserves its ordinary conversion slot before
             // the virtual route allocates its own null-tested result.

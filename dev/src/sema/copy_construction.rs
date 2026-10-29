@@ -346,7 +346,10 @@ impl Analyzer<'_> {
         self.graph.copy_properties.get_mut(properties).plan = ConstructorState::Ready(id);
         Ok(id)
     }
-    fn implicit_copy_binding(&mut self, properties: CopyPropertiesId) -> Result<BindingId, Error> {
+    pub(super) fn implicit_copy_binding(
+        &mut self,
+        properties: CopyPropertiesId,
+    ) -> Result<BindingId, Error> {
         if let Some(binding) = self.graph.copy_properties.get(properties).callable {
             return Ok(binding);
         }

@@ -561,20 +561,25 @@ impl Analyzer<'_> {
     }
     pub(super) fn convert_bool(&mut self, id: ast::ExprId) -> Result<(), Error> {
         let target = self.graph.types.scalar(Scalar::Bool)?;
-        self.convert_operand_scalar(id, target, true)?;
-        if let Some(mut step) = self.graph.expression_facts.function_conversion(id) {
-            if step.usage == super::conversion_functions::ConversionUse::Scalar {
-                // convert_to_scalar creates the contextual operand's result
-                // facts; retain that new expression through its typed projection.
-                let projected = self.new_expression_facts(step.result, step.category)?;
-                step.result = projected.ty;
-                step.category = projected.category;
-            }
-            step.usage = super::conversion_functions::ConversionUse::Contextual;
-            self.graph
-                .expression_facts
-                .set_function_conversion(id, step);
+        let source = self.builtin_operand_facts(id)?;
+        if self.graph.class_of(source.ty).is_some()
+            && let Some(sequence) = self.conversion_function_sequence(source, target, true)?
+        {
+            let Some(super::procedural_calls::UserConversion::Function(binding)) =
+                sequence.user_conversion
+            else {
+                return Err(Error::Invariant(
+                    "bool conversion without selected function",
+                ));
+            };
+            self.check_function_not_deleted(
+                self.graph.binding(binding).entity,
+                self.tree.expressions.get(id).location,
+            )?;
+            let scope = self.graph.expression_scopes[self.graph.expression_facts.root(id).index()]
+                .ok_or(Error::Invariant("bool conversion without expression scope"))?;
+            self.convert_class_operand(id, binding, scope)?;
         }
-        Ok(())
+        self.convert_operand_scalar(id, target, true)
     }
 }

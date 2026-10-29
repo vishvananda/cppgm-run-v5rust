@@ -28,12 +28,7 @@ impl Function<'_, '_, '_, '_> {
     fn operand_located(&mut self, id: ast::ExprId, context: Context) -> Result<RValue, Error> {
         if let Some((call, target)) = self.graph.lower_function_conversion(id)? {
             let value = self.call_conversion(id, call)?;
-            if context != Context::Cast
-                && let Some(offset) = self.graph.lower_base_conversion(id)?
-            {
-                return self.convert_base_pointer(value, target, offset, !offset.is_zero(), true);
-            }
-            return self.convert(value, target, context);
+            return self.convert_function_result(id, value, target, context);
         }
         if let Some(value) = self.converted_member_operand(id, context)? {
             return Ok(value);

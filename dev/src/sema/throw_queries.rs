@@ -37,6 +37,28 @@ impl Analyzer<'_> {
         }
     }
 
+    pub(super) fn note_throwing_copy(
+        &mut self,
+        class: super::graph::EntityId,
+        selected: super::copy_initialization::CopySelection,
+    ) -> Result<(), Error> {
+        if let super::copy_initialization::CopyOrigin::Declared(binding) = selected.origin {
+            self.note_throwing_function(self.graph.binding(binding).entity);
+        } else {
+            let id = self
+                .graph
+                .copy_property_id(class, selected)?
+                .ok_or(Error::Invariant("implicit copy without properties"))?;
+            let properties = self.graph.copy_properties.get(id);
+            if let Some(function) = properties.declaration {
+                self.note_throwing_function(function);
+            } else if !properties.nothrow {
+                self.note_potentially_throwing();
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn constructor_function_may_throw(
         &mut self,
         id: super::construction::ConstructorId,

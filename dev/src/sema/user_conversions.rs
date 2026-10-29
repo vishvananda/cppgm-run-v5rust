@@ -338,11 +338,12 @@ impl Analyzer<'_> {
             return Ok(false);
         };
         if matches!(constructor, UserConversion::Function(_)) {
-            if let ConversionSite::Cast(location) = site {
-                self.apply_function_sequence_at(id, sequence, scope, location)?;
+            let location = if let ConversionSite::Cast(location) = site {
+                location
             } else {
-                self.apply_function_sequence(id, sequence, scope)?;
-            }
+                self.tree.expressions.get(id).location
+            };
+            self.apply_function_sequence_at(id, sequence, scope, location, site)?;
             return Ok(true);
         }
         let UserConversion::Constructor(binding) = constructor else {

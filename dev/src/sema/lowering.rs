@@ -352,6 +352,23 @@ impl Graph {
             && step.category == super::expression_facts::ValueCategory::Prvalue
             && self.class_of(step.result) == Some(plan.class)
     }
+    pub(crate) fn lower_converted_reference_base(
+        &self,
+        id: ast::ExprId,
+    ) -> Result<Option<BaseProjection>, Error> {
+        if self
+            .expression_facts
+            .function_conversion(id)
+            .is_some_and(|step| {
+                step.after.second == super::expression_facts::ValueConversion::DerivedToBase
+            })
+        {
+            self.lower_base_conversion(id)
+        } else {
+            Ok(None)
+        }
+    }
+
     pub(crate) fn lower_conversion_copy(&self, id: ast::ExprId) -> Option<CopyAction> {
         self.expression_facts
             .function_conversion(id)

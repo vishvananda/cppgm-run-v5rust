@@ -457,9 +457,10 @@ impl Analyzer<'_> {
                         sequence,
                         scope,
                         location,
-                        super::conversion_functions::ConversionUse::Contextual,
+                        super::conversion_functions::UserConversionUse::Contextual,
                     )?;
-                    self.graph.record_condition_function(declarator, selected);
+                    self.graph
+                        .record_condition_function(declarator, selected.conversion);
                     sequence.conversion
                 } else {
                     return Err(Error::at(
@@ -480,7 +481,7 @@ impl Analyzer<'_> {
         facts: ExprFacts,
         location: crate::support::source::SourceOffset,
     ) -> Result<TypeId, Error> {
-        use super::conversion_functions::{ConversionTarget, ConversionUse};
+        use super::conversion_functions::{ConversionTarget, UserConversionUse};
         let diagnostic = "switch condition is not of integral or enumeration type";
         let (source, scope) = match condition {
             Condition::Expression(id) => {
@@ -533,9 +534,10 @@ impl Analyzer<'_> {
                             sequence,
                             scope,
                             location,
-                            ConversionUse::Contextual,
+                            UserConversionUse::Contextual,
                         )?;
-                        self.graph.record_condition_function(declarator, selected);
+                        self.graph
+                            .record_condition_function(declarator, selected.conversion);
                         sequence.conversion
                     } else {
                         return Err(Error::at(location, diagnostic));

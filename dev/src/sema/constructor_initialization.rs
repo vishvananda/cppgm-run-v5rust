@@ -470,7 +470,8 @@ impl Analyzer<'_> {
             match sequence.user_conversion {
                 Some(super::procedural_calls::UserConversion::Constructor(_)) => Some(sequence),
                 Some(super::procedural_calls::UserConversion::Function(_)) => {
-                    self.apply_function_sequence_at(*id, sequence, scope, location)?;
+                    let site = super::user_conversions::ConversionSite::Call;
+                    self.apply_function_sequence_at(*id, sequence, scope, location, site)?;
                     return Ok(None);
                 }
                 _ => return Err(Error::Invariant("class user conversion selection")),
