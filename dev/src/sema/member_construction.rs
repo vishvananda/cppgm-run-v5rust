@@ -225,6 +225,30 @@ impl Analyzer<'_> {
             subobjects,
         })
     }
+    /// Source `inner_plan_facts/plan_nothrow` observes each member's retained
+    /// initializer result before querying its selected constructor.
+    pub(super) fn planned_members_nothrow(
+        &mut self,
+        members: &[(EntityId, Option<ast::Initializer>)],
+        written: &[bool],
+        subobjects: &[super::construction::MemberConstruction],
+    ) -> Result<bool, Error> {
+        let mut nothrow = true;
+        let mut children = subobjects.iter().peekable();
+        for (index, &(member, initializer)) in members.iter().enumerate() {
+            if initializer.is_some() && written.get(index) != Some(&true) {
+                nothrow &= !self.graph.member_initializers.throwing(member);
+            }
+            if children.peek().is_some_and(|child| child.member == member) {
+                let child = children
+                    .next()
+                    .ok_or(Error::Invariant("member plan child"))?;
+                nothrow = nothrow && self.subobject_constructor_nothrow(child.constructor)?;
+            }
+        }
+        Ok(nothrow)
+    }
+
     fn anonymous_member_plan<'a>(
         &mut self,
         class: EntityId,
@@ -240,15 +264,7 @@ impl Analyzer<'_> {
             subobjects,
             deferred,
         } = self.member_actions(class, written, scope, location, known, deferred)?;
-        let mut nothrow = true;
-        for &(_, initializer) in &members {
-            if !deferred && let Some(initializer) = initializer {
-                nothrow &= !self.initializer_may_throw(initializer)?;
-            }
-        }
-        for child in &subobjects {
-            nothrow &= self.graph.constructors.get(child.constructor).nothrow;
-        }
+        let nothrow = self.planned_members_nothrow(&members, &written_members, &subobjects)?;
         let callable_type = self.constructor_signature(None)?;
         let constructor = self.publish_constructor(Constructor {
             facts: super::construction::ConstructorFacts::Complete,

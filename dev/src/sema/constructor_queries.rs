@@ -157,8 +157,13 @@ impl Analyzer<'_> {
         for index in 0..self.graph.entity(class).members.len() {
             let member = self.graph.entity(class).members[index];
             self.request_member_initializer(member)?;
-            if let Some(initializer) = self.graph.entity(member).member_initializer {
-                result.nothrow &= !self.initializer_may_throw(initializer)?;
+            if self.graph.entity(member).member_initializer.is_some() {
+                result.nothrow &= !self.graph.member_initializers.throwing(member);
+                if result.nothrow
+                    && let Some(id) = self.graph.entity(member).constructor
+                {
+                    result.nothrow = self.subobject_constructor_nothrow(id)?;
+                }
             } else if self.graph.entity(class).key != Keyword::Union
                 && let Some((child, _, _)) = self
                     .graph

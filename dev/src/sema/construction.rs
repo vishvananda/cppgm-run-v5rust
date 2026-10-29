@@ -166,6 +166,40 @@ impl Constructors {
     fn record_declaration(&mut self, id: ConstructorId, declaration: EntityId) {
         self.records[id.0 as usize].declaration = Some(declaration);
     }
+    pub(super) fn patch_default_member(&mut self, id: ConstructorId, action: MemberConstruction) {
+        let record = &mut self.records[id.0 as usize];
+        let Some(index) = record
+            .members
+            .iter()
+            .position(|&(member, source)| member == action.member && source.is_some())
+        else {
+            return;
+        };
+        if record.written_members.get(index) == Some(&true) {
+            return;
+        }
+        if let Some(old) = record
+            .subobjects
+            .iter_mut()
+            .find(|old| old.member == action.member)
+        {
+            *old = action;
+            return;
+        }
+        // Both slices follow member declaration order. Merge their prefix so
+        // late typing does not reorder already planned member operations.
+        let mut position = 0;
+        for &(member, _) in &record.members[..index] {
+            if record
+                .subobjects
+                .get(position)
+                .is_some_and(|old| old.member == member)
+            {
+                position += 1;
+            }
+        }
+        record.subobjects.insert(position, action);
+    }
 }
 impl Analyzer<'_> {
     pub(super) fn validate_const_default(
@@ -598,11 +632,6 @@ impl Analyzer<'_> {
         let union = self.graph.entity(class).key == Keyword::Union;
         let mut deleted = self.graph.closure_call(class).is_some();
         let mut base_plans = self.default_base_plans(class, binding)?;
-        let inherited = binding.and_then(|binding| {
-            self.graph
-                .inherited_constructors
-                .source(self.graph.binding(binding).entity)
-        });
         let mut plans = Vec::with_capacity(self.graph.entity(class).members.len());
         let mut subobjects = Vec::new();
         let mut const_members = 0;
@@ -714,38 +743,12 @@ impl Analyzer<'_> {
             deleted |= entity.availability == super::graph::FunctionAvailability::Deleted;
         }
         let mut nothrow = true;
-        for id in bases
-            .iter()
-            .chain(&indirect_bases)
-            .filter_map(|base| base.constructor)
-            .chain(subobjects.iter().map(|child| child.constructor))
-        {
-            nothrow &= self.subobject_constructor_nothrow(id)?;
+        for &base in &bases {
+            nothrow = nothrow && self.planned_base_nothrow(base, binding)?;
         }
-        if let (Some(source), Some(binding)) = (inherited, binding) {
-            let function = self.graph.binding(source).entity;
-            let count = self.graph.types.function_parameter_count(
-                self.graph
-                    .binding(binding)
-                    .ty
-                    .ok_or(Error::Invariant("inheriting constructor without type"))?,
-            )?;
-            let total = self.graph.types.function_parameter_count(
-                self.graph
-                    .binding(source)
-                    .ty
-                    .ok_or(Error::Invariant("forwarded constructor without type"))?,
-            )?;
-            for index in count..total {
-                if let Some(default) = self.graph.function_default(function, index) {
-                    nothrow &= !self.expression_may_throw(default)?;
-                }
-            }
-        }
-        for &(_, source) in &plans {
-            if let Some(source) = source {
-                nothrow &= !self.initializer_may_throw(source)?;
-            }
+        nothrow = nothrow && self.planned_members_nothrow(&plans, &[], &subobjects)?;
+        for &base in &indirect_bases {
+            nothrow = nothrow && self.planned_base_nothrow(base, binding)?;
         }
         let record = Constructor {
             facts: ConstructorFacts::Complete,
@@ -917,7 +920,59 @@ impl Analyzer<'_> {
         Ok(deleted)
     }
 
-    fn subobject_constructor_nothrow(&mut self, id: ConstructorId) -> Result<bool, Error> {
+    fn planned_base_nothrow(
+        &mut self,
+        base: BaseInitialization,
+        binding: Option<BindingId>,
+    ) -> Result<bool, Error> {
+        let Some(id) = base.constructor else {
+            return Ok(true);
+        };
+        let mut nothrow = self.subobject_constructor_nothrow(id)?;
+        if !base.forwards || !nothrow {
+            return Ok(nothrow);
+        }
+        let parent = binding.ok_or(Error::Invariant("forwarded constructor without binding"))?;
+        let source = self
+            .graph
+            .constructors
+            .get(id)
+            .declaration
+            .ok_or(Error::Invariant(
+                "forwarded constructor without declaration",
+            ))?;
+        let count = self.graph.types.function_parameter_count(
+            self.graph
+                .binding(parent)
+                .ty
+                .ok_or(Error::Invariant("inheriting constructor without type"))?,
+        )?;
+        let total = self
+            .graph
+            .types
+            .function_parameter_count(self.graph.lower_entity_type(source)?)?;
+        for index in count..total {
+            if !nothrow {
+                break;
+            }
+            if let Some(default) = self
+                .graph
+                .entity(source)
+                .defaults
+                .get(index)
+                .copied()
+                .flatten()
+            {
+                nothrow = !self.expression_may_throw(default.expression)?;
+            }
+        }
+        Ok(nothrow)
+    }
+
+    pub(super) fn subobject_constructor_nothrow(
+        &mut self,
+        id: ConstructorId,
+    ) -> Result<bool, Error> {
         let child = self.graph.constructors.get(id);
         if let Some(binding) = child.binding
             && self

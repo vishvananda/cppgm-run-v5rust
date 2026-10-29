@@ -68,6 +68,72 @@ impl InheritedConstructors {
     }
 }
 impl Analyzer<'_> {
+    /// Patch only already planned inherited entries after concrete member typing.
+    pub(super) fn typed_inheriting_member(&mut self, member: EntityId) {
+        let Some(mut class) = self
+            .graph
+            .entity(member)
+            .home
+            .and_then(|home| self.graph.scope(home).owner)
+        else {
+            return;
+        };
+        while let Some(storage) = self.graph.anonymous_member_storage(class) {
+            let Some(owner) = self
+                .graph
+                .entity(storage)
+                .home
+                .and_then(|home| self.graph.scope(home).owner)
+            else {
+                break;
+            };
+            class = owner;
+        }
+        if !self.graph.inherited_constructors.bases.contains_key(&class) {
+            return;
+        }
+        if !matches!(
+            self.graph.entity(class).literal,
+            super::literal_types::LiteralState::InProgress
+        ) {
+            self.graph.entity_mut(class).literal = super::literal_types::LiteralState::NotStarted;
+        }
+        let Some(constructor) = self.graph.entity(member).constructor else {
+            return;
+        };
+        let action = super::construction::MemberConstruction {
+            member,
+            constructor,
+            arguments: self.graph.entity(member).constructor_arguments,
+        };
+        let mut work: Vec<_> = self
+            .graph
+            .entity(class)
+            .declared_constructors
+            .iter()
+            .filter_map(|&binding| {
+                let function = self.graph.binding(binding).entity;
+                (self.graph.entity(function).home == self.graph.entity(class).scope
+                    && self.graph.inherited_constructors.source(function).is_some())
+                .then(|| self.graph.entity(function).constructor)
+                .flatten()
+            })
+            .collect();
+        while let Some(id) = work.pop() {
+            for child in &self.graph.constructors.get(id).subobjects {
+                if self
+                    .graph
+                    .entity(child.member)
+                    .ty
+                    .and_then(|ty| self.graph.class_of(ty))
+                    .is_some_and(|class| self.graph.anonymous_member_storage(class).is_some())
+                {
+                    work.push(child.constructor);
+                }
+            }
+            self.graph.constructors.patch_default_member(id, action);
+        }
+    }
     fn record_inherited_constructor(
         &mut self,
         function: EntityId,

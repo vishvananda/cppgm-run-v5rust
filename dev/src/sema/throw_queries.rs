@@ -105,27 +105,6 @@ impl Analyzer<'_> {
             Ok(!plan.nothrow)
         }
     }
-    pub(super) fn initializer_may_throw(
-        &mut self,
-        initializer: ast::Initializer,
-    ) -> Result<bool, Error> {
-        match initializer.kind {
-            ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id) => {
-                self.expression_may_throw(id)
-            }
-            ast::InitializerKind::Parenthesized(arguments) => {
-                for syntax_index in 0..self.tree.expr_lists.get(arguments).len() {
-                    let id = self.tree.expr_lists.get(arguments)[syntax_index];
-                    if self.expression_may_throw(id)? {
-                        return Ok(true);
-                    }
-                }
-                Ok(false)
-            }
-            _ => Ok(false),
-        }
-    }
-
     pub(super) fn noexcept_expression(
         &mut self,
         id: ast::ExprId,
