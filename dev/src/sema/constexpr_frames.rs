@@ -559,9 +559,16 @@ impl Frames {
         }
         match self.cells[object.cells.start].value {
             Some(TemporaryValue::Integer(value)) => Ok(value),
-            _ => Err(Error::Invariant(
-                "call memo parameter is not an initialized integer",
-            )),
+            // constant_statements.cpp reads the zero-initialized payload bits
+            // directly for memo bookkeeping, even for an indeterminate value.
+            // This is not a language lvalue-to-rvalue conversion.
+            None => Ok(super::constants::Constant {
+                state: super::constant_addresses::ScalarState::Indeterminate,
+                bits: 0,
+                high: 0,
+                ty: object.ty,
+            }),
+            _ => Err(Error::Invariant("call memo parameter is not an integer")),
         }
     }
     pub(super) fn ty(&self, id: ObjectId, location: SourceOffset) -> Result<TypeId, Error> {

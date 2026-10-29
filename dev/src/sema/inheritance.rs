@@ -270,6 +270,11 @@ impl Graph {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum BasePathContext {
+    Conversion { downcast: bool },
+    MemberObject,
+}
 impl Analyzer<'_> {
     pub(super) fn derived_class_conversion(
         &mut self,
@@ -384,22 +389,45 @@ impl Analyzer<'_> {
         access: bool,
         downcast: bool,
     ) -> Result<BasePathId, Error> {
+        self.checked_base_path_for(
+            derived,
+            base,
+            scope,
+            location,
+            access,
+            BasePathContext::Conversion { downcast },
+        )
+    }
+    pub(super) fn checked_base_path_for(
+        &mut self,
+        derived: EntityId,
+        base: EntityId,
+        scope: ScopeId,
+        location: SourceOffset,
+        access: bool,
+        context: BasePathContext,
+    ) -> Result<BasePathId, Error> {
+        let downcast = matches!(context, BasePathContext::Conversion { downcast: true });
         let query = self.graph.base_query(derived, base);
         if downcast && query.virtual_path {
-            return Err(Error::at(
+            return self.reject_substitution(
                 location,
                 "a cast from a virtual base class to its derived class",
-            ));
+                false,
+            );
         }
         if query.count() > 1 {
-            return Err(Error::at(
+            return self.reject_substitution(
                 location,
-                if downcast {
+                if matches!(context, BasePathContext::MemberObject) {
+                    "a pointer to member of an ambiguous base class of the object"
+                } else if downcast {
                     "a cast from an ambiguous base class to its derived class"
                 } else {
                     "conversion to an ambiguous base class"
                 },
-            ));
+                false,
+            );
         }
         let path = self.graph.retain_base_path(derived, base)?;
         if access {

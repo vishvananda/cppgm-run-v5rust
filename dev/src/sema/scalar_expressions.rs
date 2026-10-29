@@ -19,10 +19,11 @@ impl Analyzer<'_> {
         scope: ScopeId,
     ) -> Result<ExprFacts, Error> {
         if matches!(self.tree.expressions.get(id).kind, ExprKind::BitInt(_)) {
-            return Err(Error::at(
+            return self.reject_substitution(
                 self.tree.expressions.get(id).location,
                 "a _BitInt type is not supported",
-            ));
+                false,
+            );
         }
         if matches!(self.tree.expressions.get(id).kind, ExprKind::IntegerPack(_)) {
             return Err(Error::at(
@@ -380,9 +381,7 @@ impl Analyzer<'_> {
         found: &super::lookup::LookupResult,
         scope: ScopeId,
     ) -> Result<ExprFacts, Error> {
-        let binding = found
-            .binding
-            .ok_or_else(|| Error::at(self.tree.expressions.get(id).location, "undeclared name"))?;
+        let binding = self.named_expression_binding(id, found)?;
         let selected = binding;
         if self.graph.binding(binding).kind == BindingKind::Function {
             let explicit = matches!(self.tree.expressions.get(id).kind, ExprKind::Id(name)
@@ -494,10 +493,11 @@ impl Analyzer<'_> {
             ));
         }
         if matches!(binding.kind, BindingKind::Type | BindingKind::Alias) {
-            return Err(Error::at(
+            return self.reject_substitution(
                 self.tree.expressions.get(id).location,
                 "type name used as a value",
-            ));
+                false,
+            );
         }
         if let Some(argument) = self.graph.constant_addresses.argument(binding.entity) {
             let TypeKind::Address { ty, entity } = self.graph.types.get(argument).kind else {
@@ -618,6 +618,20 @@ impl Analyzer<'_> {
             self.named_enumerator_facts(binding.entity, &mut facts)?;
         }
         Ok(facts)
+    }
+    fn named_expression_binding(
+        &self,
+        id: ast::ExprId,
+        found: &super::lookup::LookupResult,
+    ) -> Result<super::graph::BindingId, Error> {
+        found.binding.ok_or_else(|| {
+            let location = self.tree.expressions.get(id).location;
+            if found.qualifier.is_some() {
+                self.substitution_error(location, "undeclared name", false)
+            } else {
+                Error::at(location, "undeclared name")
+            }
+        })
     }
     fn named_enumerator_facts(
         &self,

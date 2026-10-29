@@ -126,15 +126,10 @@ impl Analyzer<'_> {
                 .ty
                 .ok_or(Error::Invariant("arrow without type"))?;
             object = self.call_result(function)?;
-            if object.category == ValueCategory::Prvalue {
-                self.class_parameter_destruction(object.ty, scope, location)?;
-                if self.lowering()
-                    && self.unevaluated == 0
-                    && let TypeKind::Class(result) = self.graph.types.get(object.ty).kind
-                {
-                    self.request_storage_layout(result, location)?;
-                }
-            }
+            // The implicit call has the same evaluated temporary-result
+            // demand as an explicit call. Its destructor body must be ready
+            // before lowering scans that body or emits its cleanup entry.
+            self.check_temporary_destruction(object, scope, location)?;
             calls.push(ArrowStep {
                 binding,
                 result: object.ty,

@@ -110,7 +110,7 @@ impl Analyzer<'_> {
                         message: "ambiguous name",
                         ..
                     } if self.graph.scope(prefix).kind == ScopeKind::Class => {
-                        Error::at(location, "ambiguous member")
+                        self.substitution_error(location, "ambiguous member", false)
                     }
                     other => other,
                 })?

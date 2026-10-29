@@ -68,6 +68,9 @@ impl Analyzer<'_> {
             scope,
             self.tree.expressions.get(id).location,
         )?;
+        if let Some(failure) = self.graph.analysis.substitution.current().failure {
+            return Err(Error::SubstitutionRejected(failure));
+        }
         let mut facts = self.new_expression_facts(target, ValueCategory::Prvalue)?;
         if let Some((constructor, arguments)) = selected {
             facts.set_constructor(Some(constructor), &mut self.graph.expression_facts)?;
@@ -182,6 +185,9 @@ impl Analyzer<'_> {
             scope,
             location,
         )?;
+        if let Some(failure) = self.graph.analysis.substitution.current().failure {
+            return Err(Error::SubstitutionRejected(failure));
+        }
         let mut facts = self.new_expression_facts(target, ValueCategory::Prvalue)?;
         if let Some((constructor, arguments)) = selected {
             facts.set_constructor(Some(constructor), &mut self.graph.expression_facts)?;

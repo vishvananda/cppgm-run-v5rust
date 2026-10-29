@@ -1453,10 +1453,12 @@ impl Analyzer<'_> {
         scratch: &CallScratch,
     ) -> Result<CallSelection, Error> {
         if scratch.candidates.is_empty() {
-            return Err(Error::at(location, "no viable function for the call"));
+            return self.reject_substitution(location, "no viable function for the call", false);
         }
         self.unique_call(count, object_count, scratch)?
-            .ok_or_else(|| Error::at(location, "ambiguous call to overloaded function"))
+            .ok_or_else(|| {
+                self.substitution_error(location, "ambiguous call to overloaded function", false)
+            })
     }
     pub(super) fn prepare_selected_call(
         &mut self,

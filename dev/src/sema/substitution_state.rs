@@ -142,12 +142,25 @@ impl Analyzer<'_> {
         message: &'static str,
         transient: bool,
     ) -> Result<T, Error> {
-        let failure = self.graph.analysis.substitution.emit(Failure {
-            location,
-            message,
-            transient,
-        })?;
-        Err(Error::SubstitutionRejected(failure))
+        Err(self.substitution_error(location, message, transient))
+    }
+    /// Build the non-null Rust error channel for a source emit-and-null branch.
+    #[must_use]
+    pub(super) fn substitution_error(
+        &self,
+        location: SourceOffset,
+        message: &'static str,
+        transient: bool,
+    ) -> Error {
+        self.graph
+            .analysis
+            .substitution
+            .emit(Failure {
+                location,
+                message,
+                transient,
+            })
+            .map_or_else(std::convert::identity, Error::SubstitutionRejected)
     }
     pub(super) fn with_alias_substitution_location<T>(
         &mut self,

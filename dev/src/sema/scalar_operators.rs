@@ -382,7 +382,11 @@ impl Analyzer<'_> {
             || !self.is_arithmetic_operand(b)
             || integral_only && (!self.is_integral_operand(a) || !self.is_integral_operand(b))
         {
-            return Err(self.operator_error(id, "invalid operands to a binary operator"));
+            return self.reject_substitution(
+                self.tree.expressions.get(id).location,
+                "invalid operands to a binary operator",
+                false,
+            );
         }
         let ty = if matches!(op, P::ShiftLeft | P::ShiftRight) {
             let ty = self.promoted_type(b)?;

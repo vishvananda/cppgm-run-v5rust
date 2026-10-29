@@ -934,7 +934,10 @@ mod tests {
         let global = analyzer.graph.global;
         assert!(matches!(
             analyzer.declarations(declarations, global),
-            Err(Error::Diagnostic { .. })
+            Err(Error::UnconditionalDiagnostic {
+                message: "no viable function for the call",
+                ..
+            })
         ));
         assert!(!analyzer.call_scratch.has_candidates());
         assert_eq!(analyzer.unevaluated, 0);

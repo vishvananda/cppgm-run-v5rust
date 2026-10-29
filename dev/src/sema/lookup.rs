@@ -1012,16 +1012,18 @@ impl Analyzer<'_> {
                 Error::Diagnostic {
                     message: "ambiguous name",
                     ..
-                } => Error::at(
+                } => self.substitution_error(
                     component.location,
                     "ambiguous name in a nested-name-specifier",
+                    false,
                 ),
                 other => other,
             })?;
             let mut binding_id = found.ok_or_else(|| {
-                Error::at(
+                self.substitution_error(
                     component.location,
                     "undeclared name in a nested-name-specifier",
+                    false,
                 )
             })?;
             if access && self.semantic() && self.template_depth == 0 && prefix.is_none() {
@@ -1224,13 +1226,20 @@ impl Analyzer<'_> {
         };
         self.prepare_assignment_lookup(prefix.unwrap_or(scope), key, prefix.is_none())?;
         self.lookup_location = node.location;
-        let mut found = if let Some(prefix) = prefix {
-            self.qualified_name_result(prefix, key, filter, last.arguments.is_some())?
+        let mut found = (if let Some(prefix) = prefix {
+            self.qualified_name_result(prefix, key, filter, last.arguments.is_some())
         } else {
             let found = self.unqualified_declaration_result(scope, key, filter)?;
             self.predefined_lookup(scope, key, filter, found)?
-                .checked_template_id(last.arguments.is_some(), self.lookup_location)?
-        };
+                .checked_template_id(last.arguments.is_some(), self.lookup_location)
+        })
+        .map_err(|error| match error {
+            Error::Diagnostic {
+                message: "ambiguous name",
+                ..
+            } => self.substitution_error(node.location, "ambiguous name", false),
+            other => other,
+        })?;
         if filter == Filter::Ordinary
             && found.binding.is_none()
             && prefix.is_none_or(|prefix| prefix == self.graph.global)
@@ -1238,6 +1247,14 @@ impl Analyzer<'_> {
             && let Some(builtin) = self.builtin_lookup(identifier)?
         {
             found = builtin;
+        }
+        // Operator names use the source's separate operator_function_lookup
+        // path; their caller supplies the missing-function diagnostic.
+        if prefix.is_some()
+            && found.binding.is_none()
+            && matches!(last.kind, NameKind::Identifier(_))
+        {
+            return self.reject_substitution(node.location, "undeclared name", false);
         }
         if let Some(binding) = found.binding {
             if let Some(search) = prefix

@@ -100,7 +100,7 @@ impl Analyzer<'_> {
                         TypeKind::Function { .. }
                     )
                 {
-                    return Err(Error::at(location, "sizeof of a function"));
+                    return self.reject_substitution(location, "sizeof of a function", false);
                 }
                 self.check_temporary_destruction(facts, scope, location)?;
                 Ok(facts.ty)
@@ -119,10 +119,11 @@ impl Analyzer<'_> {
                 | TypeKind::Scalar(Scalar::Void)
                 | TypeKind::Array { bound: 0, .. }
         ) {
-            return Err(Error::at(
+            return self.reject_substitution(
                 location,
                 "sizeof of an incomplete or function type",
-            ));
+                self.graph.class_of(ty).is_some(),
+            );
         }
         let (size, _) = self.semantic_type_size(ty, location)?;
         let target = self.graph.types.scalar(Scalar::Basic(F::UnsignedLongInt))?;
@@ -481,7 +482,7 @@ impl Analyzer<'_> {
             }
             TypeKind::Class(entity) => {
                 if !self.complete_class(entity)? {
-                    return Err(Error::at(location, "size of an incomplete class"));
+                    return self.reject_substitution(location, "size of an incomplete class", true);
                 }
                 let (size, align) = self.class_layout(entity, location)?;
                 alignment = Some(align);

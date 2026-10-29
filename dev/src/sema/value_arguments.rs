@@ -139,9 +139,10 @@ impl Analyzer<'_> {
                     && facts.functions(&self.graph.expression_facts).is_some()
                 {
                     let binding = self.matching_function(facts, target)?.ok_or_else(|| {
-                        Error::at(
+                        self.substitution_error(
                             self.tree.expressions.get(expression).location,
                             "no overloaded function matches the template parameter's type",
+                            false,
                         )
                     })?;
                     self.select_function_designation(expression, binding)

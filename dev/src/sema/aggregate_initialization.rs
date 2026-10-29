@@ -309,10 +309,11 @@ impl Analyzer<'_> {
             target = element;
         }
         match self.graph.types.get(target).kind {
-            TypeKind::Reference { .. } => Err(Error::at(
+            TypeKind::Reference { .. } => self.reject_substitution(
                 location,
                 "a reference member without an initializer",
-            )),
+                false,
+            ),
             TypeKind::Class(class) if !self.graph.aggregate_class(class) => {
                 let constructor = self.default_constructor(class, location)?;
                 self.validate_constructor_use(constructor, class, scope, location)?;

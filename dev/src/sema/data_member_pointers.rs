@@ -271,19 +271,14 @@ impl Analyzer<'_> {
         let path = if class == owner {
             None
         } else {
-            Some(
-                self.checked_base_path(class, owner, scope, location, true, false)
-                    .map_err(|error| match error {
-                        Error::Diagnostic {
-                            message: "conversion to an ambiguous base class",
-                            ..
-                        } => Error::at(
-                            location,
-                            "a pointer to member of an ambiguous base class of the object",
-                        ),
-                        other => other,
-                    })?,
-            )
+            Some(self.checked_base_path_for(
+                class,
+                owner,
+                scope,
+                location,
+                true,
+                super::inheritance::BasePathContext::MemberObject,
+            )?)
         };
         if matches!(
             self.graph.types.get(element).kind,

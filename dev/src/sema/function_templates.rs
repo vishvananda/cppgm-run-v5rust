@@ -446,14 +446,15 @@ impl Analyzer<'_> {
             specializations.push(binding);
         }
         if specializations.as_slice().is_empty() {
-            return Err(Error::at(
+            return self.reject_substitution(
                 component.location,
                 if call {
                     "no viable function for the call"
                 } else {
                     "no function template matches the template arguments"
                 },
-            ));
+                false,
+            );
         }
         found.binding = specializations.as_slice().first().copied();
         found.functions = specializations;
