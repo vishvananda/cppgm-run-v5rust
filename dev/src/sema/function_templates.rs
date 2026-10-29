@@ -23,11 +23,24 @@ struct SpecializationKey {
     arguments: Vec<TypeId>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) enum TemplateOrdering {
     FunctionType(usize),
     Call(usize),
     Operator(usize),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct FunctionOrderKey {
+    first: EntityId,
+    second: EntityId,
+    first_type: TypeId,
+    second_type: TypeId,
+    first_head: HeadId,
+    second_head: HeadId,
+    access: Option<EntityId>,
+    element: Option<usize>,
+    form: TemplateOrdering,
 }
 
 /// A borrowed function parameter sequence with an optional implicit object.
@@ -48,6 +61,7 @@ pub(super) struct FunctionTemplates {
     pub(super) conditions: super::explicit_conditions::Conditions,
     pub(super) specializations: super::explicit_specializations::Specializations,
     signatures: HashMap<SpecializationKey, BindingId>,
+    orderings: HashMap<FunctionOrderKey, bool>,
     active_signatures: HashSet<(SpecializationKey, usize)>,
     primaries: HashMap<EntityId, BindingId>,
     pub(super) bodies: super::template_bodies::Bodies,
@@ -616,53 +630,16 @@ impl Analyzer<'_> {
             }
             TypeKind::Array {
                 element,
-                mut bound,
-                mut operand,
+                bound,
+                operand,
             } => {
+                if operand.is_some() {
+                    return self.substitute_bound_type(ty, environment);
+                }
                 let Some(element) = self.substitute_signature_type(element, environment)? else {
                     return Ok(None);
                 };
-                if let Some(pattern) = operand
-                    && environment.arguments.iter().all(|argument| {
-                        argument.is_some_and(|ty| !self.exception_dependent_type(ty))
-                    })
-                {
-                    let Some(count) = self.substitute_array_bound(pattern, environment)? else {
-                        return Ok(None);
-                    };
-                    bound = count;
-                    operand = None;
-                }
-                let failure = match self.graph.types.get(element).kind {
-                    TypeKind::Reference { .. } => Some("array of references"),
-                    TypeKind::Function { .. } => Some("array of functions"),
-                    TypeKind::Scalar(Scalar::Void) => Some("array of void"),
-                    TypeKind::Array {
-                        bound: 0,
-                        operand: None,
-                        ..
-                    } => Some("array of arrays of unknown bound"),
-                    TypeKind::Class(class)
-                        if !self.exception_dependent_type(element)
-                            && self.graph.entity(class).complete
-                            && self.graph.virtuals.abstract_class(class) =>
-                    {
-                        Some("an object of an abstract class type")
-                    }
-                    _ => None,
-                };
-                if let Some(message) = failure {
-                    environment.reject(message)?
-                } else {
-                    Some(self.graph.types.intern(
-                        TypeKind::Array {
-                            element,
-                            bound,
-                            operand,
-                        },
-                        cv,
-                    )?)
-                }
+                self.checked_substituted_array(element, bound, cv, SourceOffset(0), environment)?
             }
             TypeKind::Function { .. } => {
                 self.substitute_function_signature(ty, environment, true)?
@@ -1926,18 +1903,60 @@ impl Analyzer<'_> {
         if self.graph.templates.parameters(to_head).is_empty() {
             return Ok(false);
         }
+        let ambient = self.graph.analysis.substitution.current();
+        let key = FunctionOrderKey {
+            first: self.graph.binding(first).entity,
+            second: self.graph.binding(second).entity,
+            first_type: self.ordering_function_type(first)?,
+            second_type: self.ordering_function_type(second)?,
+            first_head: from_head,
+            second_head: to_head,
+            access: if ambient.soft != 0 {
+                ambient.owner
+            } else {
+                None
+            },
+            element: self.deduced_pack_element,
+            form,
+        };
+        if let Some(&known) = self.graph.function_templates.orderings.get(&key) {
+            self.graph.work.totals.function_order_reuses += 1;
+            return Ok(known);
+        }
+        self.graph.work.totals.function_order_builds += 1;
+        let incomplete = self.incomplete_class_observations;
+        let result = self.compute_function_order(first, second, form, from_head, to_head)?;
+        if self.graph.analysis.substitution.current().failure.is_none()
+            && self.incomplete_class_observations == incomplete
+        {
+            self.graph
+                .function_templates
+                .orderings
+                .entry(key)
+                .or_insert(result);
+        }
+        Ok(result)
+    }
+
+    fn ordering_function_type(&self, binding: BindingId) -> Result<TypeId, Error> {
+        self.graph
+            .entity(self.graph.binding(binding).entity)
+            .ty
+            .ok_or(Error::Invariant("ordering without function type"))
+    }
+
+    fn compute_function_order(
+        &mut self,
+        first: BindingId,
+        second: BindingId,
+        form: TemplateOrdering,
+        from_head: HeadId,
+        to_head: HeadId,
+    ) -> Result<bool, Error> {
         let unique = self.unique_partial_arguments(from_head)?;
         let mut environment = self.substitution(self.graph.templates.depth(from_head), &unique);
-        let from = self
-            .graph
-            .binding(first)
-            .ty
-            .ok_or(Error::Invariant("ordering without type"))?;
-        let to = self
-            .graph
-            .binding(second)
-            .ty
-            .ok_or(Error::Invariant("ordering without pattern"))?;
+        let from = self.ordering_function_type(first)?;
+        let to = self.ordering_function_type(second)?;
         let depth = self.graph.templates.depth(to_head);
         let mut arguments = vec![None; self.graph.templates.parameters(to_head).len()];
         match form {
@@ -1971,11 +1990,7 @@ impl Analyzer<'_> {
         binding: BindingId,
         inserting: bool,
     ) -> Result<OrderingParameters, Error> {
-        let function = self
-            .graph
-            .binding(binding)
-            .ty
-            .ok_or(Error::Invariant("ordering without function type"))?;
+        let function = self.ordering_function_type(binding)?;
         let object = if let Some(owner) = self.member_function_owner(binding).filter(|_| inserting)
         {
             let TypeKind::Function { cv, reference, .. } = self.graph.types.get(function).kind
@@ -2117,9 +2132,6 @@ impl Analyzer<'_> {
         else {
             return Err(Error::Invariant("ordering nonfunction"));
         };
-        if variadic != to_variadic || cv != to_cv || reference != to_reference {
-            return Ok(false);
-        }
         let to_pack = to_parameters
             .last()
             .is_some_and(|&ty| matches!(self.graph.types.get(ty).kind, TypeKind::Expansion(_)));
@@ -2146,6 +2158,9 @@ impl Analyzer<'_> {
             } else {
                 actual
             });
+        }
+        if variadic != to_variadic || cv != to_cv || reference != to_reference {
+            return Ok(false);
         }
         if !self.deduce_function_parameters(&to_parameters, &given, depth, arguments)? {
             return Ok(false);
@@ -2529,6 +2544,7 @@ mod tests {
         assert_eq!(kind, RefKind::Rvalue);
         assert_eq!(analyzer.graph.class_of(element), Some(class));
         assert_eq!(analyzer.type_cv(element), Cv(1));
+        let before = analyzer.graph.work.snapshot();
         for _ in 0..3 {
             assert!(
                 analyzer
@@ -2549,6 +2565,15 @@ mod tests {
             let (parameters, _) = analyzer.ordering_parameters(member, free, form).unwrap();
             assert_eq!(parameters.object, Some(object));
         }
+        let after = analyzer.graph.work.snapshot();
+        assert_eq!(
+            after.function_order_builds,
+            before.function_order_builds + 2
+        );
+        assert_eq!(
+            after.function_order_reuses,
+            before.function_order_reuses + 4
+        );
         let (member_parameters, _) = analyzer
             .ordering_parameters(member, free, TemplateOrdering::Call(1))
             .unwrap();

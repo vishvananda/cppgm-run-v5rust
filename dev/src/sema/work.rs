@@ -25,6 +25,8 @@ pub(crate) struct Work {
     pub(crate) constant_steps: crate::support::telemetry::Counter<usize>,
     pub(crate) constant_call_builds: crate::support::telemetry::Counter<usize>,
     pub(crate) constant_call_reuses: crate::support::telemetry::Counter<usize>,
+    pub(crate) function_order_builds: crate::support::telemetry::Counter<usize>,
+    pub(crate) function_order_reuses: crate::support::telemetry::Counter<usize>,
     pub(crate) base_steps: crate::support::telemetry::Counter<usize>,
 }
 #[derive(Default)]
@@ -67,6 +69,8 @@ impl Work {
             (&mut self.constant_evaluations, other.constant_evaluations),
             (&mut self.constant_call_builds, other.constant_call_builds),
             (&mut self.constant_call_reuses, other.constant_call_reuses),
+            (&mut self.function_order_builds, other.function_order_builds),
+            (&mut self.function_order_reuses, other.function_order_reuses),
             (&mut self.resolutions, other.resolutions),
             (&mut self.candidates, other.candidates),
             (&mut self.virtual_slots, other.virtual_slots),

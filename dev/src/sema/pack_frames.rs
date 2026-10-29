@@ -196,7 +196,7 @@ impl Analyzer<'_> {
         };
         let elements = match self.substitute_pack_list(&[ty], environment) {
             Ok(Some(elements)) => elements,
-            Ok(None) | Err(Error::Diagnostic { .. } | Error::NonConstant { .. }) => {
+            Ok(None) | Err(Error::SubstitutionRejected(_) | Error::SubstitutionNull) => {
                 return Ok(false);
             }
             Err(error) => return Err(error),

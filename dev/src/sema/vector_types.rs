@@ -158,7 +158,7 @@ impl Analyzer<'_> {
         )
     }
 
-    fn checked_vector_bound(
+    pub(super) fn checked_vector_bound(
         &self,
         element: TypeId,
         size: u64,
@@ -194,61 +194,13 @@ impl Analyzer<'_> {
         ty: TypeId,
         environment: &mut Substitution<'_>,
     ) -> Result<Option<TypeId>, Error> {
-        let TypeKind::Vector {
-            element,
-            mut bound,
-            mut operand,
-            bytes,
-        } = self.graph.types.get(ty).kind
-        else {
+        let TypeKind::Vector { operand, .. } = self.graph.types.get(ty).kind else {
             return Err(Error::Invariant("vector substitution without vector"));
         };
-        let cv = self.graph.types.get(ty).cv;
-        let Some(mut element) = self.substitute_signature_type(element, environment)? else {
-            return Ok(None);
-        };
-        if let Some(pattern) = operand
-            && environment
-                .arguments
-                .iter()
-                .all(|argument| argument.is_some_and(|ty| !self.graph.dependent_type(ty)))
-        {
-            let Some(size) = self.substitute_array_bound(pattern, environment)? else {
-                return Ok(None);
-            };
-            element = self.bare_type(element)?;
-            bound = match self.checked_vector_bound(element, size, bytes) {
-                Ok(bound) => bound,
-                Err(message) => {
-                    let TypeKind::TemplateParameter { entity, .. } =
-                        self.graph.types.get(pattern).kind
-                    else {
-                        return Err(Error::Invariant("vector size without operand placeholder"));
-                    };
-                    let expression = self
-                        .graph
-                        .template_operands
-                        .pattern(entity)
-                        .ok_or(Error::Invariant("vector size without operand pattern"))?
-                        .expression;
-                    return environment
-                        .reject_at(self.tree.expressions.get(expression).location, message);
-                }
-            };
-            operand = None;
+        if operand.is_none() {
+            return Ok(Some(ty));
         }
-        self.graph
-            .types
-            .intern(
-                TypeKind::Vector {
-                    element,
-                    bound,
-                    operand,
-                    bytes: operand.is_some() && bytes,
-                },
-                cv,
-            )
-            .map(Some)
+        self.substitute_bound_type(ty, environment)
     }
     pub(super) fn deduce_vector_type(
         &mut self,

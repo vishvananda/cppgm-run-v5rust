@@ -35,6 +35,7 @@ pub(super) struct Pattern {
     // Unknown keys and higher positions retain ordinary substitution.
     parameters: Option<u64>,
     head_depth: HeadDepth,
+    named_value_parameter: Option<EntityId>,
 }
 
 #[derive(Clone, Copy)]
@@ -81,13 +82,11 @@ struct EquivalentOperand {
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Query {
     Type,
-    Bound,
     Value,
 }
 #[derive(Clone, Copy)]
 enum Evaluation {
     Type(TypeId),
-    Bound(u64),
 }
 enum OperandOutcome {
     EarlyFailure(Option<super::substitution_state::Failure>),
@@ -275,6 +274,7 @@ impl Analyzer<'_> {
         self.graph.entity_mut(entity).ty = Some(ty);
         let head_depth = self.operand_head_depth(scope);
         let object = self.current_object_type()?;
+        let named_value_parameter = self.operand_named_value_parameter(expression, scope)?;
         self.graph.template_operands.patterns.insert(
             entity,
             Pattern {
@@ -292,6 +292,7 @@ impl Analyzer<'_> {
                 limit: self.graph.binding_limit(),
                 parameters,
                 head_depth,
+                named_value_parameter,
             },
         );
         if let Some(fingerprint) = fingerprint
@@ -331,6 +332,56 @@ impl Analyzer<'_> {
         } else {
             Ok(ty)
         }
+    }
+
+    fn operand_named_value_parameter(
+        &self,
+        mut expression: ast::ExprId,
+        scope: ScopeId,
+    ) -> Result<Option<EntityId>, Error> {
+        while let ast::ExprKind::Paren(inner) = self.tree.expressions.get(expression).kind {
+            expression = inner;
+        }
+        let ast::ExprKind::Id(name) = self.tree.expressions.get(expression).kind else {
+            return Ok(None);
+        };
+        let name = self.tree.names.get(name);
+        let components = self.tree.name_lists.get(name.components);
+        let [component] = components else {
+            return Ok(None);
+        };
+        if name.global || component.arguments.is_some() {
+            return Ok(None);
+        }
+        let ast::NameKind::Identifier(name) = component.kind else {
+            return Ok(None);
+        };
+        let found = self.unqualified_declaration_result(
+            scope,
+            name.into(),
+            super::lookup::Filter::Ordinary,
+        )?;
+        let Some(binding) = found.binding.filter(|_| !found.ambiguous) else {
+            return Ok(None);
+        };
+        let binding = self.graph.binding(binding);
+        if binding.kind != BindingKind::TemplateValue {
+            return Ok(None);
+        }
+        let ty = self
+            .graph
+            .entity(binding.entity)
+            .ty
+            .ok_or(Error::Invariant("named template value without type"))?;
+        let TypeKind::TemplateParameter { entity, .. } = self
+            .graph
+            .types
+            .get(self.graph.types.canonical_view(ty))
+            .kind
+        else {
+            return Err(Error::Invariant("named template value without parameter"));
+        };
+        Ok(Some(entity))
     }
 
     fn operand_in_body(&self, mut scope: ScopeId) -> bool {
@@ -424,9 +475,6 @@ impl Analyzer<'_> {
                 .qualify(result, self.graph.types.get(ty).cv)
                 .map(Some),
             None => Ok(None),
-            Some(Evaluation::Bound(_)) => {
-                Err(Error::Invariant("operand type query returned a bound"))
-            }
         }
     }
 
@@ -1022,13 +1070,9 @@ impl Analyzer<'_> {
             .map(Some)
     }
 
-    fn operand_access_context(&self, query: Query) -> Option<EntityId> {
+    fn operand_access_context(&self) -> Option<EntityId> {
         let state = self.graph.analysis.substitution.current();
-        if state.soft != 0 && query != Query::Bound {
-            state.owner
-        } else {
-            None
-        }
+        if state.soft != 0 { state.owner } else { None }
     }
 
     fn cached_operand(
@@ -1040,7 +1084,7 @@ impl Analyzer<'_> {
     ) -> Result<Option<Evaluation>, Error> {
         let key = Key {
             entity,
-            context: self.operand_access_context(query),
+            context: self.operand_access_context(),
             query,
             depth: environment.depth,
             arguments,
@@ -1130,25 +1174,213 @@ impl Analyzer<'_> {
         }
     }
 
+    pub(super) fn substitute_bound_type(
+        &mut self,
+        ty: TypeId,
+        environment: &mut Substitution<'_>,
+    ) -> Result<Option<TypeId>, Error> {
+        let effective = environment
+            .arguments
+            .iter()
+            .enumerate()
+            .map(|(index, argument)| {
+                let Some(ty) = *argument else {
+                    return Ok(None);
+                };
+                if let Some(position) = environment
+                    .selection
+                    .and_then(|selection| selection.elements.get(index))
+                    .copied()
+                    .flatten()
+                    && let TypeKind::Pack(elements) = &self.graph.types.get(ty).kind
+                {
+                    return elements
+                        .get(position)
+                        .copied()
+                        .map(Some)
+                        .ok_or(Error::Invariant("bound pack element outside pack"));
+                }
+                Ok(Some(ty))
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        let mut inner = self.substitution(environment.depth, &effective);
+        inner.context = environment.context;
+        let result = self.substitute_bound_type_in(ty, &mut inner);
+        environment.carry(inner.failure);
+        result
+    }
+
+    fn substitute_bound_type_in(
+        &mut self,
+        ty: TypeId,
+        environment: &mut Substitution<'_>,
+    ) -> Result<Option<TypeId>, Error> {
+        let (element, operand, vector) = match self.graph.types.get(ty).kind {
+            TypeKind::Array {
+                element,
+                operand: Some(operand),
+                ..
+            } => (element, operand, None),
+            TypeKind::Vector {
+                element,
+                operand: Some(operand),
+                bytes,
+                ..
+            } => (element, operand, Some(bytes)),
+            _ => return Err(Error::Invariant("bound type without operand")),
+        };
+        let cv = self.graph.types.get(ty).cv;
+        let Some(mut element) = self.substitute_signature_type(element, environment)? else {
+            return Ok(None);
+        };
+        let TypeKind::TemplateParameter { entity, .. } = self.graph.types.get(operand).kind else {
+            return Err(Error::Invariant("bound type without placeholder"));
+        };
+        let pattern = self
+            .graph
+            .template_operands
+            .pattern(entity)
+            .ok_or(Error::Invariant("bound type without pattern"))?;
+        let deferred = environment
+            .arguments
+            .iter()
+            .any(|slot| slot.is_none_or(|ty| self.graph.dependent_type(ty)))
+            || vector.is_none()
+                && pattern.named_value_parameter.is_some_and(|named| {
+                    self.graph
+                        .entity(named)
+                        .template_parameter
+                        .is_some_and(|parameter| parameter.depth() != environment.depth)
+                });
+        if deferred {
+            let kind = if let Some(bytes) = vector {
+                TypeKind::Vector {
+                    element,
+                    bound: 0,
+                    operand: Some(operand),
+                    bytes,
+                }
+            } else {
+                TypeKind::Array {
+                    element,
+                    bound: 0,
+                    operand: Some(operand),
+                }
+            };
+            return self.graph.types.intern(kind, cv).map(Some);
+        }
+        let Some((count, location)) = self.substitute_array_bound(operand, environment)? else {
+            return Ok(None);
+        };
+        if let Some(bytes) = vector {
+            element = self.bare_type(element)?;
+            let bound = match self.checked_vector_bound(element, count, bytes) {
+                Ok(bound) => bound,
+                Err(message) => return environment.reject_at(location, message),
+            };
+            self.graph
+                .types
+                .intern(
+                    TypeKind::Vector {
+                        element,
+                        bound,
+                        operand: None,
+                        bytes: false,
+                    },
+                    cv,
+                )
+                .map(Some)
+        } else {
+            self.checked_substituted_array(element, count, cv, location, environment)
+        }
+    }
+
+    pub(super) fn checked_substituted_array(
+        &mut self,
+        element: TypeId,
+        bound: u64,
+        cv: Cv,
+        location: crate::support::source::SourceOffset,
+        environment: &mut Substitution<'_>,
+    ) -> Result<Option<TypeId>, Error> {
+        let failure = match self.graph.types.get(element).kind {
+            TypeKind::Reference { .. } => Some("array of references"),
+            TypeKind::Function { .. } => Some("array of functions"),
+            TypeKind::Scalar(super::types::Scalar::Void) => Some("array of void"),
+            TypeKind::Array {
+                bound: 0,
+                operand: None,
+                ..
+            } => Some("array of arrays of unknown bound"),
+            _ => None,
+        };
+        if let Some(message) = failure {
+            environment.reject_at(location, message)
+        } else {
+            if self.semantic() && self.template_depth == 0 {
+                let mut object = element;
+                while let TypeKind::Array { element, .. } = self.graph.types.get(object).kind {
+                    object = element;
+                }
+                if let TypeKind::Class(class) = self.graph.types.get(object).kind
+                    && self.graph.entity(class).complete
+                    && self.graph.virtuals.abstract_class(class)
+                {
+                    return environment.reject_at(location, "an object of an abstract class type");
+                }
+            }
+            self.graph
+                .types
+                .intern(
+                    TypeKind::Array {
+                        element,
+                        bound,
+                        operand: None,
+                    },
+                    cv,
+                )
+                .map(Some)
+        }
+    }
+
     pub(super) fn substitute_array_bound(
         &mut self,
         operand: TypeId,
         environment: &mut Substitution<'_>,
-    ) -> Result<Option<u64>, Error> {
+    ) -> Result<Option<(u64, crate::support::source::SourceOffset)>, Error> {
         let TypeKind::TemplateParameter { entity, .. } = self.graph.types.get(operand).kind else {
             return Err(Error::Invariant("array bound without operand placeholder"));
         };
-        let arguments = environment
-            .arguments
-            .iter()
-            .copied()
-            .collect::<Option<Vec<_>>>()
-            .ok_or(Error::Invariant("bound query without concrete arguments"))?;
-        match self.cached_operand(entity, environment, arguments, Query::Bound)? {
-            Some(Evaluation::Bound(bound)) => Ok(Some(bound)),
-            Some(Evaluation::Type(_)) => Err(Error::Invariant("bound query returned a type")),
-            None => Ok(None),
+        let pattern = self
+            .graph
+            .template_operands
+            .pattern(entity)
+            .ok_or(Error::Invariant("missing bound operand"))?;
+        let scope = self.operand_scope(pattern.scope, environment, pattern.parameters)?;
+        let copy = self.copy_expression_in_frame(pattern.expression, scope)?;
+        if let Some(failure) = self.graph.analysis.substitution.current().failure {
+            environment.carry(Some(failure));
+            return Ok(None);
         }
+        let location = self.tree.expressions.get(copy).location;
+        self.instantiation_context_in(
+            self.instantiation_depth,
+            location,
+            pattern.limit,
+            super::template_context::InstantiationMode::Substitution,
+            |analyzer| {
+                let result = analyzer.checked_array_bound(copy, scope);
+                let failure = analyzer.graph.analysis.substitution.current().failure;
+                environment.carry(failure);
+                match result {
+                    Ok(value) if failure.is_none() => Ok(Some((value, location))),
+                    Ok(_) | Err(Error::SubstitutionRejected(_) | Error::SubstitutionNull) => {
+                        Ok(None)
+                    }
+                    Err(error) => Err(error),
+                }
+            },
+        )
     }
 
     fn evaluate_operand(
@@ -1188,7 +1420,7 @@ impl Analyzer<'_> {
             return Ok(OperandOutcome::EarlyFailure(Some(failure)));
         }
         let access = self
-            .operand_access_context(query)
+            .operand_access_context()
             .map(|entity| self.substitution_scope(entity))
             .transpose()?;
         self.instantiation_context_in(
@@ -1248,9 +1480,6 @@ impl Analyzer<'_> {
             Query::Type => self
                 .decltype_type(copy, scope)
                 .map(|ty| Some(Evaluation::Type(ty))),
-            Query::Bound => self
-                .checked_array_bound(copy, scope)
-                .map(|bound| Some(Evaluation::Bound(bound))),
             Query::Value if open => {
                 let saved_depth = self.template_depth;
                 self.template_depth += 1;
@@ -1315,51 +1544,73 @@ impl Analyzer<'_> {
         };
         let frame = self.graph.add_scope(kind, parent, None, None)?;
         let mut packs = None;
+        let substitution = self.graph.analysis.substitution.clone();
+        let saved_failure = substitution.current().failure;
+        let saved_transport = environment.failure;
         for index in 0..self.graph.scope(scope).bindings.len() {
             let source = self.graph.scope(scope).bindings[index];
             let binding = self.graph.binding(source);
-            if kind == ScopeKind::TemplateParameters {
-                if let Some(parameter) = self.graph.entity(binding.entity).template_parameter
-                    && let Some(index) = parameter.index(environment.depth)
-                    && let Some(Some(ty)) = environment.arguments.get(index)
-                {
-                    self.bind_template_argument(frame, binding, *ty)?;
+            let result = (|| {
+                if kind == ScopeKind::TemplateParameters {
+                    if let Some(parameter) = self.graph.entity(binding.entity).template_parameter
+                        && let Some(index) = parameter.index(environment.depth)
+                        && let Some(Some(ty)) = environment.arguments.get(index)
+                    {
+                        self.bind_template_argument(frame, binding, *ty)?;
+                    }
+                } else if binding.kind == BindingKind::Parameter {
+                    let skipped = binding.ty.is_some_and(|ty| self.graph.dependent_type(ty))
+                        && parameters.is_some_and(|mask| {
+                            self.graph
+                                .prototype_parameter(binding.entity)
+                                .is_some_and(|index| index < 63 && mask & (1u64 << index) == 0)
+                        });
+                    if !skipped
+                        && self.substitute_prototype_pack(
+                            frame,
+                            &mut packs,
+                            binding,
+                            environment,
+                        )?
+                    {
+                        return Ok(());
+                    }
+                    let ty = if let Some(ty) = binding.ty.filter(|_| !skipped) {
+                        match self.substitute_signature_type(ty, environment) {
+                            Ok(ty) => ty,
+                            Err(Error::SubstitutionRejected(_) | Error::SubstitutionNull) => None,
+                            Err(error) => return Err(error),
+                        }
+                    } else {
+                        None
+                    };
+                    let entity = self.graph.add_entity(ty, binding.name, binding.key)?;
+                    let declared = self.graph.add_binding(
+                        frame,
+                        None,
+                        Binding {
+                            entity,
+                            ty,
+                            ..binding
+                        },
+                    )?;
+                    // Definition-time dependence survives concrete substitution:
+                    // ADL in the copied operand may see later associated operators.
+                    self.graph.set_binding_dependence(
+                        declared,
+                        binding.ty.is_none_or(|ty| self.graph.dependent_type(ty)),
+                    );
                 }
-            } else if binding.kind == BindingKind::Parameter {
-                let skipped = binding.ty.is_some_and(|ty| self.graph.dependent_type(ty))
-                    && parameters.is_some_and(|mask| {
-                        self.graph
-                            .prototype_parameter(binding.entity)
-                            .is_some_and(|index| index < 63 && mask & (1u64 << index) == 0)
-                    });
-                if !skipped
-                    && self.substitute_prototype_pack(frame, &mut packs, binding, environment)?
-                {
-                    continue;
-                }
-                let ty = binding
-                    .ty
-                    .filter(|_| !skipped)
-                    .map(|ty| self.substitute_signature_type(ty, environment))
-                    .transpose()?
-                    .flatten();
-                let entity = self.graph.add_entity(ty, binding.name, binding.key)?;
-                let declared = self.graph.add_binding(
-                    frame,
-                    None,
-                    Binding {
-                        entity,
-                        ty,
-                        ..binding
-                    },
-                )?;
-                // Definition-time dependence survives concrete substitution:
-                // ADL in the copied operand may see later associated operators.
-                self.graph.set_binding_dependence(
-                    declared,
-                    binding.ty.is_none_or(|ty| self.graph.dependent_type(ty)),
-                );
+                Ok(())
+            })();
+            if kind == ScopeKind::Function {
+                substitution.replace(super::substitution_state::Ambient {
+                    failure: saved_failure,
+                    ..substitution.current()
+                });
+                environment.failure = saved_transport;
             }
+            result?;
         }
         Ok(packs.unwrap_or(frame))
     }
@@ -1783,7 +2034,7 @@ mod tests {
     }
 
     #[test]
-    fn successful_bound_queries_reuse_copies_and_keep_type_queries_separate() {
+    fn successful_bound_queries_repeat_copies_and_keep_type_queries_separate() {
         let source =
             SourceBuffer::new(b"template<class T>int f(int(&)[sizeof(T)]);".to_vec()).unwrap();
         let mut unit = SyntaxUnit::new(Preprocessor::with_name(&source, b"bound-cache").unwrap());
@@ -1812,7 +2063,8 @@ mod tests {
         assert_eq!(
             analyzer
                 .substitute_array_bound(ty, &mut environment)
-                .unwrap(),
+                .unwrap()
+                .map(|(value, _)| value),
             Some(4)
         );
         let count = analyzer.tree.expressions.mark();
@@ -1820,17 +2072,19 @@ mod tests {
             assert_eq!(
                 analyzer
                     .substitute_array_bound(ty, &mut environment)
-                    .unwrap(),
+                    .unwrap()
+                    .map(|(value, _)| value),
                 Some(4)
             );
         }
-        assert_eq!(analyzer.tree.expressions.mark(), count);
+        assert!(analyzer.tree.expressions.mark() > count);
+        assert!(analyzer.graph.template_operands.substitutions.is_empty());
         let result = analyzer
             .substitute_operand(ty, entity, &mut environment)
             .unwrap()
             .unwrap();
         assert_eq!(analyzer.integral_kind(result).unwrap().bits, 64);
-        assert_eq!(analyzer.graph.template_operands.substitutions.len(), 2);
+        assert_eq!(analyzer.graph.template_operands.substitutions.len(), 1);
         assert!(analyzer.tree.expressions.mark() > count);
         assert!(analyzer.graph.root_demands.as_slice().is_empty());
     }
