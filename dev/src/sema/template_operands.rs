@@ -9,12 +9,19 @@ use super::{
     graph::{Binding, BindingKind, EntityId, ScopeId, ScopeKind},
     types::{Cv, TypeId, TypeKind},
 };
-use crate::{lex::vocabulary::Keyword, syntax::ast};
+use crate::{
+    lex::{identifiers::NameId, vocabulary::Keyword},
+    syntax::ast,
+};
 use std::{
-    collections::{HashMap, HashSet, hash_map::RandomState},
+    collections::{HashMap, hash_map::RandomState},
     hash::BuildHasher,
 };
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent facts retained by the frozen placeholder owner"
+)]
 #[derive(Clone, Copy)]
 pub(super) struct Pattern {
     pub value: bool,
@@ -27,7 +34,9 @@ pub(super) struct Pattern {
     pub scope: ScopeId,
     pub(super) object: Option<TypeId>,
     pub key_dependent: bool,
-    pub pack_names: super::pack_names::PackNames,
+    pub pack_names: Option<TypeId>,
+    pub sizeof_packs: bool,
+    pub nested_packs: Option<TypeId>,
     home: ScopeId,
     next: Option<EntityId>,
     limit: usize,
@@ -54,15 +63,8 @@ struct FixedValue {
 struct Key {
     entity: EntityId,
     context: Option<EntityId>,
-    query: Query,
     depth: u32,
     arguments: Vec<TypeId>,
-    selection: Option<Box<ElementSelection>>,
-}
-#[derive(Clone, PartialEq, Eq, Hash)]
-struct ElementSelection {
-    elements: Vec<Option<usize>>,
-    bound_element: Option<usize>,
 }
 // Each pending entity owns one immutable level; earlier levels are shared by
 // EntityId. No visible environment or expression tree is copied to retain it.
@@ -88,6 +90,17 @@ enum Query {
 enum Evaluation {
     Type(TypeId),
 }
+#[derive(Clone, Copy)]
+enum CachedOperand {
+    Valid(TypeId),
+    Invalid,
+}
+#[derive(Clone, Copy)]
+struct OperandInput<'a> {
+    arguments: &'a [Option<TypeId>],
+    elements: Option<&'a [Option<usize>]>,
+    access: Option<EntityId>,
+}
 enum OperandOutcome {
     EarlyFailure(Option<super::substitution_state::Failure>),
     Evaluated {
@@ -112,8 +125,7 @@ pub(super) struct Operands {
     fingerprints: RandomState,
     patterns: HashMap<EntityId, Pattern>,
     equivalents: HashMap<(ScopeId, Vec<KeyWord>, bool, Option<TypeId>), EntityId>,
-    substitutions: HashMap<Key, Evaluation>,
-    active: HashSet<(Key, usize)>,
+    substitutions: HashMap<Key, CachedOperand>,
     pending: HashMap<EntityId, Pending>,
 }
 impl Operands {
@@ -162,11 +174,16 @@ impl Analyzer<'_> {
         // placeholder_words leaves a function body's operands private, even
         // when their written form is nondependent. Each demanded body copy
         // analyzes them in its own environment; they are never signature keys.
-        let key = if self.operand_in_body(scope) {
-            None
+        let enclosing_sizeof =
+            std::mem::replace(&mut self.graph.analysis.keyed_sizeof_packs, false);
+        let keyed = if self.operand_in_body(scope) {
+            Ok(None)
         } else {
-            self.operand_key(expression, scope)?
+            self.operand_key(expression, scope)
         };
+        let sizeof_packs = self.graph.analysis.keyed_sizeof_packs || matches!(keyed, Ok(None));
+        self.graph.analysis.keyed_sizeof_packs = enclosing_sizeof || sizeof_packs;
+        let key = keyed?;
         let is_fixed = (fixed || value && self.semantic())
             && key.as_ref().is_some_and(|key| !key.dependent)
             && !self.type_dependent_expression(expression, scope)?;
@@ -248,6 +265,7 @@ impl Analyzer<'_> {
                 && pattern.home == home
                 && self.graph.template_operands.words.get(&entity) == words.as_ref()
             {
+                self.graph.analysis.keyed_sizeof_packs = enclosing_sizeof || pattern.sizeof_packs;
                 if pattern.fixed {
                     return self.fixed_value_operand(entity, expression, scope, target, unknown);
                 }
@@ -261,7 +279,8 @@ impl Analyzer<'_> {
         }
         // C++ records expression_packs at placeholder formation. Later pack
         // checks consume this definition-owned fact, never a new name lookup.
-        let pack_names = self.expression_pack_names(expression, scope)?;
+        let (pack_names, nested_packs) = self.operand_pack_names(expression, scope)?;
+        let sizeof_packs = sizeof_packs || nested_packs.is_some();
         let name = self.decltype_name;
         let entity = self.graph.add_entity(None, Some(name), Keyword::Typename)?;
         let ty = self.graph.types.intern(
@@ -287,6 +306,8 @@ impl Analyzer<'_> {
                 object,
                 key_dependent,
                 pack_names,
+                sizeof_packs,
+                nested_packs,
                 home,
                 next: head,
                 limit: self.graph.binding_limit(),
@@ -441,15 +462,10 @@ impl Analyzer<'_> {
         if self.graph.template_operands.pending.contains_key(&entity) {
             return self.substitute_pending_operand(ty, entity, environment);
         }
-        let Some(arguments) = environment
-            .arguments
-            .iter()
-            .copied()
-            .collect::<Option<Vec<_>>>()
-        else {
+        if environment.arguments.iter().any(Option::is_none) {
             return Ok(Some(ty));
-        };
-        let effective = self.effective_operand_arguments(environment)?;
+        }
+        let effective = self.canonical_operand_arguments(environment)?;
         if effective.iter().enumerate().all(|(index, &argument)| {
             self.own_operand_parameter(argument, environment.depth, index)
         }) && effective
@@ -458,17 +474,7 @@ impl Analyzer<'_> {
         {
             return Ok(Some(ty));
         }
-        let query = if self
-            .graph
-            .template_operands
-            .pattern(entity)
-            .is_some_and(|pattern| pattern.value)
-        {
-            Query::Value
-        } else {
-            Query::Type
-        };
-        match self.cached_operand(entity, environment, arguments, query)? {
+        match self.cached_operand_with_arguments(entity, environment, effective)? {
             Some(Evaluation::Type(result)) => self
                 .graph
                 .types
@@ -644,11 +650,7 @@ impl Analyzer<'_> {
         }
         let mut named = Vec::new();
         for &argument in &arguments {
-            if !self
-                .type_pack_pattern(argument, true)?
-                .parameters
-                .is_empty()
-            {
+            if !self.type_pack_pattern(argument, true).parameters.is_empty() {
                 let ty = if let TypeKind::Pack(elements) = &self.graph.types.get(argument).kind
                     && let [element] = elements.as_slice()
                     && let TypeKind::Expansion(element) = self.graph.types.get(*element).kind
@@ -660,49 +662,44 @@ impl Analyzer<'_> {
                 named.push(ty);
             }
         }
-        let pack_names = match pattern.pack_names {
-            super::pack_names::PackNames::Known(packs) => {
-                if let Some(packs) = packs {
-                    let TypeKind::Pack(packs) = &self.graph.types.get(packs).kind else {
-                        return Err(Error::Invariant("operand names without pack"));
-                    };
-                    for &pack in packs {
-                        let TypeKind::TemplateParameter {
-                            entity: parameter, ..
-                        } = self.graph.types.get(pack).kind
-                        else {
-                            return Err(Error::Invariant("operand names without parameter"));
-                        };
-                        let info = self
-                            .graph
-                            .entity(parameter)
-                            .template_parameter
-                            .ok_or(Error::Invariant("operand pack without position"))?;
-                        let mut bound = info.depth() == depth;
-                        let mut level =
-                            earlier.and_then(|id| self.graph.template_operands.pending.get(&id));
-                        while let Some(pending) = level {
-                            bound |= pending.depth == info.depth();
-                            level = pending
-                                .earlier
-                                .and_then(|id| self.graph.template_operands.pending.get(&id));
-                        }
-                        if !bound {
-                            named.push(pack);
-                        }
-                    }
+        if let Some(packs) = pattern.pack_names {
+            let TypeKind::Pack(packs) = &self.graph.types.get(packs).kind else {
+                return Err(Error::Invariant("operand names without pack"));
+            };
+            for &pack in packs {
+                let TypeKind::TemplateParameter {
+                    entity: parameter, ..
+                } = self.graph.types.get(pack).kind
+                else {
+                    return Err(Error::Invariant("operand names without parameter"));
+                };
+                let info = self
+                    .graph
+                    .entity(parameter)
+                    .template_parameter
+                    .ok_or(Error::Invariant("operand pack without position"))?;
+                let mut bound = info.depth() == depth;
+                let mut level =
+                    earlier.and_then(|id| self.graph.template_operands.pending.get(&id));
+                while let Some(pending) = level {
+                    bound |= pending.depth == info.depth();
+                    level = pending
+                        .earlier
+                        .and_then(|id| self.graph.template_operands.pending.get(&id));
                 }
-                super::pack_names::PackNames::Known(if named.is_empty() {
-                    None
-                } else {
-                    Some(
-                        self.graph
-                            .types
-                            .intern(TypeKind::Pack(named), Cv::default())?,
-                    )
-                })
+                if !bound {
+                    named.push(pack);
+                }
             }
-            other @ super::pack_names::PackNames::Unsupported(_) => other,
+        }
+        let pack_names = if named.is_empty() {
+            None
+        } else {
+            Some(
+                self.graph
+                    .types
+                    .intern(TypeKind::Pack(named), Cv::default())?,
+            )
         };
         let made = self
             .graph
@@ -840,13 +837,7 @@ impl Analyzer<'_> {
         self.dependent_uses.set(saved_uses);
         let key = match result {
             Ok(Some(key)) => key,
-            Ok(None)
-            | Err(
-                Error::Diagnostic { .. }
-                | Error::NonConstant { .. }
-                | Error::SubstitutionRejected(_)
-                | Error::SubstitutionNull,
-            ) => {
+            Ok(None) | Err(Error::SubstitutionRejected(_) | Error::SubstitutionNull) => {
                 return Ok(None);
             }
             Err(error) => return Err(error),
@@ -983,6 +974,7 @@ impl Analyzer<'_> {
                 let Some(result) = self.substitute_signature_type(*argument, environment)? else {
                     return Ok(None);
                 };
+                let result = self.graph.types.canonical_function(result)?;
                 changed |= result != *argument;
                 *argument = result;
             }
@@ -1011,7 +1003,7 @@ impl Analyzer<'_> {
             {
                 levels.push((
                     environment.depth,
-                    self.effective_operand_arguments(environment)?,
+                    self.canonical_operand_arguments(environment)?,
                     placeholder,
                 ));
                 changed = true;
@@ -1037,24 +1029,7 @@ impl Analyzer<'_> {
             let arguments = arguments.into_iter().map(Some).collect::<Vec<_>>();
             let mut inner = self.substitution(depth, &arguments);
             inner.context = environment.context;
-            let query = if self
-                .graph
-                .template_operands
-                .pattern(keyed)
-                .is_some_and(|pattern| pattern.value)
-            {
-                Query::Value
-            } else {
-                Query::Type
-            };
-            let canonical = arguments
-                .iter()
-                .copied()
-                .collect::<Option<Vec<_>>>()
-                .ok_or(Error::Invariant("pending argument absent"))?;
-            let Some(Evaluation::Type(value)) =
-                self.cached_operand(keyed, &mut inner, canonical, query)?
-            else {
+            let Some(Evaluation::Type(value)) = self.cached_operand(keyed, &mut inner)? else {
                 environment.carry(inner.failure);
                 return Ok(None);
             };
@@ -1079,99 +1054,283 @@ impl Analyzer<'_> {
         &mut self,
         entity: EntityId,
         environment: &mut Substitution<'_>,
-        arguments: Vec<TypeId>,
-        query: Query,
     ) -> Result<Option<Evaluation>, Error> {
+        let canonical = self.canonical_operand_arguments(environment)?;
+        self.cached_operand_with_arguments(entity, environment, canonical)
+    }
+
+    fn canonical_operand_arguments(
+        &mut self,
+        environment: &Substitution<'_>,
+    ) -> Result<Vec<TypeId>, Error> {
+        self.effective_operand_arguments(environment)?
+            .into_iter()
+            .map(|ty| self.graph.types.canonical_function(ty))
+            .collect()
+    }
+
+    fn cached_operand_with_arguments(
+        &mut self,
+        entity: EntityId,
+        environment: &mut Substitution<'_>,
+        canonical: Vec<TypeId>,
+    ) -> Result<Option<Evaluation>, Error> {
+        let pattern = self
+            .graph
+            .template_operands
+            .pattern(entity)
+            .ok_or(Error::Invariant("missing cached operand"))?;
+        let dependent = canonical
+            .iter()
+            .any(|&ty| self.exception_dependent_type(ty));
+        let mut arguments = canonical.clone();
+        let mut selected_packs = false;
+        if pattern.sizeof_packs
+            && !dependent
+            && let Some(selection) = environment.selection
+        {
+            for (index, argument) in environment.arguments.iter().enumerate() {
+                if selection.elements.get(index).is_some_and(Option::is_some)
+                    && let Some(argument) = argument
+                    && matches!(self.graph.types.get(*argument).kind, TypeKind::Pack(_))
+                {
+                    arguments.push(self.graph.types.canonical_function(*argument)?);
+                    selected_packs = true;
+                }
+            }
+        }
         let key = Key {
             entity,
             context: self.operand_access_context(),
-            query,
             depth: environment.depth,
             arguments,
-            selection: environment
-                .selection
-                .filter(|selection| {
-                    selection.bound_element.is_some()
-                        || selection.elements.iter().any(Option::is_some)
-                })
-                .map(|selection| {
-                    Box::new(ElementSelection {
-                        elements: selection.elements.to_vec(),
-                        bound_element: selection.bound_element,
-                    })
-                }),
         };
-        if let Some(&result) = self.graph.template_operands.substitutions.get(&key) {
-            return Ok(Some(result));
-        }
-        // A class definition may re-enter the operand with additional member
-        // declarations available, just as it may re-enter a function signature.
-        let active = (key, self.graph.class_templates.definitions.active_depth());
-        if !self.graph.template_operands.active.insert(active.clone()) {
-            return Ok(None);
+        if let Some(&known) = self.graph.template_operands.substitutions.get(&key) {
+            return match known {
+                CachedOperand::Valid(ty) => Ok(Some(Evaluation::Type(ty))),
+                CachedOperand::Invalid => environment.reject_at(
+                    self.tree.expressions.get(pattern.expression).location,
+                    "an invalid expression in a substitution",
+                ),
+            };
         }
         let incomplete = self.incomplete_class_observations;
         let result = (|| {
-            let effective = self.effective_operand_arguments(environment)?;
-            let dependent = effective
-                .iter()
-                .any(|&ty| self.exception_dependent_type(ty));
             let outcome = if dependent {
                 OperandOutcome::Evaluated {
                     value: None,
                     invalid: None,
                 }
             } else {
-                self.evaluate_operand(entity, environment, query)?
+                let effective = canonical.iter().copied().map(Some).collect::<Vec<_>>();
+                let mut scoped = effective.clone();
+                let elements = environment
+                    .selection
+                    .filter(|_| selected_packs)
+                    .map(|selection| selection.elements);
+                if let Some(elements) = elements {
+                    scoped = self.whole_operand_arguments(
+                        environment,
+                        elements,
+                        &key.arguments,
+                        canonical.len(),
+                    );
+                }
+                let mut inner = self.substitution(environment.depth, &effective);
+                inner.context = environment.context;
+                let result = self.evaluate_operand(
+                    entity,
+                    &mut inner,
+                    if pattern.value {
+                        Query::Value
+                    } else {
+                        Query::Type
+                    },
+                    OperandInput {
+                        arguments: &scoped,
+                        elements,
+                        access: key.context,
+                    },
+                );
+                environment.carry(inner.failure);
+                result?
             };
-            if let OperandOutcome::Evaluated {
+            let memoized = self.incomplete_class_observations == incomplete;
+            let outcome = if let OperandOutcome::Evaluated {
                 value: None,
                 invalid: None,
             } = outcome
             {
-                let value = self.pending_operand(entity, environment.depth, effective)?;
-                Ok(OperandOutcome::Evaluated {
+                let value = self.pending_operand(entity, environment.depth, canonical)?;
+                OperandOutcome::Evaluated {
                     value: Some(Evaluation::Type(value)),
                     invalid: None,
-                })
+                }
             } else {
-                Ok(outcome)
-            }
+                outcome
+            };
+            Ok((outcome, memoized))
         })();
-        self.graph.template_operands.active.remove(&active);
-        let key = active.0;
         match result {
-            Ok(OperandOutcome::Evaluated {
-                value: Some(result),
-                invalid: None,
-            }) => {
-                if self.incomplete_class_observations == incomplete {
+            Ok((
+                OperandOutcome::Evaluated {
+                    value: Some(Evaluation::Type(value)),
+                    invalid: None,
+                },
+                memoized,
+            )) => {
+                if memoized {
                     self.graph
                         .template_operands
                         .substitutions
-                        .insert(key, result);
+                        .insert(key, CachedOperand::Valid(value));
                 }
-                Ok(Some(result))
+                Ok(Some(Evaluation::Type(value)))
             }
-            Ok(OperandOutcome::EarlyFailure(failure)) => {
+            Ok((
+                OperandOutcome::Evaluated {
+                    invalid: Some(failure),
+                    ..
+                },
+                memoized,
+            )) => {
+                if memoized && !failure.transient {
+                    self.graph
+                        .template_operands
+                        .substitutions
+                        .insert(key, CachedOperand::Invalid);
+                }
+                environment.carry(Some(failure));
+                Ok(None)
+            }
+            Ok((OperandOutcome::EarlyFailure(failure), _)) => {
                 environment.carry(failure);
                 Ok(None)
             }
-            Ok(OperandOutcome::Evaluated {
-                invalid: Some(failure),
-                ..
-            })
-            | Err(Error::SubstitutionRejected(failure)) => {
+            Err(Error::SubstitutionRejected(failure)) => {
                 environment.carry(Some(failure));
                 Ok(None)
             }
             Err(Error::SubstitutionNull) => Ok(None),
-            Ok(OperandOutcome::Evaluated {
-                value: None,
-                invalid: None,
-            }) => Err(Error::Invariant("operand fallback without a value")),
+            Ok((
+                OperandOutcome::Evaluated {
+                    value: None,
+                    invalid: None,
+                },
+                _,
+            )) => Err(Error::Invariant("operand fallback without a value")),
             Err(error) => Err(error),
         }
+    }
+
+    fn whole_operand_arguments(
+        &self,
+        environment: &Substitution<'_>,
+        elements: &[Option<usize>],
+        arguments: &[TypeId],
+        count: usize,
+    ) -> Vec<Option<TypeId>> {
+        let mut scoped = arguments[..count]
+            .iter()
+            .copied()
+            .map(Some)
+            .collect::<Vec<_>>();
+        let mut next = count;
+        for (index, argument) in environment.arguments.iter().enumerate() {
+            if elements.get(index).is_some_and(Option::is_some)
+                && argument
+                    .is_some_and(|ty| matches!(self.graph.types.get(ty).kind, TypeKind::Pack(_)))
+            {
+                scoped[index] = Some(arguments[next]);
+                next += 1;
+            }
+        }
+        scoped
+    }
+
+    fn nested_operand_pack(
+        &self,
+        nested: TypeId,
+        parameter: TypeId,
+        depth: u32,
+        index: usize,
+    ) -> Result<bool, Error> {
+        for &named in self.graph.types.pack_elements(nested)? {
+            if named == parameter {
+                return Ok(true);
+            }
+            if !matches!(
+                self.graph.types.get(named).kind,
+                TypeKind::TemplateParameter { .. }
+            ) && self
+                .type_pack_pattern(named, true)
+                .parameters
+                .iter()
+                .any(|&entity| {
+                    self.graph
+                        .entity(entity)
+                        .template_parameter
+                        .is_some_and(|info| info.index(depth) == Some(index))
+                })
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn operand_element_renames(
+        &mut self,
+        pattern: Pattern,
+        depth: u32,
+        elements: &[Option<usize>],
+        count: usize,
+    ) -> Result<(bool, Vec<(NameId, NameId)>), Error> {
+        let mut scope = Some(pattern.scope);
+        while let Some(current) = scope {
+            if self.operand_declares_depth(current, depth) {
+                break;
+            }
+            scope = self.graph.scope(current).parent;
+        }
+        let mut whole = false;
+        let mut renames = Vec::new();
+        if let Some(scope) = scope {
+            for ordinal in 0..self.graph.scope(scope).bindings.len() {
+                let binding = self
+                    .graph
+                    .binding(self.graph.scope(scope).bindings[ordinal]);
+                if !matches!(binding.kind, BindingKind::Type | BindingKind::TemplateValue) {
+                    continue;
+                }
+                let Some(info) = self.graph.entity(binding.entity).template_parameter else {
+                    continue;
+                };
+                let Some(index) = info.index(depth).filter(|&index| index < count) else {
+                    continue;
+                };
+                let Some(element) = elements.get(index).copied().flatten() else {
+                    continue;
+                };
+                let Some(name) = binding.name else {
+                    continue;
+                };
+                let element_name =
+                    super::pack_frames::element_name(self.identifiers, name, element)
+                        .map_err(Error::Limit)?;
+                renames.push((name, element_name));
+                if !whole && let Some(nested) = pattern.nested_packs {
+                    let parameter = self
+                        .graph
+                        .entity(binding.entity)
+                        .ty
+                        .ok_or(Error::Invariant("renamed pack without parameter type"))?;
+                    let parameter = self.graph.types.canonical_view(parameter);
+                    whole = self.nested_operand_pack(nested, parameter, depth, index)?;
+                }
+            }
+        }
+        Ok((whole, renames))
     }
 
     pub(super) fn substitute_bound_type(
@@ -1388,6 +1547,7 @@ impl Analyzer<'_> {
         entity: EntityId,
         environment: &mut Substitution<'_>,
         query: Query,
+        input: OperandInput<'_>,
     ) -> Result<OperandOutcome, Error> {
         self.check_stack()?;
         let pattern = self
@@ -1395,6 +1555,16 @@ impl Analyzer<'_> {
             .template_operands
             .pattern(entity)
             .ok_or(Error::Invariant("missing operand"))?;
+        let (whole_names, renames) = if let Some(elements) = input.elements {
+            self.operand_element_renames(
+                pattern,
+                environment.depth,
+                elements,
+                environment.arguments.len(),
+            )?
+        } else {
+            (false, Vec::new())
+        };
         let mut scope = pattern.scope;
         let mut earlier = self.graph.template_operands.pending.get(&entity);
         let mut parameters = pattern.parameters;
@@ -1411,16 +1581,27 @@ impl Analyzer<'_> {
             parameters = None;
             earlier = next.and_then(|id| self.graph.template_operands.pending.get(&id));
         }
-        let scope = self.operand_scope(scope, environment, parameters)?;
+        let mut scoped = self.substitution(environment.depth, input.arguments);
+        scoped.context = environment.context;
+        let selection = super::function_templates::PackSelection {
+            elements: input.elements.unwrap_or(&[]),
+            bound_element: None,
+        };
+        if input.elements.is_some() && !whole_names {
+            scoped.selection = Some(&selection);
+        }
+        let result = self.operand_scope(scope, &mut scoped, parameters);
+        environment.carry(scoped.failure);
+        let scope = result?;
         let open = self.operand_open_depth(entity, environment.depth);
-        let copy = self.copy_selected_operand(pattern.expression, scope, environment)?;
+        let copy = self.copy_selected_operand(pattern.expression, scope, &renames)?;
         // Scope/copy rejection belongs to the inherited substitution and must
         // be observed before instantiation entry clears its failure record.
         if let Some(failure) = self.graph.analysis.substitution.current().failure {
             return Ok(OperandOutcome::EarlyFailure(Some(failure)));
         }
-        let access = self
-            .operand_access_context()
+        let access = input
+            .access
             .map(|entity| self.substitution_scope(entity))
             .transpose()?;
         self.instantiation_context_in(
@@ -1520,6 +1701,26 @@ impl Analyzer<'_> {
         result
     }
 
+    fn bind_operand_argument(
+        &mut self,
+        frame: ScopeId,
+        binding: Binding,
+        ty: TypeId,
+        index: usize,
+        environment: &Substitution<'_>,
+    ) -> Result<(), Error> {
+        if matches!(self.graph.types.get(ty).kind, TypeKind::Pack(_)) {
+            let element = environment
+                .selection
+                .and_then(|selection| selection.elements.get(index))
+                .copied()
+                .flatten();
+            self.bind_argument_pack_element(frame, binding, ty, element)
+        } else {
+            self.bind_template_argument(frame, binding, ty)
+        }
+    }
+
     fn operand_scope(
         &mut self,
         scope: ScopeId,
@@ -1556,7 +1757,7 @@ impl Analyzer<'_> {
                         && let Some(index) = parameter.index(environment.depth)
                         && let Some(Some(ty)) = environment.arguments.get(index)
                     {
-                        self.bind_template_argument(frame, binding, *ty)?;
+                        self.bind_operand_argument(frame, binding, *ty, index, environment)?;
                     }
                 } else if binding.kind == BindingKind::Parameter {
                     let skipped = binding.ty.is_some_and(|ty| self.graph.dependent_type(ty))
@@ -1659,7 +1860,16 @@ impl Analyzer<'_> {
                 super::lookup::Filter::Ordinary,
             )?;
             if found.binding == Some(id) {
-                self.bind_template_argument(frame, binding, *argument)?;
+                if matches!(self.graph.types.get(*argument).kind, TypeKind::Pack(_)) {
+                    let element = environment
+                        .selection
+                        .and_then(|selection| selection.elements.get(position))
+                        .copied()
+                        .flatten();
+                    self.bind_argument_pack_element(frame, binding, *argument, element)?;
+                } else {
+                    self.bind_template_argument(frame, binding, *argument)?;
+                }
             }
         }
         Ok(frame)
@@ -1797,7 +2007,6 @@ mod tests {
         analyzer.declarations(declarations, global).unwrap();
         assert!(analyzer.signature_object.is_none());
         assert!(analyzer.body_context.is_none());
-        assert!(analyzer.graph.template_operands.active.is_empty());
         let mut objects = Vec::new();
         for pattern in analyzer.graph.template_operands.patterns.values() {
             if let Some(object) = pattern.object {
@@ -1862,7 +2071,6 @@ mod tests {
         // Original depth-one U and the instance's depth-zero U have distinct
         // operand identities. The replacement V shares only the latter.
         assert_eq!(graph.template_operands.patterns.len(), 2);
-        assert!(graph.template_operands.active.is_empty());
     }
 
     #[test]
@@ -2111,7 +2319,6 @@ mod tests {
         .unwrap();
         assert_eq!(graph.template_operands.patterns.len(), 2);
         assert_eq!(graph.template_operands.substitutions.len(), 2);
-        assert!(graph.template_operands.active.is_empty());
     }
 
     #[test]
@@ -2135,7 +2342,6 @@ mod tests {
         // concrete argument lists each own one copy of its three expressions.
         assert_eq!(graph.template_operands.patterns.len(), 1);
         assert_eq!(graph.template_operands.substitutions.len(), 2);
-        assert!(graph.template_operands.active.is_empty());
         assert_eq!(tree.expressions.mark(), count + 6);
         let pattern = graph.template_operands.patterns.values().next().unwrap();
         assert!(graph.expression_facts.get(pattern.expression).is_err());
@@ -2143,7 +2349,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_operand_removes_in_progress_state_and_restores_caller() {
+    fn invalid_operand_replay_keeps_caller_state_and_bounds_uncached() {
         let source =
             SourceBuffer::new(b"template<class T>auto f(T x)->decltype(T(),x.missing());".to_vec())
                 .unwrap();
@@ -2192,6 +2398,45 @@ mod tests {
                 .unwrap(),
             None
         );
+        let copied = analyzer.tree.expressions.mark();
+        assert_eq!(
+            analyzer
+                .with_substitution_soft(None, |analyzer| {
+                    let result = analyzer.substitute_operand(ty, entity, &mut environment)?;
+                    assert_eq!(
+                        analyzer
+                            .graph
+                            .analysis
+                            .substitution
+                            .current()
+                            .failure
+                            .unwrap()
+                            .message,
+                        "an invalid expression in a substitution"
+                    );
+                    Ok(result)
+                })
+                .unwrap(),
+            None
+        );
+        assert_eq!(analyzer.tree.expressions.mark(), copied);
+        let original_location = analyzer
+            .tree
+            .expressions
+            .get(
+                analyzer
+                    .graph
+                    .template_operands
+                    .pattern(entity)
+                    .unwrap()
+                    .expression,
+            )
+            .location;
+        assert!(
+            matches!(analyzer.substitute_operand(ty, entity, &mut environment),
+            Err(Error::UnconditionalDiagnostic { location, message: "an invalid expression in a substitution" }) if location == original_location)
+        );
+        assert_eq!(analyzer.tree.expressions.mark(), copied);
         assert_eq!(
             analyzer
                 .with_substitution_soft(None, |analyzer| analyzer
@@ -2199,8 +2444,7 @@ mod tests {
                 .unwrap(),
             None
         );
-        assert!(analyzer.graph.template_operands.substitutions.is_empty());
-        assert!(analyzer.graph.template_operands.active.is_empty());
+        assert_eq!(analyzer.graph.template_operands.substitutions.len(), 1);
         assert_eq!(analyzer.dependent_uses.get(), 17);
         assert_eq!(analyzer.template_depth, 4);
         assert_eq!(analyzer.class_depth, 2);
@@ -2327,7 +2571,6 @@ mod value_tests {
             assert_eq!(analyzer.tree.expressions.mark(), expressions);
         }
         assert_ne!(selected[0], selected[1]);
-        assert!(analyzer.graph.template_operands.active.is_empty());
     }
 
     #[test]
@@ -2394,7 +2637,6 @@ mod value_tests {
             );
         }
         assert!(analyzer.graph.root_demands.as_slice().is_empty());
-        assert!(analyzer.graph.template_operands.active.is_empty());
     }
 }
 
@@ -2530,7 +2772,6 @@ mod pending_tests {
                 .get(pattern.expression)
                 .is_err()
         );
-        assert!(analyzer.graph.template_operands.active.is_empty());
         assert!(analyzer.graph.root_demands.as_slice().is_empty());
     }
 
@@ -2595,7 +2836,7 @@ mod pending_tests {
             .arguments
             .clone();
         assert_eq!(analyzer.graph.template_operands.count(), formed);
-        assert_eq!(saved, [parameter, one]);
+        assert_eq!(saved, [analyzer.graph.types.canonical_view(parameter), one]);
         // This first dependent level has one head and can be re-keyed as
         // N-1. It owns that key rather than inheriting the A-B pattern.
         assert!(analyzer.graph.lower_operand_key_dependent(pending).unwrap());
@@ -2656,7 +2897,6 @@ mod pending_tests {
                 .get(pattern.expression)
                 .is_err()
         );
-        assert!(analyzer.graph.template_operands.active.is_empty());
         assert!(analyzer.graph.root_demands.as_slice().is_empty());
     }
 
@@ -2789,7 +3029,6 @@ mod pending_tests {
                     .get(pattern.expression)
                     .is_err()
             );
-            assert!(analyzer.graph.template_operands.active.is_empty());
             assert!(analyzer.graph.root_demands.as_slice().is_empty());
         }
     }

@@ -62,7 +62,7 @@ impl Analyzer<'_> {
             && let Some(&last) = parameters.last()
             && let TypeKind::Expansion(pattern) = self.graph.types.get(last).kind
         {
-            let packs = self.type_pack_pattern(pattern, true)?;
+            let packs = self.type_pack_pattern(pattern, true);
             let indices: Vec<_> = packs
                 .parameters
                 .iter()

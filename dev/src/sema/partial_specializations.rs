@@ -474,7 +474,7 @@ impl Analyzer<'_> {
                             "a pack expansion other than a partial specialization's last argument",
                         ));
                     }
-                } else if self.has_unexpanded_type_pack(element, true)? {
+                } else if self.has_unexpanded_type_pack(element, true) {
                     return Err(Error::at(
                         location,
                         "a partial specialization's argument names an unexpanded parameter pack",

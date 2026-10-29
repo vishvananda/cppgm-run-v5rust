@@ -413,6 +413,7 @@ impl Analyzer<'_> {
                 }) {
                     return Ok(false);
                 }
+                self.graph.analysis.keyed_sizeof_packs = true;
                 if binding.kind == super::graph::BindingKind::Parameter
                     && binding.ty.is_some()
                     && self.graph.prototype_parameter(binding.entity).is_some()

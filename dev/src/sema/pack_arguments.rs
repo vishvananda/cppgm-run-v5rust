@@ -414,6 +414,15 @@ impl Analyzer<'_> {
         binding: Binding,
         arguments: TypeId,
     ) -> Result<(), Error> {
+        self.bind_argument_pack_element(scope, binding, arguments, None)
+    }
+    pub(super) fn bind_argument_pack_element(
+        &mut self,
+        scope: ScopeId,
+        binding: Binding,
+        arguments: TypeId,
+        element: Option<usize>,
+    ) -> Result<(), Error> {
         let info = self
             .graph
             .entity(binding.entity)
@@ -456,7 +465,15 @@ impl Analyzer<'_> {
         )?;
         let count = self.graph.types.pack_elements(arguments)?.len();
         if let Some(name) = binding.name {
-            for index in 0..count {
+            let first = element.unwrap_or(0);
+            let end = if let Some(element) = element {
+                element
+                    .checked_add(1)
+                    .ok_or(Error::Limit("bound pack element limit"))?
+            } else {
+                count
+            };
+            for index in first..end.min(count) {
                 let element = self.graph.types.pack_elements(arguments)?[index];
                 let mut spelling = self.identifiers.bytes(name).to_vec();
                 spelling.extend_from_slice(format!("__pack{index}").as_bytes());

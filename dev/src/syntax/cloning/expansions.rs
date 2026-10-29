@@ -31,11 +31,20 @@ struct CollectedNames {
     uses: NameUses,
     seen: HashSet<NameId>,
     distinct: bool,
+    include_nested: bool,
+    target_nested: bool,
+    nested_seen: HashSet<NameId>,
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent observations made by the frozen syntax collector"
+)]
 #[derive(Default)]
 pub(crate) struct NameUses {
     pub names: Vec<NameId>,
+    pub nested_names: Vec<NameId>,
+    pub nested_expansion: bool,
     pub expansion: bool,
     pub pack_size: bool,
     pub this: bool,
@@ -212,12 +221,10 @@ impl Cloner<'_> {
         }
         self.tree.captures.finish(start)
     }
-    pub(crate) fn select_pack(&mut self, name: NameId, index: usize) -> Result<(), ParseError> {
+    pub(crate) fn rename_pack(&mut self, name: NameId, element: NameId) {
         if let Some(state) = self.expansion.as_mut() {
-            let element = state.expander.element_name(name, index)?;
             state.renames.insert(name, element);
         }
-        Ok(())
     }
     pub(super) fn collecting(&self) -> bool {
         self.expansion
@@ -235,8 +242,14 @@ impl Cloner<'_> {
         };
         let length = state.length(name);
         if let Some(names) = state.collecting.as_mut() {
-            if length.is_some() && (!names.distinct || names.seen.insert(name)) {
-                names.uses.names.push(name);
+            if length.is_some() {
+                if names.target_nested {
+                    if !names.distinct || names.nested_seen.insert(name) {
+                        names.uses.nested_names.push(name);
+                    }
+                } else if !names.distinct || names.seen.insert(name) {
+                    names.uses.names.push(name);
+                }
             }
             name
         } else {
@@ -316,12 +329,11 @@ impl Cloner<'_> {
         }
         Ok(())
     }
-    pub(crate) fn expression_pack_names(
+    pub(crate) fn expression_pack_partitions(
         &mut self,
         expression: ExprId,
-    ) -> Result<Vec<NameId>, ParseError> {
-        self.collect_pattern_names(Pattern::Expression(expression), true)
-            .map(|uses| uses.names)
+    ) -> Result<NameUses, ParseError> {
+        self.collect_pattern_names_in(Pattern::Expression(expression), true, true)
     }
     pub(crate) fn expression_name_uses(
         &mut self,
@@ -349,12 +361,26 @@ impl Cloner<'_> {
         pattern: Pattern,
         distinct: bool,
     ) -> Result<NameUses, ParseError> {
+        let include_nested = self
+            .expansion
+            .as_ref()
+            .and_then(|state| state.collecting.as_ref())
+            .is_some_and(|names| names.include_nested);
+        self.collect_pattern_names_in(pattern, distinct, include_nested)
+    }
+    fn collect_pattern_names_in(
+        &mut self,
+        pattern: Pattern,
+        distinct: bool,
+        include_nested: bool,
+    ) -> Result<NameUses, ParseError> {
         let state = self
             .expansion
             .as_mut()
             .ok_or(ParseError::Invariant("pack copy without context"))?;
         let saved = state.collecting.replace(CollectedNames {
             distinct,
+            include_nested,
             ..CollectedNames::default()
         });
         let renames = std::mem::take(&mut state.renames);
@@ -371,17 +397,69 @@ impl Cloner<'_> {
             .take()
             .ok_or(ParseError::Invariant("pack copy lost collection"))?;
         state.collecting = saved;
+        if let Some(parent) = &mut state.collecting {
+            parent.uses.expansion |= names.uses.expansion;
+            parent.uses.pack_size |= names.uses.pack_size;
+            parent.uses.this |= names.uses.this;
+            parent.uses.nested_expansion |= names.uses.nested_expansion;
+            for &name in &names.uses.nested_names {
+                if !parent.distinct || parent.nested_seen.insert(name) {
+                    parent.uses.nested_names.push(name);
+                }
+            }
+        }
         state.renames = renames;
         state.restore_shadows(shadows);
         result?;
         Ok(names.uses)
+    }
+    fn collect_nested_pattern(&mut self, pattern: Pattern) -> Result<(), ParseError> {
+        let state = self.expansion.as_mut().ok_or(ParseError::Invariant(
+            "nested pack collection without context",
+        ))?;
+        let names = state
+            .collecting
+            .as_mut()
+            .ok_or(ParseError::Invariant("nested pack collection without sink"))?;
+        names.uses.expansion = true;
+        if !names.include_nested {
+            return Ok(());
+        }
+        names.uses.nested_expansion = true;
+        let previous = std::mem::replace(&mut names.target_nested, true);
+        let result = self.copy_pattern(pattern);
+        let state = self
+            .expansion
+            .as_mut()
+            .ok_or(ParseError::Invariant("nested pack collection lost context"))?;
+        let names = state
+            .collecting
+            .as_mut()
+            .ok_or(ParseError::Invariant("nested pack collection lost sink"))?;
+        names.target_nested = previous;
+        result
+    }
+    pub(super) fn collect_nested_expression(&mut self, kind: ExprKind) -> Result<(), ParseError> {
+        match kind {
+            ExprKind::PackExpansion(pattern) => {
+                self.collect_nested_pattern(Pattern::Expression(pattern))
+            }
+            ExprKind::Fold { pattern, init, .. } => {
+                self.collect_nested_pattern(Pattern::Expression(pattern))?;
+                if let Some(init) = init {
+                    self.collect_nested_pattern(Pattern::Expression(init))?;
+                }
+                Ok(())
+            }
+            _ => Err(ParseError::Invariant("nested expression without expansion")),
+        }
     }
     fn pattern_packs(
         &mut self,
         pattern: Pattern,
         location: SourceOffset,
     ) -> Result<Option<(Vec<NameId>, usize)>, ParseError> {
-        if !self.expanding() {
+        if self.expansion.is_none() {
             return Ok(None);
         }
         let names = self.collect_pattern_names(pattern, true)?.names;
@@ -389,7 +467,6 @@ impl Cloner<'_> {
             .expansion
             .as_mut()
             .ok_or(ParseError::Invariant("pack copy lost context"))?;
-        let mut count = None;
         // Any pack declared in this copy defers the entire expansion, before
         // testing lengths of the bound packs that accompany it.
         if names.is_empty()
@@ -399,17 +476,15 @@ impl Cloner<'_> {
         {
             return Ok(None);
         }
+        let Some(Length::Bound(count)) = state.length(names[0]) else {
+            return Ok(None);
+        };
         for &name in &names {
-            if let Some(Length::Bound(length)) = state.length(name) {
-                if count.is_some_and(|count| count != length) {
-                    state.expander.mismatch(location)?;
-                }
-                if count.is_none() {
-                    count = Some(length);
-                }
+            if !matches!(state.length(name), Some(Length::Bound(length)) if length == count) {
+                state.expander.mismatch(location)?;
             }
         }
-        Ok(count.map(|count| (names, count)))
+        Ok(Some((names, count)))
     }
     // ast_clone.cpp::expanded_fold: expand into the ordinary syntax owned by
     // this instantiation; no second semantic tree or token replay is needed.
@@ -540,15 +615,11 @@ impl Cloner<'_> {
         for index in 0..store(self.tree).get(list).len() {
             let item = store(self.tree).get(list)[index];
             let expansion = pattern(self, item);
-            if self.collecting() && expansion.is_some() {
-                // A nested expansion owns its names.
-                if let Some(names) = self
-                    .expansion
-                    .as_mut()
-                    .and_then(|state| state.collecting.as_mut())
-                {
-                    names.uses.expansion = true;
-                }
+            if self.collecting()
+                && let Some((pattern @ (Pattern::Argument(_) | Pattern::Expression(_)), _)) =
+                    expansion
+            {
+                self.collect_nested_pattern(pattern)?;
                 store(self.tree).push(item);
                 continue;
             }
@@ -1057,6 +1128,87 @@ mod tests {
             assert!(dump.contains("ctor-initializer\n"));
             assert_eq!(dump.matches("base-specifier").count(), count);
             assert_eq!(dump.matches("mem-initializer\n").count(), count);
+        }
+    }
+
+    #[test]
+    fn nested_pack_partitions_keep_expressions_distinct_from_type_id_lists() {
+        use crate::{
+            preprocess::unit::Preprocessor,
+            support::{source::SourceBuffer, stack::StackBudget},
+            syntax::SyntaxUnit,
+        };
+        let source = SourceBuffer::new(
+            b"void f(){call(Ts...,Us);call<Ts...>(Us);(Ts+...);__is_same(Ts...,int);}".to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"nested-pack-uses").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let ast::DeclKind::Function { body, .. } = tree
+            .declarations
+            .get(tree.decl_lists.get(declarations)[0])
+            .kind
+        else {
+            panic!("function");
+        };
+        let ast::Body::Parsed(body) = tree.bodies.get(body) else {
+            panic!("body");
+        };
+        let ast::StmtKind::Compound(statements) = tree.statements.get(body.compound).kind else {
+            panic!("compound");
+        };
+        let statements = tree.stmt_lists.get(statements).to_vec();
+        let marker = 0_u8;
+        let base = std::ptr::from_ref(&marker).addr();
+        let mut packs = EmptyOrRepeatedPacks(0);
+        let mark = (
+            tree.expressions.mark(),
+            tree.types.mark(),
+            tree.names.mark(),
+        );
+        for (index, statement) in statements.into_iter().enumerate() {
+            let ast::StmtKind::Expression(Some(expression)) = tree.statements.get(statement).kind
+            else {
+                panic!("expression");
+            };
+            let uses = Cloner::new(tree, StackBudget::default(), base)
+                .with_expander(&mut packs)
+                .expression_pack_partitions(expression)
+                .unwrap();
+            let outer: Vec<_> = uses
+                .names
+                .into_iter()
+                .map(|name| cursor.name(name))
+                .collect();
+            let nested: Vec<_> = uses
+                .nested_names
+                .into_iter()
+                .map(|name| cursor.name(name))
+                .collect();
+            if index < 2 {
+                assert_eq!(outer, [b"call".as_slice(), b"Us"]);
+            } else {
+                assert!(outer.is_empty());
+            }
+            if index < 3 {
+                assert_eq!(nested, [b"Ts".as_slice()]);
+            } else {
+                assert!(nested.is_empty());
+            }
+            assert_eq!(
+                (uses.expansion, uses.nested_expansion),
+                (index < 3, index < 3)
+            );
+            assert_eq!(
+                (
+                    tree.expressions.mark(),
+                    tree.types.mark(),
+                    tree.names.mark()
+                ),
+                mark
+            );
         }
     }
 

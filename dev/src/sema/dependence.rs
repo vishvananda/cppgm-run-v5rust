@@ -23,33 +23,6 @@ impl Analyzer<'_> {
             .set(self.dependent_uses.get().wrapping_add(1));
     }
 
-    /// C++ `lookup.cpp::DependentClassScope`, including concrete instances and
-    /// local classes: dependence here describes the pattern, not today's type.
-    pub(super) fn dependent_lookup_class(&self, mut scope: ScopeId) -> bool {
-        loop {
-            let node = self.graph.scope(scope);
-            if node.kind != ScopeKind::Class {
-                return node.kind != ScopeKind::Namespace;
-            }
-            if node.owner.is_none_or(|class| {
-                self.graph.entity(class).template_head.is_some()
-                    || self.graph.class_templates.instance(class).is_some()
-                    || self
-                        .graph
-                        .class_templates
-                        .definitions
-                        .source(class)
-                        .is_some()
-            }) {
-                return true;
-            }
-            let Some(parent) = node.parent else {
-                return false;
-            };
-            scope = parent;
-        }
-    }
-
     pub(super) fn parameter_dependence(
         &self,
         function: super::graph::EntityId,
@@ -601,6 +574,28 @@ impl super::graph::Graph {
             }
         }
         false
+    }
+}
+
+impl super::graph::Graph {
+    pub(super) fn dependent_lookup_class(&self, mut scope: ScopeId) -> bool {
+        loop {
+            let node = self.scope(scope);
+            if node.kind != ScopeKind::Class {
+                return node.kind != ScopeKind::Namespace;
+            }
+            if node.owner.is_none_or(|class| {
+                self.entity(class).template_head.is_some()
+                    || self.class_templates.instance(class).is_some()
+                    || self.class_templates.definitions.source(class).is_some()
+            }) {
+                return true;
+            }
+            let Some(parent) = node.parent else {
+                return false;
+            };
+            scope = parent;
+        }
     }
 }
 

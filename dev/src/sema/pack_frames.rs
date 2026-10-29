@@ -168,7 +168,7 @@ impl PackExpander for FramePacks<'_> {
     }
 }
 
-fn element_name(
+pub(super) fn element_name(
     identifiers: &mut Identifiers,
     name: NameId,
     index: usize,
@@ -257,52 +257,15 @@ impl Analyzer<'_> {
         &mut self,
         expression: ast::ExprId,
         scope: ScopeId,
-        environment: &super::function_templates::Substitution<'_>,
+        renames: &[(NameId, NameId)],
     ) -> Result<ast::ExprId, Error> {
-        let Some(selection) = environment.selection else {
-            return self.copy_expression_in_frame(expression, scope);
-        };
-        let mut names = Vec::new();
-        let mut seen = std::collections::HashSet::new();
-        let mut parent = Some(scope);
-        while let Some(current) = parent {
-            let node = self.graph.scope(current);
-            if node.kind == ScopeKind::TemplateParameters {
-                for id in node.index.values().filter_map(|entry| entry.ty) {
-                    let binding = self.graph.binding(id);
-                    let Some(name) = binding.name.filter(|&name| seen.insert(name)) else {
-                        continue;
-                    };
-                    let Some(ty) = binding.ty else {
-                        continue;
-                    };
-                    let TypeKind::BoundPack { parameter, .. } = self.graph.types.get(ty).kind
-                    else {
-                        continue;
-                    };
-                    let element = self
-                        .graph
-                        .entity(parameter)
-                        .template_parameter
-                        .and_then(|info| info.index(environment.depth))
-                        .and_then(|index| selection.elements.get(index).copied().flatten())
-                        .or(selection.bound_element);
-                    if let Some(index) = element {
-                        names.push((name, index));
-                    }
-                }
-            }
-            parent = node.parent;
-        }
         let mut packs = FramePacks::new(&self.graph, scope, self.identifiers);
         let copied = {
             let mut cloner = packs.cloner(self.tree, self.stack_budget, self.stack_base);
-            (|| {
-                for (name, index) in names {
-                    cloner.select_pack(name, index)?;
-                }
-                cloner.expression(expression)
-            })()
+            for &(name, element) in renames {
+                cloner.rename_pack(name, element);
+            }
+            cloner.expression(expression)
         };
         packs.finish(copied)
     }

@@ -47,7 +47,7 @@ impl Analyzer<'_> {
         arguments: &mut [Option<TypeId>],
         mut deduce: impl FnMut(&mut Self, usize, &mut [Option<TypeId>]) -> Result<bool, Error>,
     ) -> Result<bool, Error> {
-        let packs = self.type_pack_pattern(pattern, true)?;
+        let packs = self.type_pack_pattern(pattern, true);
         let indices: Vec<_> = packs
             .parameters
             .iter()

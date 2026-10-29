@@ -27,7 +27,7 @@ impl Analyzer<'_> {
         let valid = if self.template_depth == 0 {
             false
         } else {
-            let packs = self.type_pack_pattern(pattern, true)?;
+            let packs = self.type_pack_pattern(pattern, true);
             !packs.parameters.is_empty() || !packs.bound.is_empty() || packs.expression
         };
         if !valid {
@@ -56,7 +56,7 @@ impl Analyzer<'_> {
                     .template_parameter
                     .is_some_and(super::templates::ParameterInfo::is_pack)
             })
-            && self.has_unexpanded_type_pack(ty, false)?
+            && self.has_unexpanded_type_pack(ty, false)
         {
             return Err(Error::at(
                 location,
@@ -71,20 +71,12 @@ impl Analyzer<'_> {
     /// specialization arguments; a template's declaration is not an argument.
     /// Function declarations leave expression placeholders out, as C++ does;
     /// expansion formation includes the names in their retained expressions.
-    pub(super) fn has_unexpanded_type_pack(
-        &self,
-        root: TypeId,
-        placeholders: bool,
-    ) -> Result<bool, Error> {
-        let packs = self.type_pack_pattern(root, placeholders)?;
-        Ok(!packs.parameters.is_empty() || packs.expression)
+    pub(super) fn has_unexpanded_type_pack(&self, root: TypeId, placeholders: bool) -> bool {
+        let packs = self.type_pack_pattern(root, placeholders);
+        !packs.parameters.is_empty() || packs.expression
     }
 
-    pub(super) fn type_pack_pattern(
-        &self,
-        root: TypeId,
-        placeholders: bool,
-    ) -> Result<PackPattern, Error> {
+    pub(super) fn type_pack_pattern(&self, root: TypeId, placeholders: bool) -> PackPattern {
         let mut packs = PackPattern::default();
         let mut work = vec![root];
         let mut visited = HashSet::new();
@@ -100,7 +92,7 @@ impl Analyzer<'_> {
                     } else if let Some(member) = self.graph.dependent_members.get(*entity) {
                         work.push(member.qualifier);
                     } else if let Some(pattern) = self.graph.template_operands.pattern(*entity) {
-                        if placeholders && let Some(ty) = pattern.pack_names.types()? {
+                        if placeholders && let Some(ty) = pattern.pack_names {
                             packs.expression = true;
                             work.push(ty);
                         }
@@ -172,7 +164,7 @@ impl Analyzer<'_> {
                 | TypeKind::BlockPointer(_) => (),
             }
         }
-        Ok(packs)
+        packs
     }
 }
 
@@ -264,8 +256,8 @@ mod tests {
         let pack = params[0];
         let ordinary = params[1];
         let scalar = analyzer.graph.types.scalar(Scalar::Void).unwrap();
-        assert!(analyzer.has_unexpanded_type_pack(pack, false).unwrap());
-        assert!(!analyzer.has_unexpanded_type_pack(ordinary, false).unwrap());
+        assert!(analyzer.has_unexpanded_type_pack(pack, false));
+        assert!(!analyzer.has_unexpanded_type_pack(ordinary, false));
         // The primary template's own parameter pack is not part of B<T>'s arguments.
         let cls = analyzer
             .class_specialization(primaries[1], vec![pack])
@@ -278,7 +270,7 @@ mod tests {
         let pointer = analyzer.graph.types.pointer(pack).unwrap();
         let member_pointer = analyzer.graph.types.member_pointer(pack, scalar).unwrap();
         for ty in [cls, member, pointer, member_pointer] {
-            assert!(analyzer.has_unexpanded_type_pack(ty, false).unwrap());
+            assert!(analyzer.has_unexpanded_type_pack(ty, false));
         }
         let mut absent = ordinary;
         let mut present = pack;
@@ -300,8 +292,8 @@ mod tests {
                     .unwrap();
             }
         }
-        assert!(!analyzer.has_unexpanded_type_pack(absent, false).unwrap());
-        assert!(analyzer.has_unexpanded_type_pack(present, false).unwrap());
+        assert!(!analyzer.has_unexpanded_type_pack(absent, false));
+        assert!(analyzer.has_unexpanded_type_pack(present, false));
     }
     #[test]
     fn expression_pack_names_use_definition_scope_and_skip_nested_expansions() {
@@ -412,7 +404,7 @@ mod tests {
         // captured at formation, even after its original name is no longer found.
         analyzer.graph.scope_mut(scope).index.clear();
         assert!(!analyzer.expression_names_pack(expression, scope).unwrap());
-        assert!(analyzer.has_unexpanded_type_pack(ty, true).unwrap());
-        assert!(!analyzer.has_unexpanded_type_pack(ty, false).unwrap());
+        assert!(analyzer.has_unexpanded_type_pack(ty, true));
+        assert!(!analyzer.has_unexpanded_type_pack(ty, false));
     }
 }

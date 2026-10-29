@@ -286,7 +286,32 @@ impl LookupResult {
         }
     }
 }
-impl Analyzer<'_> {
+/// Borrowed access to the existing name store while syntax copying owns the tree.
+/// All lookup caches and observations stay with the semantic unit and caller.
+pub(super) struct DeclarationLookup<'a> {
+    graph: &'a Graph,
+    dependent_uses: &'a Cell<u64>,
+    value_parameter_uses: &'a Cell<u64>,
+}
+impl<'a> DeclarationLookup<'a> {
+    pub(super) fn new(
+        graph: &'a Graph,
+        dependent_uses: &'a Cell<u64>,
+        value_parameter_uses: &'a Cell<u64>,
+    ) -> Self {
+        Self {
+            graph,
+            dependent_uses,
+            value_parameter_uses,
+        }
+    }
+    fn note_dependent_use(&self) {
+        self.dependent_uses
+            .set(self.dependent_uses.get().wrapping_add(1));
+    }
+    fn dependent_lookup_class(&self, scope: ScopeId) -> bool {
+        self.graph.dependent_lookup_class(scope)
+    }
     fn merge(&self, first: &mut LookupResult, second: &LookupResult) {
         if let Some(second_id) = second.binding {
             first.ambiguous |= second.ambiguous;
@@ -365,16 +390,6 @@ impl Analyzer<'_> {
             ambiguous: false,
             injected_template: false,
         }
-    }
-    pub(super) fn class_lookup(
-        &self,
-        scope: ScopeId,
-        key: ValueKey,
-        filter: Filter,
-    ) -> Result<LookupResult, Error> {
-        self.graph.names.lookup();
-        self.class_lookup_in(scope, key, filter, true)?
-            .checked(self.lookup_location)
     }
     fn class_lookup_in(
         &self,
@@ -517,22 +532,22 @@ impl Analyzer<'_> {
             result.virtual_base = result.virtual_base.union(found.virtual_base);
         } else if result.shared
             && relations.reaches(
-                &self.graph,
+                self.graph,
                 self.graph.entity(b.entity).home,
                 self.graph.entity(a.entity).home,
                 BaseRelation::Derived,
             )
-            && relations.contains_shared(&self.graph, *result, self.graph.entity(b.entity).home)
+            && relations.contains_shared(self.graph, *result, self.graph.entity(b.entity).home)
         {
             *result = found;
         } else if !found.shared
             || !relations.reaches(
-                &self.graph,
+                self.graph,
                 self.graph.entity(a.entity).home,
                 self.graph.entity(b.entity).home,
                 BaseRelation::Derived,
             )
-            || !relations.contains_shared(&self.graph, found, self.graph.entity(a.entity).home)
+            || !relations.contains_shared(self.graph, found, self.graph.entity(a.entity).home)
         {
             if !(matches!(a.kind, BindingKind::Type | BindingKind::Alias)
                 && matches!(b.kind, BindingKind::Type | BindingKind::Alias)
@@ -548,6 +563,112 @@ impl Analyzer<'_> {
             result.virtual_base = result.virtual_base.union(found.virtual_base);
         }
         Ok(())
+    }
+
+    fn namespace(&self, mut scope: ScopeId) -> ScopeId {
+        while self.graph.scope(scope).kind != ScopeKind::Namespace {
+            let Some(parent) = self.graph.scope(scope).parent else {
+                break;
+            };
+            scope = parent;
+        }
+        scope
+    }
+    fn common_namespace(&self, a: ScopeId, b: ScopeId) -> ScopeId {
+        let mut a = self.namespace(a);
+        let b = self.namespace(b);
+        while !self.graph.encloses(a, b) {
+            let Some(parent) = self.graph.scope(a).parent else {
+                break;
+            };
+            a = parent;
+        }
+        a
+    }
+    pub(super) fn unqualified_declaration_result(
+        &self,
+        scope: ScopeId,
+        name: ValueKey,
+        filter: Filter,
+    ) -> Result<LookupResult, Error> {
+        self.graph.names.lookup();
+        let mut visited = HashSet::new();
+        let mut pending = Vec::new();
+        let mut current = Some(scope);
+        let mut bridged = false;
+        let mut outside = false;
+        while let Some(scope) = current {
+            let node = self.graph.scope(scope);
+            if node.kind == ScopeKind::TemplateParameters {
+                if outside {
+                    current = node.parent;
+                    continue;
+                }
+                bridged |= node.template_bridge;
+            } else {
+                outside = bridged;
+            }
+            let mut result = self.class_lookup_in(scope, name, filter, true)?;
+            let mut frontier: Vec<_> = self.graph.visible_edges(scope, false).collect();
+            while let Some(nominated) = frontier.pop() {
+                if !visited.insert(nominated) {
+                    continue;
+                }
+                pending.push((nominated, self.common_namespace(scope, nominated)));
+                frontier.extend(self.graph.visible_edges(nominated, false));
+            }
+            let mut index = 0;
+            while index < pending.len() {
+                let (nominated, home) = pending[index];
+                if home == scope {
+                    self.merge(&mut result, &self.own_lookup(nominated, name, filter));
+                    pending.swap_remove(index);
+                } else {
+                    index += 1;
+                }
+            }
+            if result.binding.is_some() {
+                if let Some(binding) = result.binding
+                    && ((node.kind == ScopeKind::TemplateParameters
+                        && self.graph.binding(binding).kind != BindingKind::Enumerator)
+                        || self.graph.dependent_binding(binding)
+                        || (node.kind == ScopeKind::Class && self.dependent_lookup_class(scope)))
+                {
+                    self.note_dependent_use();
+                } else if node.kind == ScopeKind::TemplateParameters {
+                    self.value_parameter_uses
+                        .set(self.value_parameter_uses.get().wrapping_add(1));
+                }
+                return Ok(result);
+            }
+            current = self.graph.scope(scope).parent;
+        }
+        Ok(LookupResult::default())
+    }
+}
+impl Analyzer<'_> {
+    fn declaration_lookup(&self) -> DeclarationLookup<'_> {
+        DeclarationLookup::new(
+            &self.graph,
+            &self.dependent_uses,
+            &self.value_parameter_uses,
+        )
+    }
+    fn merge(&self, first: &mut LookupResult, second: &LookupResult) {
+        self.declaration_lookup().merge(first, second);
+    }
+    fn own_lookup(&self, scope: ScopeId, key: ValueKey, filter: Filter) -> LookupResult {
+        self.declaration_lookup().own_lookup(scope, key, filter)
+    }
+    fn class_lookup_in(
+        &self,
+        scope: ScopeId,
+        key: ValueKey,
+        filter: Filter,
+        unqualified: bool,
+    ) -> Result<LookupResult, Error> {
+        self.declaration_lookup()
+            .class_lookup_in(scope, key, filter, unqualified)
     }
     fn inline_set(
         &self,
@@ -570,6 +691,61 @@ impl Analyzer<'_> {
             frontier.extend(self.graph.visible_edges(current, true).rev());
         }
         result
+    }
+    pub(super) fn qualified_declaration_result(
+        &self,
+        scope: ScopeId,
+        name: ValueKey,
+        filter: Filter,
+    ) -> Result<LookupResult, Error> {
+        if self.graph.scope(scope).kind == ScopeKind::EnumMembers {
+            return Ok(LookupResult {
+                binding: self.graph.enum_member(scope, name, filter),
+                ..LookupResult::default()
+            });
+        }
+        self.graph.names.lookup();
+        if self.graph.scope(scope).kind != ScopeKind::Namespace {
+            return self.class_lookup_in(scope, name, filter, false);
+        }
+        let mut visited = HashSet::new();
+        let mut level = vec![scope];
+        let mut result = LookupResult::default();
+        while !level.is_empty() && result.binding.is_none() {
+            let mut next = Vec::new();
+            for current in level {
+                let mut members = Vec::new();
+                let found = self.inline_set(current, name, filter, &mut visited, &mut members);
+                if found.binding.is_some() {
+                    self.merge(&mut result, &found);
+                } else {
+                    for member in members {
+                        next.extend(self.graph.visible_edges(member, false).rev());
+                    }
+                }
+            }
+            level = next;
+        }
+        Ok(result)
+    }
+    pub(super) fn unqualified_declaration_result(
+        &self,
+        scope: ScopeId,
+        name: ValueKey,
+        filter: Filter,
+    ) -> Result<LookupResult, Error> {
+        self.declaration_lookup()
+            .unqualified_declaration_result(scope, name, filter)
+    }
+    pub(super) fn class_lookup(
+        &self,
+        scope: ScopeId,
+        key: ValueKey,
+        filter: Filter,
+    ) -> Result<LookupResult, Error> {
+        self.graph.names.lookup();
+        self.class_lookup_in(scope, key, filter, true)?
+            .checked(self.lookup_location)
     }
     pub(super) fn qualified(
         &self,
@@ -664,62 +840,6 @@ impl Analyzer<'_> {
     }
     // C++ class_specifier consumes the representative even when namespace
     // lookup marks it ambiguous. Ordinary name uses diagnose that fact.
-    pub(super) fn qualified_declaration_result(
-        &self,
-        scope: ScopeId,
-        name: ValueKey,
-        filter: Filter,
-    ) -> Result<LookupResult, Error> {
-        if self.graph.scope(scope).kind == ScopeKind::EnumMembers {
-            return Ok(LookupResult {
-                binding: self.graph.enum_member(scope, name, filter),
-                ..LookupResult::default()
-            });
-        }
-        self.graph.names.lookup();
-        if self.graph.scope(scope).kind != ScopeKind::Namespace {
-            return self.class_lookup_in(scope, name, filter, false);
-        }
-        let mut visited = HashSet::new();
-        let mut level = vec![scope];
-        let mut result = LookupResult::default();
-        while !level.is_empty() && result.binding.is_none() {
-            let mut next = Vec::new();
-            for current in level {
-                let mut members = Vec::new();
-                let found = self.inline_set(current, name, filter, &mut visited, &mut members);
-                if found.binding.is_some() {
-                    self.merge(&mut result, &found);
-                } else {
-                    for member in members {
-                        next.extend(self.graph.visible_edges(member, false).rev());
-                    }
-                }
-            }
-            level = next;
-        }
-        Ok(result)
-    }
-    fn namespace(&self, mut scope: ScopeId) -> ScopeId {
-        while self.graph.scope(scope).kind != ScopeKind::Namespace {
-            let Some(parent) = self.graph.scope(scope).parent else {
-                break;
-            };
-            scope = parent;
-        }
-        scope
-    }
-    fn common_namespace(&self, a: ScopeId, b: ScopeId) -> ScopeId {
-        let mut a = self.namespace(a);
-        let b = self.namespace(b);
-        while !self.graph.encloses(a, b) {
-            let Some(parent) = self.graph.scope(a).parent else {
-                break;
-            };
-            a = parent;
-        }
-        a
-    }
     pub(super) fn unqualified(
         &mut self,
         scope: ScopeId,
@@ -757,66 +877,6 @@ impl Analyzer<'_> {
             return Ok(builtin);
         }
         Ok(found)
-    }
-    pub(super) fn unqualified_declaration_result(
-        &self,
-        scope: ScopeId,
-        name: ValueKey,
-        filter: Filter,
-    ) -> Result<LookupResult, Error> {
-        self.graph.names.lookup();
-        let mut visited = HashSet::new();
-        let mut pending = Vec::new();
-        let mut current = Some(scope);
-        let mut bridged = false;
-        let mut outside = false;
-        while let Some(scope) = current {
-            let node = self.graph.scope(scope);
-            if node.kind == ScopeKind::TemplateParameters {
-                if outside {
-                    current = node.parent;
-                    continue;
-                }
-                bridged |= node.template_bridge;
-            } else {
-                outside = bridged;
-            }
-            let mut result = self.class_lookup_in(scope, name, filter, true)?;
-            let mut frontier: Vec<_> = self.graph.visible_edges(scope, false).collect();
-            while let Some(nominated) = frontier.pop() {
-                if !visited.insert(nominated) {
-                    continue;
-                }
-                pending.push((nominated, self.common_namespace(scope, nominated)));
-                frontier.extend(self.graph.visible_edges(nominated, false));
-            }
-            let mut index = 0;
-            while index < pending.len() {
-                let (nominated, home) = pending[index];
-                if home == scope {
-                    self.merge(&mut result, &self.own_lookup(nominated, name, filter));
-                    pending.swap_remove(index);
-                } else {
-                    index += 1;
-                }
-            }
-            if result.binding.is_some() {
-                if let Some(binding) = result.binding
-                    && ((node.kind == ScopeKind::TemplateParameters
-                        && self.graph.binding(binding).kind != BindingKind::Enumerator)
-                        || self.graph.dependent_binding(binding)
-                        || (node.kind == ScopeKind::Class && self.dependent_lookup_class(scope)))
-                {
-                    self.note_dependent_use();
-                } else if node.kind == ScopeKind::TemplateParameters {
-                    self.value_parameter_uses
-                        .set(self.value_parameter_uses.get().wrapping_add(1));
-                }
-                return Ok(result);
-            }
-            current = self.graph.scope(scope).parent;
-        }
-        Ok(LookupResult::default())
     }
     pub(super) fn component_name(kind: NameKind) -> Result<NameId, Error> {
         match kind {

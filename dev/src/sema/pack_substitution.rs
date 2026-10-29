@@ -50,7 +50,7 @@ impl Analyzer<'_> {
                 }
                 continue;
             };
-            let packs = self.type_pack_pattern(element, true)?;
+            let packs = self.type_pack_pattern(element, true);
             let has_parameters = !packs.parameters.is_empty();
             let mut indices = Vec::new();
             let mut unknown = false;
@@ -163,7 +163,7 @@ impl Analyzer<'_> {
         let TypeKind::Expansion(pattern) = self.graph.types.get(expansion).kind else {
             return Ok(vec![expansion]);
         };
-        let packs = self.type_pack_pattern(pattern, true)?;
+        let packs = self.type_pack_pattern(pattern, true);
         if !packs.parameters.is_empty() || packs.bound.is_empty() || packs.expression {
             return Ok(vec![expansion]);
         }

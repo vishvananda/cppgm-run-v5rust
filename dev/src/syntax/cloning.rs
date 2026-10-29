@@ -16,7 +16,7 @@ use super::{
 use crate::support::stack::StackBudget;
 mod expansions;
 use expansions::Expansion;
-pub(crate) use expansions::{CopyState, PackExpander};
+pub(crate) use expansions::{CopyState, NameUses, PackExpander};
 
 pub(crate) struct Cloner<'a> {
     tree: &'a mut Tree,
@@ -320,6 +320,7 @@ impl<'a> Cloner<'a> {
             ExprKind::PackExpansion(_) | ExprKind::Fold { .. }
         ) && self.collecting()
         {
+            self.collect_nested_expression(node.kind)?;
             return Ok(id);
         }
         node.kind = match node.kind {
