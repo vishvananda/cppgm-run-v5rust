@@ -307,7 +307,7 @@ impl Analyzer<'_> {
             )),
             TypeKind::Class(class) if !self.graph.aggregate_class(class) => {
                 let constructor = self.default_constructor(class, location)?;
-                self.validate_constructor_use(constructor, scope, location)?;
+                self.validate_constructor_use(constructor, class, scope, location)?;
                 self.demand_constructor_use(constructor)?;
                 // Value-initializing an omitted aggregate element calls its
                 // constructor, even for an anonymous member object. A written

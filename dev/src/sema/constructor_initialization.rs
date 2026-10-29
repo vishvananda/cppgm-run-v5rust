@@ -359,7 +359,7 @@ impl Analyzer<'_> {
         let args = argument_buffer.as_slice();
         if args.is_empty() && self.class_has_default_constructor(class)? {
             let constructor = self.default_constructor(class, location)?;
-            self.validate_constructor_use(constructor, scope, location)?;
+            self.validate_constructor_use(constructor, class, scope, location)?;
             self.demand_constructor_use(constructor)?;
             self.note_throwing_constructor(constructor);
             if let Some(id) = list {
@@ -548,7 +548,7 @@ impl Analyzer<'_> {
                 ));
             }
             let constructor = self.selected_constructor_plan(selected.binding, location)?;
-            self.validate_constructor_use(constructor, scope, location)?;
+            self.validate_constructor_use(constructor, class, scope, location)?;
             self.apply_call_arguments(selected, args, scope, &scratch)?;
             self.demand_constructor_use(constructor)?;
             self.note_throwing_constructor(constructor);
@@ -604,20 +604,15 @@ impl Analyzer<'_> {
     pub(super) fn validate_constructor_use(
         &mut self,
         id: ConstructorId,
+        destination: EntityId,
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<(), Error> {
         if self.graph.constructors.get(id).deleted {
             self.emit_substitution_failure(location, "use of a deleted function", false)?;
         }
-        if let Some(binding) = self.graph.constructors.get(id).binding {
-            self.check_special_use_access(
-                binding,
-                self.base_object
-                    .unwrap_or(self.graph.constructors.get(id).class),
-                scope,
-                location,
-            )?;
+        if let Some(function) = self.graph.constructors.get(id).declaration {
+            self.check_constructor_function_access(function, destination, scope, location, None)?;
         }
         Ok(())
     }

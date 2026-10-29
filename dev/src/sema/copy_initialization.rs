@@ -1003,7 +1003,7 @@ impl Analyzer<'_> {
             CopyOrigin::Declared(binding) => self.selected_constructor_plan(binding, location)?,
             CopyOrigin::Implicit { .. } => self.copy_constructor_plan(class, selected, location)?,
         };
-        self.validate_constructor_use(constructor, scope, location)?;
+        self.validate_constructor_use(constructor, class, scope, location)?;
         let sequence = candidate.argument.unwrap_or(ArgumentSequence {
             conversion: selected.binding,
             application: Some(selected.binding),

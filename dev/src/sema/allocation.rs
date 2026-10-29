@@ -530,7 +530,7 @@ impl Analyzer<'_> {
             }
         } else if let Some(class) = class {
             let constructor = self.default_constructor(class, location)?;
-            self.validate_constructor_use(constructor, scope, location)?;
+            self.validate_constructor_use(constructor, class, scope, location)?;
             self.validate_const_default(target, constructor, location)?;
             self.demand_constructor_use(constructor)?;
             self.note_throwing_constructor(constructor);

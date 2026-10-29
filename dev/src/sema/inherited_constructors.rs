@@ -60,6 +60,9 @@ impl InheritedConstructors {
     pub(super) fn source(&self, function: EntityId) -> Option<BindingId> {
         self.sources.get(&function).map(|record| record.source)
     }
+    pub(super) fn root(&self, function: EntityId) -> Option<EntityId> {
+        self.sources.get(&function).map(|record| record.root)
+    }
     pub(super) fn full_root(&self, function: EntityId) -> Option<EntityId> {
         self.sources
             .get(&function)

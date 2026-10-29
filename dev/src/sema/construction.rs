@@ -281,6 +281,7 @@ impl Analyzer<'_> {
             let constructor = self.default_constructor(class, location)?;
             self.validate_constructor_use(
                 constructor,
+                class,
                 self.graph.binding_scope(binding),
                 location,
             )?;
@@ -677,8 +678,14 @@ impl Analyzer<'_> {
                     .entity(class)
                     .scope
                     .ok_or(Error::Invariant("constructor class without scope"))?;
-                if let Some(binding) = child.binding {
-                    self.check_direct_member_access(binding, scope, SourceOffset(0))?;
+                if let Some(function) = child.declaration {
+                    self.check_constructor_function_access(
+                        function,
+                        child_class,
+                        scope,
+                        SourceOffset(0),
+                        Some(child_class),
+                    )?;
                 }
                 self.validate_const_default(ty, id, SourceOffset(0))?;
                 subobjects.push(MemberConstruction {
@@ -863,11 +870,17 @@ impl Analyzer<'_> {
             .ok_or(Error::Invariant("constructor class without scope"))?;
         for base in bases {
             if !base.forwards
-                && let Some(binding) = base
+                && let Some(function) = base
                     .constructor
-                    .and_then(|id| self.graph.constructors.get(id).binding)
+                    .and_then(|id| self.graph.constructors.get(id).declaration)
             {
-                self.check_special_member_access(binding, class, scope, SourceOffset(0))?;
+                self.check_constructor_function_access(
+                    function,
+                    base.class,
+                    scope,
+                    SourceOffset(0),
+                    Some(class),
+                )?;
             }
         }
         Ok(())
@@ -1491,7 +1504,7 @@ impl Analyzer<'_> {
             return Ok(None);
         };
         let constructor = self.default_constructor(child, initializer.location)?;
-        self.validate_constructor_use(constructor, scope, initializer.location)?;
+        self.validate_constructor_use(constructor, child, scope, initializer.location)?;
         Ok(Some((constructor, ConstructorArguments::Value)))
     }
 

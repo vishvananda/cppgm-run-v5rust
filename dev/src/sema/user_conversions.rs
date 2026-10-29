@@ -368,7 +368,13 @@ impl Analyzer<'_> {
             self.class_parameter_destruction(sequence.conversion.result, scope, location)?;
         }
         let constructor = self.selected_constructor_plan(binding, location)?;
-        self.validate_constructor_use(constructor, scope, location)?;
+        let class = self
+            .graph
+            .entity(self.graph.binding(binding).entity)
+            .member_function
+            .ok_or(Error::Invariant("converting constructor without owner"))?
+            .class;
+        self.validate_constructor_use(constructor, class, scope, location)?;
         self.check_inherited_constructor_access(binding, location)?;
         if matches!(
             self.graph.types.get(sequence.conversion.target).kind,

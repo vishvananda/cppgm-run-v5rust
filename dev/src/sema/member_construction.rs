@@ -176,7 +176,7 @@ impl Analyzer<'_> {
                 }
                 if let TypeKind::Class(child) = self.graph.types.get(object).kind {
                     let constructor = self.default_constructor(child, location)?;
-                    self.validate_constructor_use(constructor, scope, location)?;
+                    self.validate_constructor_use(constructor, child, scope, location)?;
                     if !matches!(self.graph.types.get(ty).kind, TypeKind::Array { .. }) {
                         self.demand_constructor_use(constructor)?;
                     }

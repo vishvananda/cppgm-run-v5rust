@@ -3,7 +3,7 @@
 use super::{
     Error,
     analyzer::Analyzer,
-    graph::{BindingId, BindingKind, EntityId, ScopeId, ScopeKind},
+    graph::{BindingId, BindingKind, EntityId, MemberKey, MemberKind, ScopeId, ScopeKind},
     member_expressions::AccessFailure,
 };
 use crate::support::source::SourceOffset;
@@ -207,6 +207,69 @@ impl Analyzer<'_> {
         }
         self.emit_access_failure(failure, location)
     }
+    /// Source `check_special_access` for a selected constructor. The destination
+    /// class's overload set owns access even if lookup retained a base function.
+    pub(super) fn check_constructor_function_access(
+        &mut self,
+        function: EntityId,
+        destination: EntityId,
+        scope: ScopeId,
+        location: SourceOffset,
+        object: Option<EntityId>,
+    ) -> Result<(), Error> {
+        let inherited = self.graph.inherited_constructors.root(function);
+        let entity = self.graph.entity(function);
+        if inherited.is_none()
+            && (entity.copy_origin == super::copy_construction::Origin::Implicit
+                || entity
+                    .constructor
+                    .is_some_and(|id| self.graph.constructors.get(id).binding.is_none()))
+        {
+            return Ok(());
+        }
+        if self.graph.entity(destination).scope.is_none() {
+            return Ok(());
+        }
+        let acted = object.or(self.base_object).unwrap_or(destination);
+        if entity.template_head.is_none()
+            && let Some(key) = entity.member_function
+            && key.kind == MemberKind::Constructor
+            && let Some(binding) = self.graph.member_function(MemberKey {
+                class: destination,
+                shape: None,
+                ..key
+            })
+            && self.graph.binding(binding).entity == function
+        {
+            return self.check_declaration_member_access(
+                binding,
+                destination,
+                Some(acted),
+                scope,
+                location,
+            );
+        }
+        let primary = self
+            .graph
+            .function_templates
+            .primary(function)
+            .or_else(|| inherited.and_then(|root| self.graph.function_templates.primary(root)))
+            .map_or(function, |binding| self.graph.binding(binding).entity);
+        for index in 0..self.graph.entity(destination).declared_constructors.len() {
+            let binding = self.graph.entity(destination).declared_constructors[index];
+            if self.graph.binding(binding).entity == primary {
+                return self.check_declaration_member_access(
+                    binding,
+                    destination,
+                    Some(acted),
+                    scope,
+                    location,
+                );
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn check_special_use_access(
         &mut self,
         binding: BindingId,
@@ -357,5 +420,58 @@ mod tests {
         );
         assert!(analyzer.declaration_access.pending.is_empty());
         assert!(analyzer.declaration_access.context.scope.is_none());
+    }
+
+    #[test]
+    fn constructor_access_keeps_destination_and_acted_object_separate() {
+        let source = SourceBuffer::new(
+            b"struct Base{protected:Base();};struct Derived:Base{};struct Other{};".to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"constructor-access").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let names = [b"Base".as_slice(), b"Derived", b"Other"]
+            .map(|name| cursor.intern_name(name).unwrap());
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        analyzer.declarations(declarations, global).unwrap();
+        let [base, derived, other] = names.map(|name| {
+            analyzer
+                .graph
+                .binding(analyzer.graph.own(global, name, Filter::Prefix).unwrap())
+                .entity
+        });
+        let scope = analyzer.graph.entity(derived).scope.unwrap();
+        let binding = analyzer.graph.entity(base).declared_constructors[0];
+        let function = analyzer.graph.binding(binding).entity;
+        let location = crate::support::source::SourceOffset(0);
+        let demands = analyzer.graph.root_demands.as_slice().len();
+        assert!(
+            analyzer
+                .check_constructor_function_access(function, base, scope, location, None)
+                .is_err()
+        );
+        analyzer.base_object = Some(derived);
+        analyzer
+            .check_constructor_function_access(function, base, scope, location, None)
+            .unwrap();
+        assert!(
+            analyzer
+                .check_constructor_function_access(function, base, scope, location, Some(base))
+                .is_err()
+        );
+        analyzer
+            .check_constructor_function_access(function, base, scope, location, Some(derived))
+            .unwrap();
+        analyzer
+            .check_constructor_function_access(function, other, global, location, None)
+            .unwrap();
+        assert_eq!(analyzer.base_object, Some(derived));
+        assert_eq!(analyzer.graph.root_demands.as_slice().len(), demands);
+        assert!(analyzer.graph.entity(function).constructor.is_none());
     }
 }
