@@ -230,7 +230,7 @@ impl Analyzer<'_> {
         if self.graph.aggregate_class(class) {
             return Ok(true);
         }
-        for index in 0..self.graph.entity(class).declared_constructors.len() {
+        for index in (0..self.graph.entity(class).declared_constructors.len()).rev() {
             let binding = self.graph.entity(class).declared_constructors[index];
             let function = self.graph.binding(binding).entity;
             if self.graph.entity(function).copy_kind.is_some() {
@@ -252,11 +252,16 @@ impl Analyzer<'_> {
         // An unavailable/deleted implicit default is a negative suitability
         // query, not a use of that constructor. Actual initialization retains
         // its diagnostic path.
-        let id = match self.default_constructor(class, SourceOffset(0)) {
-            Ok(id) => id,
-            Err(Error::Diagnostic { .. }) => return Ok(false),
-            Err(error) => return Err(error),
+        let Some(slot) = self.queried_default_constructor_function(class)? else {
+            return Ok(false);
         };
+        let id = self
+            .graph
+            .entity(slot.function)
+            .constructor
+            .ok_or(Error::Invariant(
+                "queried default without constructor record",
+            ))?;
         self.constant_constructor_eligible(id, &mut HashMap::new())
     }
     pub(super) fn constant_constructor_eligible(
@@ -274,7 +279,11 @@ impl Analyzer<'_> {
     ) -> Result<bool, Error> {
         self.check_stack()?;
         let plan = self.graph.constructors.get(id);
-        if plan.deleted {
+        if plan.deleted
+            || plan.declaration.is_some_and(|function| {
+                self.graph.entity(function).availability == FunctionAvailability::Deleted
+            })
+        {
             return Ok(false);
         }
         if let Some(binding) = plan.binding {
@@ -372,12 +381,8 @@ impl Analyzer<'_> {
             if self.graph.unnamed_bit_field(member) {
                 continue;
             }
-            let anonymous = self
-                .graph
-                .entity(member)
-                .ty
-                .and_then(|ty| self.graph.class_of(ty))
-                .is_some_and(|class| self.graph.anonymous_member_storage(class).is_some());
+            let anonymous =
+                child.is_some_and(|id| self.graph.constructors.get(id).declaration.is_none());
             let selected = initializer.is_some()
                 || anonymous && child.is_some_and(|child| self.constant_plan_initializes(child));
             selected_count += usize::from(selected);
@@ -454,12 +459,10 @@ impl Analyzer<'_> {
                     .flatten()
                     .filter(|child| {
                         self.graph
-                            .entity(child.member)
-                            .ty
-                            .and_then(|ty| self.graph.class_of(ty))
-                            .is_some_and(|class| {
-                                self.graph.anonymous_member_storage(class).is_some()
-                            })
+                            .constructors
+                            .get(child.constructor)
+                            .declaration
+                            .is_none()
                     })
                     .map(|child| child.constructor),
             );
@@ -472,22 +475,29 @@ impl Analyzer<'_> {
         known: &mut HashMap<ConstructorId, bool>,
         depth: u32,
     ) -> Result<bool, Error> {
-        for index in 0..self.graph.constructors.get(id).subobjects.len() {
-            let Some(child) = self.graph.constructors.get(id).subobjects[index] else {
+        let mut work = vec![(id, 0usize)];
+        while let Some((id, index)) = work.pop() {
+            if index == self.graph.constructors.get(id).members.len() {
+                continue;
+            }
+            work.push((id, index + 1));
+            let child =
+                self.graph.constructors.get(id).subobjects[index].map(|action| action.constructor);
+            if let Some(inner) =
+                child.filter(|&child| self.graph.constructors.get(child).declaration.is_none())
+            {
+                work.push((inner, 0));
+                continue;
+            }
+            let (member, Some(initializer)) = self.graph.constructors.get(id).members[index] else {
                 continue;
             };
-            let child = child.constructor;
-            if self.graph.constructors.get(child).nontrivial()
+            if let Some(child) = child
+                && self.graph.constructors.get(child).nontrivial()
                 && !self.constant_constructor_eligible_at(child, known, depth + 1)?
             {
                 return Ok(false);
             }
-        }
-        for index in 0..self.graph.constructors.get(id).members.len() {
-            let (member, initializer) = self.graph.constructors.get(id).members[index];
-            let Some(initializer) = initializer else {
-                continue;
-            };
             let (ast::InitializerKind::Assign(expr) | ast::InitializerKind::Braced(expr)) =
                 initializer.kind
             else {
@@ -711,12 +721,8 @@ impl Analyzer<'_> {
                 .and_then(Option::as_ref)
                 .filter(|plan| plan.member == member)
                 .map(|plan| plan.constructor);
-            let anonymous = self
-                .graph
-                .entity(member)
-                .ty
-                .and_then(|ty| self.graph.class_of(ty))
-                .is_some_and(|class| self.graph.anonymous_member_storage(class).is_some());
+            let anonymous =
+                child.is_some_and(|id| self.graph.constructors.get(id).declaration.is_none());
             let selected = initializer.is_some()
                 || anonymous && child.is_some_and(|child| self.constant_plan_initializes(child));
             selected_count += usize::from(selected);

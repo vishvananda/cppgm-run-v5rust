@@ -1089,6 +1089,12 @@ impl Analyzer<'_> {
             .graph
             .entity(function)
             .scope
+            .or_else(|| {
+                self.graph
+                    .inherited_constructors
+                    .source(function)
+                    .and_then(|_| self.graph.entity(function).home)
+            })
             .ok_or(Error::Invariant("constant function without scope"))?;
         let mut frame = Frame::new(returns, scope, super::constexpr_frames::FrameRole::Ordinary);
         frame.source_function = Some(super::predefined_names::SourceFunction::Function(function));

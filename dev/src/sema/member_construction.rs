@@ -219,26 +219,6 @@ impl Analyzer<'_> {
             subobjects,
         })
     }
-    /// Source `inner_plan_facts/plan_nothrow` observes each member's retained
-    /// initializer result before querying its selected constructor.
-    pub(super) fn planned_members_nothrow(
-        &mut self,
-        members: &[(EntityId, Option<ast::Initializer>)],
-        written: &[bool],
-        subobjects: &[Option<super::construction::MemberConstruction>],
-    ) -> Result<bool, Error> {
-        let mut nothrow = true;
-        for (index, &(member, initializer)) in members.iter().enumerate() {
-            if initializer.is_some() && written.get(index) != Some(&true) {
-                nothrow &= !self.graph.member_initializers.throwing(member);
-            }
-            if let Some(child) = subobjects[index] {
-                nothrow = nothrow && self.subobject_constructor_nothrow(child.constructor)?;
-            }
-        }
-        Ok(nothrow)
-    }
-
     fn anonymous_member_plan<'a>(
         &mut self,
         class: EntityId,

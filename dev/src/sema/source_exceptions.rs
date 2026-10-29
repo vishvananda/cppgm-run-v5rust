@@ -314,7 +314,7 @@ impl Analyzer<'_> {
         if let CopyOrigin::Declared(binding) = selected.origin {
             self.check_special_member_access(binding, class, scope, location)?;
         }
-        let constructor = self.copy_constructor_plan(class, selected, location)?;
+        let constructor = self.copy_constructor_plan(class, selected)?;
         self.demand_constructor_use(constructor)?;
         Ok(constructor)
     }

@@ -154,6 +154,9 @@ impl super::graph::Graph {
         if let super::construction::ConstructorExceptionSource::ComputedDefault {
             constructor,
             ..
+        }
+        | super::construction::ConstructorExceptionSource::InheritedPlan {
+            constructor, ..
         } = entity.constructor_exceptions
         {
             return self.constructors.get(constructor).nothrow;
@@ -172,6 +175,9 @@ impl super::graph::Graph {
         if let super::construction::ConstructorExceptionSource::ComputedDefault {
             constructor,
             ..
+        }
+        | super::construction::ConstructorExceptionSource::InheritedPlan {
+            constructor, ..
         } = self.entity(function).constructor_exceptions
         {
             self.constructors.set_nothrow(constructor, nothrow);
@@ -191,6 +197,10 @@ impl super::graph::Graph {
         if let super::construction::ConstructorExceptionSource::ComputedDefault {
             constructor,
             pending: false,
+        }
+        | super::construction::ConstructorExceptionSource::InheritedPlan {
+            constructor,
+            pending: false,
         } = entity.constructor_exceptions
         {
             return Ok(self.constructors.get(constructor).nothrow);
@@ -205,6 +215,9 @@ impl super::graph::Graph {
             let pending = matches!(
                 entity.constructor_exceptions,
                 super::construction::ConstructorExceptionSource::ComputedDefault {
+                    pending: true,
+                    ..
+                } | super::construction::ConstructorExceptionSource::InheritedPlan {
                     pending: true,
                     ..
                 }
@@ -334,6 +347,24 @@ impl Analyzer<'_> {
     pub(super) fn function_may_throw(&mut self, entity: EntityId) -> Result<bool, Error> {
         if self.graph.entity(entity).builtin.is_some() {
             return Ok(false);
+        }
+        if let super::construction::ConstructorExceptionSource::InheritedPlan {
+            constructor,
+            pending,
+        } = self.graph.entity(entity).constructor_exceptions
+        {
+            if pending && self.graph.entity(entity).template_head.is_none() {
+                // Consume before any subobject/default-expression query. Failure
+                // and recursive reads retain the prior source function seed.
+                self.graph.entity_mut(entity).constructor_exceptions =
+                    super::construction::ConstructorExceptionSource::InheritedPlan {
+                        constructor,
+                        pending: false,
+                    };
+                let nothrow = self.inherited_plan_nothrow(constructor)?;
+                self.graph.constructors.set_nothrow(constructor, nothrow);
+            }
+            return Ok(!self.graph.constructors.get(constructor).nothrow);
         }
         if let super::construction::ConstructorExceptionSource::ComputedDefault {
             constructor,

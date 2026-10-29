@@ -524,6 +524,47 @@ impl Graph {
     pub(crate) fn lower_virtual_destructor(&self, class: EntityId) -> bool {
         self.virtuals.destructor(class).is_some()
     }
+    pub(crate) fn demand_constructor_object_pointer(
+        &mut self,
+        id: ConstructorId,
+    ) -> Result<(), Error> {
+        if self.constructors.get(id).object_pointer.is_none() {
+            let object = self.lower_entity_type(self.constructors.get(id).class)?;
+            let pointer = self.types.pointer(object)?;
+            self.constructors.record_object_pointer(id, pointer);
+        }
+        Ok(())
+    }
+    pub(crate) fn lower_constructor_synthesized(&self, id: ConstructorId) -> bool {
+        let plan = self.constructors.get(id);
+        let Some(function) = plan.declaration else {
+            return false;
+        };
+        let entity = self.entity(function);
+        let synthesized = plan.binding.is_none()
+            || self.inherited_constructors.source(function).is_some()
+            || entity.copy_origin == super::copy_construction::Origin::Implicit
+            || matches!(
+                entity.special_definition,
+                Some(super::special_members::SpecialDefinition::Defaulted { first: true, .. })
+            )
+            || matches!(
+                entity.special_definition,
+                Some(super::special_members::SpecialDefinition::Defaulted { .. })
+            ) && entity.inline == super::specifiers::InlinePreference::Inline;
+        synthesized && (entity.copy_kind.is_some() || plan.nontrivial())
+    }
+    pub(crate) fn lower_constructor_definition_available(&self, id: ConstructorId) -> bool {
+        let Some(function) = self.constructors.get(id).declaration else {
+            return false;
+        };
+        let entity = self.entity(function);
+        entity.defined
+            && self.lower_function_body(function).is_some()
+            && (entity.inline == super::specifiers::InlinePreference::Inline
+                || entity.function.is_some_and(|facts| facts.internal_linkage)
+                    && (self.lower_reserved_body(function) || self.lower_always_inline(function)))
+    }
     pub(crate) fn lower_constructor_trivial(&self, id: ConstructorId) -> bool {
         !self.constructors.get(id).nontrivial()
     }
@@ -1903,6 +1944,10 @@ impl Graph {
             nothrow: if let super::construction::ConstructorExceptionSource::ComputedDefault {
                 constructor,
                 ..
+            }
+            | super::construction::ConstructorExceptionSource::InheritedPlan {
+                constructor,
+                ..
             } = entity.constructor_exceptions
             {
                 self.constructors.get(constructor).nothrow
@@ -2610,8 +2655,7 @@ impl Graph {
         self.lower_anonymous_member_offset(self.binding(binding).entity, facts.member_naming)
     }
     pub(crate) fn lower_anonymous_constructor(&self, id: ConstructorId) -> bool {
-        self.anonymous_member_storage(self.constructors.get(id).class)
-            .is_some()
+        self.constructors.get(id).declaration.is_none()
     }
     pub(crate) fn lower_anonymous_member_offset(
         &self,

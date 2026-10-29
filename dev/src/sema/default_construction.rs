@@ -51,6 +51,9 @@ struct Frame {
     pending: Option<Failure>,
     object: Option<EntityId>,
     deleted: bool,
+    implicit_facts: bool,
+    forwarded: Option<BindingId>,
+    location: SourceOffset,
 }
 impl Analyzer<'_> {
     pub(super) fn implicit_constructor_function(
@@ -225,7 +228,68 @@ impl Analyzer<'_> {
             pending,
             object: self.base_object,
             deleted: false,
+            implicit_facts: true,
+            forwarded: None,
+            location: SourceOffset(0),
         })
+    }
+
+    /// The inheriting definition owns only its structure here. Its Soft scope
+    /// and deletion flag belong to the caller; exception facts wait for demand.
+    pub(super) fn inherited_structural_plan(
+        &mut self,
+        binding: BindingId,
+        class: EntityId,
+        location: SourceOffset,
+    ) -> Result<ConstructorId, Error> {
+        let function = self.graph.binding(binding).entity;
+        let id = if let Some(id) = self.graph.entity(function).constructor {
+            id
+        } else {
+            self.default_header(
+                class,
+                Some(DefaultFunction {
+                    function,
+                    declared: Some(binding),
+                }),
+            )?
+        };
+        if self.graph.constructors.get(id).facts != ConstructorFacts::Declaration {
+            return Ok(id);
+        }
+        let scope = self
+            .graph
+            .entity(class)
+            .scope
+            .ok_or(Error::Invariant("inherited plan without class scope"))?;
+        let forwarded = self
+            .graph
+            .inherited_constructors
+            .source(function)
+            .ok_or(Error::Invariant("inherited plan without source"))?;
+        let frame = Frame {
+            root: id,
+            class,
+            scope,
+            entries: self.default_skeleton(id)?,
+            next: 0,
+            waiting: None,
+            pending: None,
+            object: self.base_object,
+            deleted: false,
+            implicit_facts: false,
+            forwarded: Some(forwarded),
+            location,
+        };
+        let mut work = vec![frame];
+        let result = self.default_function_frames(&mut work);
+        if result.is_err() {
+            while let Some(frame) = work.pop() {
+                self.restore_default_frame(&frame);
+            }
+        }
+        result?;
+        Ok(id)
     }
 
     fn default_function_plan_state(
@@ -244,7 +308,7 @@ impl Analyzer<'_> {
         }
     }
 
-    fn default_header(
+    pub(super) fn default_header(
         &mut self,
         class: EntityId,
         slot: Option<DefaultFunction>,
@@ -424,6 +488,13 @@ impl Analyzer<'_> {
                 continue;
             }
             let frame = work.pop().ok_or(Error::Invariant("default frame stack"))?;
+            if !frame.implicit_facts {
+                self.restore_default_frame(&frame);
+                if frame.deleted {
+                    self.graph.constructors.mark_default_deleted(frame.root);
+                }
+                continue;
+            }
             let failed = self.graph.analysis.substitution.current().failure.is_some();
             let deleted = frame.deleted || failed;
             let trivial = !self.graph.lower_dynamic_class(frame.class) && !failed;
@@ -465,15 +536,36 @@ impl Analyzer<'_> {
                 indirect,
             } => {
                 let plan = self.graph.constructors.get(owner);
-                (
-                    (if indirect {
-                        &plan.indirect_bases
+                let class = (if indirect {
+                    &plan.indirect_bases
+                } else {
+                    &plan.bases
+                })[index]
+                    .class;
+                if let Some(source) = frame.forwarded.filter(|&binding| {
+                    self.graph
+                        .entity(self.graph.binding(binding).entity)
+                        .member_function
+                        .is_some_and(|member| member.class == class)
+                }) {
+                    let function = self.graph.binding(source).entity;
+                    let constructor = if let Some(id) = self.graph.entity(function).constructor {
+                        id
                     } else {
-                        &plan.bases
-                    })[index]
-                        .class,
-                    None,
-                )
+                        self.default_header(
+                            class,
+                            Some(DefaultFunction {
+                                function,
+                                declared: Some(source),
+                            }),
+                        )?
+                    };
+                    self.graph
+                        .constructors
+                        .set_forwarded_base(owner, index, indirect, constructor);
+                    return Ok(None);
+                }
+                (class, None)
             }
             Entry::Member { owner, index } => {
                 let holder = self.graph.constructors.get(owner).class;
@@ -524,12 +616,12 @@ impl Analyzer<'_> {
 
     fn complete_default_entry(&mut self, frame: &Frame, waiting: Waiting) -> Result<(), Error> {
         let selected = if let Some(slot) = waiting.selected {
-            self.check_function_not_deleted(slot.function, SourceOffset(0))?;
+            self.check_function_not_deleted(slot.function, frame.location)?;
             self.check_constructor_function_access(
                 slot.function,
                 waiting.class,
                 frame.scope,
-                SourceOffset(0),
+                frame.location,
                 None,
             )?;
             Some(
@@ -540,7 +632,7 @@ impl Analyzer<'_> {
             )
         } else {
             self.emit_substitution_failure(
-                SourceOffset(0),
+                frame.location,
                 "no default constructor for the class",
                 false,
             )?;
@@ -569,7 +661,7 @@ impl Analyzer<'_> {
                     .object_type
                     .is_some_and(|ty| self.graph.types.get(ty).cv.0 & 1 != 0)
                 {
-                    self.check_const_default(waiting.class, waiting.selected, SourceOffset(0))?;
+                    self.check_const_default(waiting.class, waiting.selected, frame.location)?;
                 }
             }
         }

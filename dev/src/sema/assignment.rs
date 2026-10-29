@@ -85,7 +85,7 @@ mod tests {
         let child = plan.class;
         assert_eq!(
             analyzer
-                .copy_constructor_plan(child, action.parameter_copy.unwrap(), SourceOffset(0))
+                .copy_constructor_plan(child, action.parameter_copy.unwrap())
                 .unwrap(),
             constructor
         );
@@ -342,7 +342,7 @@ impl Analyzer<'_> {
                         .graph
                         .class_of(parameter)
                         .ok_or(Error::Invariant("assignment parameter class"))?;
-                    let constructor = self.copy_constructor_plan(class, copy, SourceOffset(0))?;
+                    let constructor = self.copy_constructor_plan(class, copy)?;
                     self.graph
                         .entity_mut(function)
                         .assignment

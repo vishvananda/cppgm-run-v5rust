@@ -30,6 +30,29 @@ impl Defaults {
         self.patterns.get(&entity)?.get(index).copied().flatten()
     }
 }
+impl super::graph::Graph {
+    pub(crate) fn lower_demand_default_argument(
+        &mut self,
+        tree: &mut ast::Tree,
+        cursor: &mut crate::syntax::cursor::Cursor<'_>,
+        budget: crate::support::stack::StackBudget,
+        stack_base: usize,
+        function: EntityId,
+        index: usize,
+    ) -> Result<Option<ast::ExprId>, Error> {
+        let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(self))?;
+        analyzer.set_lowering();
+        analyzer.stack_base = stack_base;
+        let result = analyzer
+            .constant_default_argument(function, index)
+            .and_then(|expression| {
+                analyzer.finish_lowering_boundaries()?;
+                Ok(expression)
+            });
+        *self = analyzer.graph;
+        result
+    }
+}
 impl Analyzer<'_> {
     /// A shared plan's selected subobject calls retain their own supplied
     /// counts. Activate their defaults only when that plan is reached.

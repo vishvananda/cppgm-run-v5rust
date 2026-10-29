@@ -606,7 +606,7 @@ impl Analyzer<'_> {
                 } else { error }
             })?;
         }
-        let constructor = self.copy_constructor_plan(class, selected, location)?;
+        let constructor = self.copy_constructor_plan(class, selected)?;
         self.demand_constructor_use(constructor)?;
         self.note_throwing_constructor(constructor);
         Ok(Some(constructor))

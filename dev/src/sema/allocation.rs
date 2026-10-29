@@ -162,7 +162,7 @@ impl Analyzer<'_> {
         // allocation_copy_ makes the selected glvalue copy callable even when
         // ordinary local initialization can transfer storage directly. Publish
         // that plan here, before lowering borrows the immutable semantic graph.
-        let constructor = self.copy_constructor_plan(class, selected, location)?;
+        let constructor = self.copy_constructor_plan(class, selected)?;
         self.demand_constructor_use(constructor)?;
         // initialize_object returns this constructor as the allocated object's
         // action. It is no longer a conversion constructing a temporary from

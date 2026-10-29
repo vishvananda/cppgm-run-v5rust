@@ -1002,12 +1002,8 @@ impl Analyzer<'_> {
                 .and_then(Option::as_ref)
                 .filter(|plan| plan.member == member)
                 .map(|plan| plan.constructor);
-            let anonymous = self
-                .graph
-                .entity(member)
-                .ty
-                .and_then(|ty| self.graph.class_of(ty))
-                .is_some_and(|class| self.graph.anonymous_member_storage(class).is_some());
+            let anonymous =
+                constructor.is_some_and(|id| self.graph.constructors.get(id).declaration.is_none());
             if anonymous {
                 if let Some(child) = constructor {
                     if place.variant().is_some() && self.constant_plan_initializes(child) {

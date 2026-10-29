@@ -102,6 +102,10 @@ impl Analyzer<'_> {
         if matches!(
             self.graph.entity(entity).constructor_exceptions,
             super::construction::ConstructorExceptionSource::ComputedDefault { pending: true, .. }
+                | super::construction::ConstructorExceptionSource::InheritedPlan {
+                    pending: true,
+                    ..
+                }
         ) || matches!(
             self.graph.entity(entity).exceptions,
             super::exceptions::ExceptionState::Pending(_)
@@ -112,6 +116,10 @@ impl Analyzer<'_> {
             )
         {
             self.function_may_throw(entity)?;
+        }
+        self.demand_specialization_body(binding);
+        if let Some(constructor) = self.graph.entity(entity).constructor {
+            self.note_initializer_constructor(constructor);
         }
         self.record_demand(Demand::Function { binding, call });
         Ok(())

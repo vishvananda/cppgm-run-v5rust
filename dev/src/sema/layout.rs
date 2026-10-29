@@ -159,20 +159,7 @@ impl Analyzer<'_> {
         work: &mut Vec<EntityId>,
         constructors: &mut Vec<super::construction::ConstructorId>,
     ) -> Result<(), Error> {
-        if self
-            .graph
-            .constructors
-            .get(constructor)
-            .object_pointer
-            .is_none()
-        {
-            let class = self.graph.constructors.get(constructor).class;
-            let object = self.graph.lower_entity_type(class)?;
-            let pointer = self.graph.types.pointer(object)?;
-            self.graph
-                .constructors
-                .record_object_pointer(constructor, pointer);
-        }
+        self.graph.demand_constructor_object_pointer(constructor)?;
         let plan = self.graph.constructors.get(constructor);
         if plan.binding.is_none()
             && let Some(function) = plan.declaration
@@ -215,6 +202,7 @@ impl Analyzer<'_> {
             plan.bases
                 .iter()
                 .chain(&plan.indirect_bases)
+                .filter(|base| !base.forwards)
                 .filter_map(|base| base.constructor),
         );
         constructors.extend(

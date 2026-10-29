@@ -191,7 +191,12 @@ impl Analyzer<'_> {
             else {
                 continue;
             };
-            let binding = self.inherited_constructor_specialization(class, binding, 1)?;
+            let binding = self.inherited_constructor_specialization(
+                class,
+                binding,
+                1,
+                crate::support::source::SourceOffset(0),
+            )?;
             let entity = self.graph.entity(self.graph.binding(binding).entity);
             if entity.explicitness == Explicitness::Explicit && !direct {
                 continue;
@@ -367,7 +372,7 @@ impl Analyzer<'_> {
         {
             self.class_parameter_destruction(sequence.conversion.result, scope, location)?;
         }
-        let constructor = self.selected_constructor_plan(binding, location)?;
+        let constructor = self.declared_constructor_plan(binding)?;
         let class = self
             .graph
             .entity(self.graph.binding(binding).entity)

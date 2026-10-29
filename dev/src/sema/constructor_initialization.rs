@@ -537,17 +537,15 @@ impl Analyzer<'_> {
             let Some(mut selected) = selected else {
                 return Ok(None);
             };
-            selected.binding =
-                self.inherited_constructor_specialization(class, selected.binding, args.len())?;
-            self.check_inherited_constructor_access(selected.binding, location)?;
+            selected.binding = self.checked_inherited_constructor(
+                class,
+                selected.binding,
+                args.len(),
+                copy_list,
+                location,
+            )?;
             let function = self.graph.binding(selected.binding).entity;
-            if copy_list && self.graph.entity(function).explicitness == Explicitness::Explicit {
-                return Err(Error::at(
-                    location,
-                    "copy-list-initialization selects an explicit constructor",
-                ));
-            }
-            let constructor = self.selected_constructor_plan(selected.binding, location)?;
+            let constructor = self.declared_constructor_plan(selected.binding)?;
             self.validate_constructor_use(constructor, class, scope, location)?;
             self.apply_call_arguments(selected, args, scope, &scratch)?;
             self.demand_constructor_use(constructor)?;
@@ -567,6 +565,33 @@ impl Analyzer<'_> {
             self.publish_constructor_list(id, target, constructor)?;
         }
         Ok(Some((constructor, arguments)))
+    }
+
+    /// Source selection publishes the inherited identity before its selected
+    /// access and copy-list explicitness checks; arguments and use come later.
+    fn checked_inherited_constructor(
+        &mut self,
+        class: EntityId,
+        binding: BindingId,
+        count: usize,
+        copy_list: bool,
+        location: SourceOffset,
+    ) -> Result<BindingId, Error> {
+        let binding = self.inherited_constructor_specialization(class, binding, count, location)?;
+        self.check_inherited_constructor_access(binding, location)?;
+        if copy_list
+            && self
+                .graph
+                .entity(self.graph.binding(binding).entity)
+                .explicitness
+                == Explicitness::Explicit
+        {
+            return Err(Error::at(
+                location,
+                "copy-list-initialization selects an explicit constructor",
+            ));
+        }
+        Ok(binding)
     }
 
     pub(super) fn check_constructor_narrowing(
@@ -622,19 +647,13 @@ impl Analyzer<'_> {
                 .uses
                 .push(super::type_queries::DeferredUse::Constructor(id));
         }
-        if self.unevaluated != 0
-            || self
-                .graph
-                .anonymous_member_storage(self.graph.constructors.get(id).class)
-                .is_some()
-        {
+        if self.unevaluated != 0 || self.graph.constructors.get(id).declaration.is_none() {
             return Ok(());
         }
-        self.note_initializer_constructor(id);
         if let Some(binding) = self.graph.constructors.get(id).binding {
-            self.demand_specialization_body(binding);
             self.demand_function(binding, true)?;
         } else {
+            self.note_initializer_constructor(id);
             self.record_demand(super::function_demands::Demand::Constructor(id));
         }
         Ok(())

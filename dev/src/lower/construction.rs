@@ -16,6 +16,12 @@ use crate::{
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+enum CallPublication {
+    Object,
+    Address,
+    Forwarded,
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum CopyCall {
     Expression,
     Direct,
@@ -369,21 +375,17 @@ impl Function<'_, '_, '_, '_> {
             !throws,
             &values,
             copy_elision,
-            publish_table,
+            if publish_table {
+                CallPublication::Object
+            } else {
+                CallPublication::Address
+            },
             argument_classes,
         );
         if throws && self.lifetime.full_expression {
             self.lifetime.call_marks.pop();
         }
         result
-    }
-    pub(super) fn emit_constructor_call(
-        &mut self,
-        entry: Entry,
-        nothrow: bool,
-        values: &[Value],
-    ) -> Result<(), Error> {
-        self.emit_constructor_call_with_elision(entry, nothrow, values, false, true, Vec::new())
     }
     pub(super) fn emit_address_constructor_call(
         &mut self,
@@ -393,7 +395,14 @@ impl Function<'_, '_, '_, '_> {
     ) -> Result<(), Error> {
         // object_lowering.cpp::construct_from demands only the constructor.
         // Its body publishes any vtable it needs when that body is lowered.
-        self.emit_constructor_call_with_elision(entry, nothrow, values, false, false, Vec::new())
+        self.emit_constructor_call_with_elision(
+            entry,
+            nothrow,
+            values,
+            false,
+            CallPublication::Address,
+            Vec::new(),
+        )
     }
     fn emit_constructor_call_with_elision(
         &mut self,
@@ -401,7 +410,7 @@ impl Function<'_, '_, '_, '_> {
         nothrow: bool,
         values: &[Value],
         copy_elision: bool,
-        publish_table: bool,
+        publication: CallPublication,
         argument_classes: Vec<(u32, crate::lowir::vocabulary::ObjectClasses)>,
     ) -> Result<(), Error> {
         // An aggregate construction's active segment also brackets a
@@ -421,10 +430,10 @@ impl Function<'_, '_, '_, '_> {
                     && self.aggregation.call_scope
                         == super::aggregate_cleanup::CallScope::FullExpression,
         )?;
-        self.symbols
-            .view(&*self.graph, &*self.tree, self.cursor)
-            .demand_entry(entry);
-        if publish_table
+        if publication != CallPublication::Forwarded {
+            self.demand_constructor_entry(entry)?;
+        }
+        if publication == CallPublication::Object
             && !self
                 .symbols
                 .view(&*self.graph, &*self.tree, self.cursor)
@@ -477,6 +486,39 @@ impl Function<'_, '_, '_, '_> {
         }
         Ok(())
     }
+    /// Source `demand_entry`: definition availability precedes variant queueing;
+    /// an external call keeps its symbol even when no definition is queued.
+    fn demand_constructor_entry(&mut self, entry: Entry) -> Result<(), Error> {
+        let Entry::Constructor(id, _) = entry else {
+            return Err(crate::sema::Error::Invariant("constructor entry demand").into());
+        };
+        let function = entry
+            .entity(&*self.graph)
+            .ok_or(crate::sema::Error::Invariant(
+                "constructor entry without function",
+            ))?;
+        if !self.graph.lower_gnu_inline(function) {
+            let available = if self.graph.lower_constructor_synthesized(id) {
+                true
+            } else if self.graph.lower_function_instantiated(function) {
+                self.graph.lower_demand_definition(
+                    self.tree,
+                    self.cursor,
+                    self.budget,
+                    self.stack_base,
+                    function,
+                )?
+            } else {
+                self.graph.lower_constructor_definition_available(id)
+            };
+            if available {
+                self.symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .demand_entry(entry);
+            }
+        }
+        Ok(())
+    }
     pub(super) fn forward_constructor(
         &mut self,
         id: ConstructorId,
@@ -497,12 +539,23 @@ impl Function<'_, '_, '_, '_> {
             .ok_or(Error::Semantic(crate::sema::Error::Invariant(
                 "forwarding outside constructor",
             )))?;
-        let own = self.graph.lower_function(function)?;
+        let signature = self.graph.lower_function(function)?.ty;
+        let TypeView::Function {
+            parameters: own, ..
+        } = self.graph.lower_type(signature)?
+        else {
+            return Err(crate::sema::Error::Invariant("inheriting constructor signature").into());
+        };
+        let own = own.to_vec();
         let mut values = vec![object];
-        for (entity, _, ty) in self.graph.lower_parameters(own.scope).collect::<Vec<_>>() {
-            let slot = self.locals.get(&entity).copied().ok_or(Error::Semantic(
-                crate::sema::Error::Invariant("forwarded parameter without slot"),
-            ))?;
+        for (index, ty) in own.into_iter().enumerate() {
+            let slot =
+                self.parameter_slots
+                    .get(index)
+                    .copied()
+                    .ok_or(crate::sema::Error::Invariant(
+                        "forwarded parameter without slot",
+                    ))?;
             values.push(
                 if matches!(self.graph.lower_type(ty)?, TypeView::Class(_)) {
                     slot
@@ -520,7 +573,14 @@ impl Function<'_, '_, '_, '_> {
         for (index, &parameter) in parameters.iter().enumerate().skip(values.len() - 1) {
             let expression = self
                 .graph
-                .lower_default(function, index)
+                .lower_demand_default_argument(
+                    self.tree,
+                    self.cursor,
+                    self.budget,
+                    self.stack_base,
+                    function,
+                    index,
+                )?
                 .ok_or(Error::Semantic(crate::sema::Error::Invariant(
                     "forwarded default missing",
                 )))?;
@@ -541,8 +601,24 @@ impl Function<'_, '_, '_, '_> {
             })?;
             values.push(value);
         }
+        if entry.hidden_vtt(&*self.graph)? {
+            let vtt = self.hidden_vtt_value()?;
+            values.insert(1, vtt);
+        }
+        self.demand_constructor_entry(entry)?;
+        let _symbol = self
+            .symbols
+            .view(&*self.graph, &*self.tree, self.cursor)
+            .entry_symbol(self.builder.program(), entry)?;
         let throws = self.entry_call_throws(entry)?;
-        self.emit_constructor_call(entry, !throws, &values)
+        self.emit_constructor_call_with_elision(
+            entry,
+            !throws,
+            &values,
+            false,
+            CallPublication::Forwarded,
+            Vec::new(),
+        )
     }
     pub(super) fn zero_class_object(
         &mut self,
@@ -632,6 +708,7 @@ impl Function<'_, '_, '_, '_> {
         variant: Variant,
         location: crate::support::source::SourceOffset,
     ) -> Result<(), Error> {
+        self.graph.demand_constructor_object_pointer(id)?;
         if let Some(actions) = self.graph.lower_constructor(id).copy {
             let actions = actions.to_vec();
             return self.copy_members(id, variant, &actions);

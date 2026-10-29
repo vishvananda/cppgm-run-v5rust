@@ -10,7 +10,6 @@ use super::{
     graph::{BindingId, EntityId},
     types::{Cv, RefKind, Scalar, TypeId, TypeKind},
 };
-use crate::support::source::SourceOffset;
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum Origin {
@@ -131,7 +130,7 @@ impl Analyzer<'_> {
         class: EntityId,
         kind: RefKind,
     ) -> Result<ConstructorId, Error> {
-        self.build_copy_plans(class, CopyOrigin::Implicit { class, kind }, SourceOffset(0))
+        self.build_copy_plans(class, CopyOrigin::Implicit { class, kind })
     }
     pub(super) fn implicit_copy_bindings(
         &mut self,
@@ -161,15 +160,14 @@ impl Analyzer<'_> {
     ) -> Result<ConstructorId, Error> {
         self.prepare_copy_children(class)?;
         self.prepare_declared_copy(binding, class)?;
-        self.build_copy_plans(class, CopyOrigin::Declared(binding), SourceOffset(0))
+        self.build_copy_plans(class, CopyOrigin::Declared(binding))
     }
     pub(super) fn copy_constructor_plan(
         &mut self,
         class: EntityId,
         selected: CopySelection,
-        location: SourceOffset,
     ) -> Result<ConstructorId, Error> {
-        self.build_copy_plans(class, selected.origin, location)
+        self.build_copy_plans(class, selected.origin)
     }
     fn copy_plan_properties(
         &self,
@@ -202,7 +200,6 @@ impl Analyzer<'_> {
         &mut self,
         class: EntityId,
         origin: CopyOrigin,
-        location: SourceOffset,
     ) -> Result<Option<ConstructorId>, Error> {
         if let Some(properties) = self.copy_plan_properties(class, origin)? {
             Ok(match self.graph.copy_properties.get(properties).plan {
@@ -210,7 +207,7 @@ impl Analyzer<'_> {
                 _ => None,
             })
         } else if let CopyOrigin::Declared(binding) = origin {
-            self.selected_constructor_plan(binding, location).map(Some)
+            self.declared_constructor_plan(binding).map(Some)
         } else {
             Err(Error::Invariant("implicit copy plan without properties"))
         }
@@ -219,9 +216,8 @@ impl Analyzer<'_> {
         &mut self,
         class: EntityId,
         origin: CopyOrigin,
-        location: SourceOffset,
     ) -> Result<ConstructorId, Error> {
-        if let Some(id) = self.ready_copy_plan(class, origin, location)? {
+        if let Some(id) = self.ready_copy_plan(class, origin)? {
             return Ok(id);
         }
         let mut work = vec![(class, origin, 0usize)];
@@ -251,10 +247,7 @@ impl Analyzer<'_> {
                     }
                     return Err(Error::Invariant("deleted subobject in copy body"));
                 };
-                if self
-                    .ready_copy_plan(child, selected.origin, location)?
-                    .is_none()
-                {
+                if self.ready_copy_plan(child, selected.origin)?.is_none() {
                     work.push((child, selected.origin, 0));
                 }
                 continue;
@@ -262,9 +255,9 @@ impl Analyzer<'_> {
             let class = *class;
             let origin = *origin;
             work.pop();
-            self.publish_copy_plan(class, origin, properties, location)?;
+            self.publish_copy_plan(class, origin, properties)?;
         }
-        self.ready_copy_plan(class, origin, location)?
+        self.ready_copy_plan(class, origin)?
             .ok_or(Error::Invariant("unfinished copy plan"))
     }
     fn publish_copy_plan(
@@ -272,7 +265,6 @@ impl Analyzer<'_> {
         class: EntityId,
         origin: CopyOrigin,
         properties: CopyPropertiesId,
-        location: SourceOffset,
     ) -> Result<ConstructorId, Error> {
         let binding = match origin {
             CopyOrigin::Declared(binding) => binding,
@@ -297,7 +289,7 @@ impl Analyzer<'_> {
                         return Err(Error::Invariant("copy action child identity"));
                     }
                     if let Some(selected) = selected {
-                        self.ready_copy_plan(child, selected.origin, location)?
+                        self.ready_copy_plan(child, selected.origin)?
                     } else if self.graph.copy_properties.get(properties).deleted {
                         // The frozen deleted-property result retains this subobject
                         // without a callable selection; explicit roots still emit it.

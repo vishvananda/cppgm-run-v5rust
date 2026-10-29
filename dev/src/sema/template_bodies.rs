@@ -125,6 +125,38 @@ impl Graph {
                 || self.function_templates.bodies.source(entity).is_some())
     }
 
+    /// The selected Lower entry needs definition availability before its call
+    /// exception query. Borrowing does not rerun the unit-tail driver.
+    pub(crate) fn lower_demand_definition(
+        &mut self,
+        tree: &mut ast::Tree,
+        cursor: &mut Cursor<'_>,
+        budget: StackBudget,
+        stack_base: usize,
+        entity: EntityId,
+    ) -> Result<bool, Error> {
+        if self.lower_gnu_inline(entity)
+            || !self.lower_function_instantiated(entity)
+            || self.function_instantiation_suppressed(entity)
+        {
+            return Ok(false);
+        }
+        let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(self))?;
+        analyzer.set_lowering();
+        analyzer.stack_base = stack_base;
+        let result = analyzer
+            .selected_function_definition(entity, false)
+            .and_then(|available| {
+                if available {
+                    analyzer.graph.boundary_roots.push(entity);
+                    analyzer.finish_lowering_boundaries()?;
+                }
+                Ok(available)
+            });
+        *self = analyzer.graph;
+        result
+    }
+
     fn defer_emission_synthesis(&mut self, entity: EntityId) -> bool {
         if self.outside_defaulted_member(entity).is_none()
             || self
@@ -485,6 +517,13 @@ impl Analyzer<'_> {
     // A constant call demands only its selected definition. The unit-tail
     // worklist observes the same states, so it cannot copy/analyze it again.
     pub(super) fn constant_function_definition(&mut self, entity: EntityId) -> Result<bool, Error> {
+        self.selected_function_definition(entity, true)
+    }
+    fn selected_function_definition(
+        &mut self,
+        entity: EntityId,
+        constant: bool,
+    ) -> Result<bool, Error> {
         let instantiated = self.graph.function_templates.primary(entity).is_some()
             || self
                 .graph
@@ -492,7 +531,12 @@ impl Analyzer<'_> {
                 .bodies
                 .source(entity)
                 .is_some();
-        if !instantiated
+        if !constant && !instantiated {
+            return Ok(self.graph.entity(entity).defined
+                && self.graph.lower_function_body(entity).is_some());
+        }
+        if constant
+            && !instantiated
             && let Some(home) = self.graph.entity(entity).home
             && self.graph.scope(home).kind == ScopeKind::Class
             && !self.graph.within_class_instance(home)
@@ -508,12 +552,13 @@ impl Analyzer<'_> {
             .function_templates
             .primary(entity)
             .map_or(entity, |binding| self.graph.binding(binding).entity);
-        if self
-            .graph
-            .function_templates
-            .bodies
-            .source(member)
-            .is_none()
+        if constant
+            && self
+                .graph
+                .function_templates
+                .bodies
+                .source(member)
+                .is_none()
             && let Some(owner) = self
                 .graph
                 .entity(member)
@@ -524,7 +569,8 @@ impl Analyzer<'_> {
         }
         let bodies = &self.graph.function_templates.bodies;
         if let Some(state) = bodies.states.get(&entity) {
-            return Ok(matches!(state, State::Complete(_) | State::Synthesized));
+            return Ok(matches!(state, State::Complete(_) | State::Synthesized)
+                || !constant && matches!(state, State::InProgress));
         }
         if let Some(source) = bodies.source(entity) {
             let definition = self.graph.entity(source);
@@ -546,6 +592,9 @@ impl Analyzer<'_> {
         if bodies.member_links.contains_key(&entity) && !bodies.members.contains_key(&entity) {
             if bodies.outside_definition(entity).is_none() {
                 return Ok(false);
+            }
+            if !constant && self.instantiate_defaulted_member(entity)? {
+                return Ok(true);
             }
             self.prepare_member_definition(entity)?;
         }
@@ -598,7 +647,7 @@ impl Analyzer<'_> {
         if let Some(body) = self.deferred_constexpr.remove(&entity) {
             self.function_body(body)?;
             if self.graph.function_templates.bodies.pending_member(entity) {
-                return self.constant_function_definition(entity);
+                return self.selected_function_definition(entity, constant);
             }
             return Ok(self.graph.entity(entity).scope.is_some());
         }

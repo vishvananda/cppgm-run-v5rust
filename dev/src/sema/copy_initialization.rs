@@ -483,7 +483,7 @@ impl Analyzer<'_> {
                 .copy_kind
                 .is_none()
         {
-            let constructor = self.selected_constructor_plan(binding, location)?;
+            let constructor = self.declared_constructor_plan(binding)?;
             self.demand_constructor_use(constructor)?;
             return Ok(CopyAction::Constructor {
                 constructor,
@@ -503,7 +503,7 @@ impl Analyzer<'_> {
             if !matches!(self.graph.entity(self.graph.binding(binding).entity).special_definition,
                 Some(SpecialDefinition::Defaulted { .. })));
         if provided || !properties.trivial || written_move || empty_lifetime {
-            let constructor = self.copy_constructor_plan(class, selected, location)?;
+            let constructor = self.copy_constructor_plan(class, selected)?;
             self.demand_constructor_use(constructor)?;
             return Ok(CopyAction::Constructor {
                 constructor,
@@ -687,7 +687,12 @@ impl Analyzer<'_> {
         if let CopyResolution::Selected(candidate) = &mut selected
             && let CopyOrigin::Declared(binding) = candidate.selection.origin
         {
-            let binding = self.inherited_constructor_specialization(class, binding, 1)?;
+            let binding = self.inherited_constructor_specialization(
+                class,
+                binding,
+                1,
+                crate::support::source::SourceOffset(0),
+            )?;
             candidate.selection.origin = CopyOrigin::Declared(binding);
             candidate.deleted |= self
                 .graph
@@ -1000,8 +1005,8 @@ impl Analyzer<'_> {
         };
         let selected = candidate.selection;
         let constructor = match selected.origin {
-            CopyOrigin::Declared(binding) => self.selected_constructor_plan(binding, location)?,
-            CopyOrigin::Implicit { .. } => self.copy_constructor_plan(class, selected, location)?,
+            CopyOrigin::Declared(binding) => self.declared_constructor_plan(binding)?,
+            CopyOrigin::Implicit { .. } => self.copy_constructor_plan(class, selected)?,
         };
         self.validate_constructor_use(constructor, class, scope, location)?;
         let sequence = candidate.argument.unwrap_or(ArgumentSequence {
