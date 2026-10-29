@@ -1892,7 +1892,13 @@ impl Graph {
             } else {
                 FunctionDefinition::Declared
             },
-            nothrow: if entity.constructor_exceptions
+            nothrow: if let super::construction::ConstructorExceptionSource::ComputedDefault {
+                constructor,
+                ..
+            } = entity.constructor_exceptions
+            {
+                self.constructors.get(constructor).nothrow
+            } else if entity.constructor_exceptions
                 == super::construction::ConstructorExceptionSource::SubobjectPlan
             {
                 entity

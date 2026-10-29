@@ -44,7 +44,8 @@ pub(super) enum DestructorSpecification {
 pub(super) enum ExceptionState {
     Absent,
     Pending(SpecificationId),
-    Evaluating,
+    // The pending boolean request is consumed, even when evaluation fails.
+    Entered,
     Value(ExceptionSet),
     Template(super::template_exceptions::TemplateException),
 }
@@ -150,6 +151,13 @@ impl super::graph::Graph {
         if entity.builtin.is_some() {
             return true;
         }
+        if let super::construction::ConstructorExceptionSource::ComputedDefault {
+            constructor,
+            ..
+        } = entity.constructor_exceptions
+        {
+            return self.constructors.get(constructor).nothrow;
+        }
         if entity.constructor_exceptions
             == super::construction::ConstructorExceptionSource::SubobjectPlan
         {
@@ -158,6 +166,16 @@ impl super::graph::Graph {
                 .is_some_and(|id| self.constructors.get(id).nothrow);
         }
         matches!(entity.exceptions, ExceptionState::Value(ExceptionSet::None))
+    }
+
+    pub(super) fn publish_constructor_noexcept(&mut self, function: EntityId, nothrow: bool) {
+        if let super::construction::ConstructorExceptionSource::ComputedDefault {
+            constructor,
+            ..
+        } = self.entity(function).constructor_exceptions
+        {
+            self.constructors.set_nothrow(constructor, nothrow);
+        }
     }
 
     pub(crate) fn lower_demand_function_nothrow(
@@ -170,6 +188,13 @@ impl super::graph::Graph {
     ) -> Result<bool, Error> {
         let function = self.lower_function_entity(function);
         let entity = self.entity(function);
+        if let super::construction::ConstructorExceptionSource::ComputedDefault {
+            constructor,
+            pending: false,
+        } = entity.constructor_exceptions
+        {
+            return Ok(self.constructors.get(constructor).nothrow);
+        }
         if entity.constructor_exceptions
             == super::construction::ConstructorExceptionSource::SubobjectPlan
         {
@@ -177,7 +202,13 @@ impl super::graph::Graph {
                 return Ok(self.constructors.get(constructor).nothrow);
             }
         } else {
-            let pending = match entity.exceptions {
+            let pending = matches!(
+                entity.constructor_exceptions,
+                super::construction::ConstructorExceptionSource::ComputedDefault {
+                    pending: true,
+                    ..
+                }
+            ) || match entity.exceptions {
                 ExceptionState::Pending(id) => !matches!(
                     self.specifications.get(id).qualifier,
                     Some(Qualifier { kind: QualifierKind::Throw(types), .. }) if !types.is_empty()
@@ -304,6 +335,22 @@ impl Analyzer<'_> {
         if self.graph.entity(entity).builtin.is_some() {
             return Ok(false);
         }
+        if let super::construction::ConstructorExceptionSource::ComputedDefault {
+            constructor,
+            pending,
+        } = self.graph.entity(entity).constructor_exceptions
+        {
+            if pending {
+                match self.graph.entity(entity).exceptions.clone() {
+                    ExceptionState::Pending(id) => self.resolve_specification(id)?,
+                    ExceptionState::Template(_) => self.resolve_specialization_exception(entity)?,
+                    _ => {
+                        self.begin_constructor_noexcept(entity);
+                    }
+                }
+            }
+            return Ok(!self.graph.constructors.get(constructor).nothrow);
+        }
         if self.pending_dynamic_throw(entity) {
             // The written nonempty list already establishes the boolean.
             // Class completion still owns publication of its adjusted types.
@@ -331,6 +378,43 @@ impl Analyzer<'_> {
             self.graph.entity(entity).exceptions,
             ExceptionState::Value(ExceptionSet::None)
         ))
+    }
+
+    pub(super) fn pending_constructor_noexcept(&self, entity: EntityId) -> bool {
+        match self.graph.entity(entity).exceptions {
+            ExceptionState::Pending(id) => {
+                let pending = self.graph.specifications.get(id);
+                !pending.done
+                    && matches!(
+                        pending.qualifier,
+                        Some(Qualifier {
+                            kind: QualifierKind::Noexcept(Some(_)),
+                            ..
+                        })
+                    )
+            }
+            ExceptionState::Template(_) => true,
+            _ => false,
+        }
+    }
+
+    /// Consume the source pending bit before its written operand is evaluated.
+    pub(super) fn begin_constructor_noexcept(&mut self, entity: EntityId) -> bool {
+        if let super::construction::ConstructorExceptionSource::ComputedDefault {
+            constructor,
+            pending,
+        } = self.graph.entity(entity).constructor_exceptions
+        {
+            if !pending {
+                return false;
+            }
+            self.graph.entity_mut(entity).constructor_exceptions =
+                super::construction::ConstructorExceptionSource::ComputedDefault {
+                    constructor,
+                    pending: false,
+                };
+        }
+        true
     }
     pub(super) fn declarator_specifies_exceptions(
         &self,
@@ -662,8 +746,25 @@ impl Analyzer<'_> {
             self.graph.specifications.complete(id);
             return Ok(());
         }
+        let written_operand = pending.first
+            && matches!(
+                pending.qualifier,
+                Some(Qualifier {
+                    kind: QualifierKind::Noexcept(Some(_)),
+                    ..
+                })
+            );
+        if written_operand && !self.begin_constructor_noexcept(pending.entity) {
+            self.graph.specifications.complete(id);
+            return Ok(());
+        }
+        if written_operand {
+            // Source clears noexcept_pending before entering the operand. This
+            // is consumption, not a successful-specification memo on hard Err.
+            self.graph.specifications.complete(id);
+        }
         if pending.first {
-            self.graph.entity_mut(pending.entity).exceptions = ExceptionState::Evaluating;
+            self.graph.entity_mut(pending.entity).exceptions = ExceptionState::Entered;
         }
         let saved_limit = self.graph.lookup_limit;
         self.graph.lookup_limit = Some(pending.limit);
@@ -698,13 +799,17 @@ impl Analyzer<'_> {
         let result = match result {
             Ok(result) => result,
             Err(error) => {
-                if pending.first {
+                if pending.first && !written_operand {
                     self.graph.entity_mut(pending.entity).exceptions = ExceptionState::Pending(id);
                 }
                 return Err(error);
             }
         };
         if let Some(value) = result {
+            if written_operand {
+                self.graph
+                    .publish_constructor_noexcept(pending.entity, value == ExceptionSet::None);
+            }
             self.graph.entity_mut(pending.entity).exceptions = ExceptionState::Value(value);
         }
         self.graph.specifications.complete(id);
@@ -1168,7 +1273,7 @@ impl Analyzer<'_> {
             }
             ExceptionState::Template(_) | ExceptionState::Value(_) => return Ok(()),
             ExceptionState::Absent => (),
-            ExceptionState::Pending(_) | ExceptionState::Evaluating => {
+            ExceptionState::Pending(_) | ExceptionState::Entered => {
                 return Err(Error::Invariant(
                     "pending ordinary specification under template head",
                 ));
@@ -1399,6 +1504,102 @@ mod tests {
     };
 
     #[test]
+    fn computed_constructor_flags_retain_pending_seed_and_consume_failure() {
+        for (operand, fails) in [("false", false), ("missing", true)] {
+            let text = format!(
+                "struct A{{A()noexcept({operand})=default;}};struct B{{void ordinary()noexcept({operand});}};"
+            );
+            let source = SourceBuffer::new(text.into_bytes()).unwrap();
+            let mut unit =
+                SyntaxUnit::new(Preprocessor::with_name(&source, b"constructor-raw-flag").unwrap());
+            unit.parse().unwrap();
+            let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+            let name = cursor.intern_name(b"A").unwrap();
+            let b_name = cursor.intern_name(b"B").unwrap();
+            let ordinary_name = cursor.intern_name(b"ordinary").unwrap();
+            let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+            analyzer.set_lowering();
+            let marker = 0u8;
+            analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+            let global = analyzer.graph.global;
+            analyzer.declarations(declarations, global).unwrap();
+            let class = analyzer
+                .graph
+                .binding(
+                    analyzer
+                        .graph
+                        .own(global, name, super::super::lookup::Filter::Prefix)
+                        .unwrap(),
+                )
+                .entity;
+            let constructor = analyzer
+                .default_constructor(class, SourceOffset(0))
+                .unwrap();
+            let function = analyzer
+                .graph
+                .lower_constructor_entity(constructor)
+                .unwrap();
+            assert!(analyzer.graph.function_nothrow_value(function));
+            assert!(analyzer.graph.lower_function(function).unwrap().nothrow);
+            assert!(matches!(
+                analyzer.graph.entity(function).constructor_exceptions,
+                super::super::construction::ConstructorExceptionSource::ComputedDefault {
+                    pending: true,
+                    ..
+                }
+            ));
+            let result = analyzer.function_may_throw(function);
+            if fails {
+                assert!(result.is_err());
+            } else {
+                assert!(result.unwrap());
+            }
+            assert!(matches!(
+                analyzer.graph.entity(function).constructor_exceptions,
+                super::super::construction::ConstructorExceptionSource::ComputedDefault {
+                    pending: false,
+                    ..
+                }
+            ));
+            // The failed operand retains the true seed; successful false
+            // overwrites it. A second query never retries the consumed operand.
+            assert_eq!(analyzer.graph.function_nothrow_value(function), fails);
+            assert_eq!(
+                analyzer.graph.lower_function(function).unwrap().nothrow,
+                fails
+            );
+            assert_eq!(analyzer.function_may_throw(function).unwrap(), !fails);
+            let b = analyzer
+                .graph
+                .binding(
+                    analyzer
+                        .graph
+                        .own(global, b_name, super::super::lookup::Filter::Prefix)
+                        .unwrap(),
+                )
+                .entity;
+            let scope = analyzer.graph.entity(b).scope.unwrap();
+            let ordinary = analyzer
+                .graph
+                .binding(
+                    analyzer
+                        .graph
+                        .own(scope, ordinary_name, super::super::lookup::Filter::Ordinary)
+                        .unwrap(),
+                )
+                .entity;
+            assert!(!analyzer.graph.function_nothrow_value(ordinary));
+            let result = analyzer.function_may_throw(ordinary);
+            if fails {
+                assert!(result.is_err());
+            } else {
+                assert!(result.unwrap());
+            }
+            assert!(analyzer.function_may_throw(ordinary).unwrap());
+        }
+    }
+
+    #[test]
     fn resumed_analysis_keeps_demand_owned_specifications_and_their_scope() {
         use super::super::lookup::Filter;
         let source = SourceBuffer::new(
@@ -1478,8 +1679,15 @@ mod tests {
         assert!(graph.specifications.unit_closed());
         assert!(matches!(
             graph.entity(bad).exceptions,
-            ExceptionState::Pending(_)
+            ExceptionState::Entered
         ));
+        let failed_evaluations = graph.work().constant_evaluations;
+        assert!(
+            !graph
+                .lower_demand_function_nothrow(tree, cursor, budget, stack_base, bad)
+                .unwrap()
+        );
+        assert_eq!(graph.work().constant_evaluations, failed_evaluations);
         assert!(
             graph
                 .lower_demand_function_nothrow(tree, cursor, budget, stack_base, good)

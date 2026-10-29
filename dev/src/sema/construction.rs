@@ -35,6 +35,10 @@ enum InitializerLookup {
 pub(super) enum ConstructorExceptionSource {
     #[default]
     Declared,
+    ComputedDefault {
+        constructor: ConstructorId,
+        pending: bool,
+    },
     SubobjectPlan,
 }
 
@@ -164,6 +168,9 @@ impl Constructors {
     }
     pub(super) fn record_object_pointer(&mut self, id: ConstructorId, pointer: TypeId) {
         self.records[id.0 as usize].object_pointer = Some(pointer);
+    }
+    pub(super) fn set_nothrow(&mut self, id: ConstructorId, nothrow: bool) {
+        self.records[id.0 as usize].nothrow = nothrow;
     }
     fn record_declaration(&mut self, id: ConstructorId, declaration: EntityId) {
         self.records[id.0 as usize].declaration = Some(declaration);
@@ -757,6 +764,20 @@ impl Analyzer<'_> {
             triviality: Triviality::Trivial,
         };
         let id = self.publish_constructor(record)?;
+        if let Some(function) = declaration
+            && (binding.is_none()
+                || matches!(
+                    self.graph.entity(function).special_definition,
+                    Some(SpecialDefinition::Defaulted { first: true, .. })
+                ))
+        {
+            let pending = self.pending_constructor_noexcept(function);
+            self.graph.entity_mut(function).constructor_exceptions =
+                ConstructorExceptionSource::ComputedDefault {
+                    constructor: id,
+                    pending,
+                };
+        }
         if binding.is_none()
             && let Some(declaration) = declaration
         {
@@ -942,17 +963,9 @@ impl Analyzer<'_> {
         id: ConstructorId,
     ) -> Result<bool, Error> {
         let child = self.graph.constructors.get(id);
-        if let Some(binding) = child.binding
-            && self
-                .graph
-                .entity(self.graph.binding(binding).entity)
-                .constructor_exceptions
-                == ConstructorExceptionSource::Declared
-        {
+        if let Some(function) = child.declaration {
             // A trivial subobject still contributes its declared specification.
-            return self
-                .function_may_throw(self.graph.binding(binding).entity)
-                .map(|throws| !throws);
+            return self.function_may_throw(function).map(|throws| !throws);
         }
         Ok(child.nothrow)
     }

@@ -41,9 +41,12 @@ impl Analyzer<'_> {
         let ExceptionState::Template(specification) = self.graph.entity(entity).exceptions else {
             return Ok(());
         };
-        // Like C++ noexcept_pending, recursive queries see the conservative
-        // throwing value while this specialization's operand is evaluated.
-        self.graph.entity_mut(entity).exceptions = ExceptionState::Evaluating;
+        if !self.begin_constructor_noexcept(entity) {
+            return Ok(());
+        }
+        // Pending is consumed before cloning. A computed constructor retains
+        // its current raw flag during recursion; ordinary pending starts false.
+        self.graph.entity_mut(entity).exceptions = ExceptionState::Entered;
         let result = (|analyzer: &mut Self| {
             let prototype_type =
                 analyzer.specialization_object_signature(entity, specification.ty)?;
@@ -108,11 +111,14 @@ impl Analyzer<'_> {
         })(self);
         match result {
             Ok(value) => {
+                self.graph
+                    .publish_constructor_noexcept(entity, value == ExceptionSet::None);
                 self.graph.entity_mut(entity).exceptions = ExceptionState::Value(value);
                 Ok(())
             }
             Err(error) => {
-                self.graph.entity_mut(entity).exceptions = ExceptionState::Template(specification);
+                // Source's pending bit was consumed before the failed clone/
+                // evaluation; the old raw flag remains observable without retry.
                 Err(error)
             }
         }
@@ -425,7 +431,7 @@ mod tests {
     };
 
     #[test]
-    fn specialization_query_adds_no_instantiation_level_and_restores_failed_queries() {
+    fn specialization_query_restores_context_and_keeps_failed_operand_consumed() {
         use super::super::{
             allocation::GlobalAllocationContext, exceptions::ExceptionState, lookup::Filter,
             template_context::MAX_INSTANTIATION_DEPTH, types::Scalar,
@@ -475,17 +481,24 @@ mod tests {
             let limit = analyzer.graph.binding_limit();
             analyzer.graph.lookup_limit = Some(limit);
             analyzer.global_allocation_context = GlobalAllocationContext::Declaration;
-            for _ in 0..2 {
+            let mut expressions = None;
+            for query in 0..2 {
                 let result = analyzer.function_may_throw(entity);
                 if succeeds {
                     assert!(!result.unwrap());
-                } else {
+                } else if query == 0 {
                     assert!(matches!(result, Err(Error::InstantiationDiagnostic { .. })));
                     assert!(matches!(
                         analyzer.graph.entity(entity).exceptions,
-                        ExceptionState::Template(_)
+                        ExceptionState::Entered
                     ));
+                } else {
+                    assert!(result.unwrap());
                 }
+                if let Some(mark) = expressions {
+                    assert_eq!(analyzer.tree.expressions.mark(), mark);
+                }
+                expressions = Some(analyzer.tree.expressions.mark());
                 assert_eq!(analyzer.instantiation_depth, MAX_INSTANTIATION_DEPTH);
                 assert_eq!(analyzer.graph.lookup_limit, Some(limit));
                 assert!(matches!(

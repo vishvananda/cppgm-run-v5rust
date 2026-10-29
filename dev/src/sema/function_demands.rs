@@ -100,6 +100,9 @@ impl Analyzer<'_> {
         // Its own calls therefore retain their earlier semantic demand order.
         let entity = self.graph.binding(binding).entity;
         if matches!(
+            self.graph.entity(entity).constructor_exceptions,
+            super::construction::ConstructorExceptionSource::ComputedDefault { pending: true, .. }
+        ) || matches!(
             self.graph.entity(entity).exceptions,
             super::exceptions::ExceptionState::Pending(_)
         ) || self.graph.function_templates.primary(entity).is_some()

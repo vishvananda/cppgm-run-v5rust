@@ -133,7 +133,7 @@ impl Analyzer<'_> {
         };
         if let Some(function) = function
             && self.graph.entity(function).constructor_exceptions
-                == ConstructorExceptionSource::Declared
+                != ConstructorExceptionSource::SubobjectPlan
         {
             facts.nothrow = !self.function_may_throw(function)?;
         }

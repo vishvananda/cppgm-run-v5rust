@@ -391,7 +391,7 @@ impl Analyzer<'_> {
             }
             ExceptionState::Value(ExceptionSet::All)
             | ExceptionState::Absent
-            | ExceptionState::Evaluating => {
+            | ExceptionState::Entered => {
                 written.map_or(FunctionExceptions::All, FunctionExceptions::Dynamic)
             }
             _ => FunctionExceptions::Deferred,
