@@ -336,13 +336,37 @@ impl Analyzer<'_> {
         naming: EntityId,
         scope: ScopeId,
     ) -> bool {
-        let Some(declaring) = self.graph.scope(self.graph.binding_scope(binding)).owner else {
-            return false;
-        };
+        self.scoped_declaration_access(binding, naming, scope)
+            .is_some()
+    }
+
+    fn scoped_declaration_access(
+        &self,
+        binding: BindingId,
+        naming: EntityId,
+        scope: ScopeId,
+    ) -> Option<GrantedAccess> {
+        let declaring = self.graph.scope(self.graph.binding_scope(binding)).owner?;
         let blocked = HashSet::new();
         let mut paths = MemberPaths::new(declaring, self.graph.binding_access(binding), &blocked);
         self.imported_declaration_access(naming, scope, &mut paths, AccessContext::Scope)
-            .is_some()
+    }
+
+    /// Raw lexical destructor accessibility also retains the protected object rule.
+    pub(super) fn subobject_destructor_accessible(
+        &self,
+        binding: BindingId,
+        class: EntityId,
+        object: EntityId,
+        scope: ScopeId,
+    ) -> bool {
+        match self.scoped_declaration_access(binding, class, scope) {
+            None => false,
+            Some(GrantedAccess::Protected(via)) => {
+                object == via || self.graph.is_base_of(via, object)
+            }
+            Some(GrantedAccess::Unrestricted) => true,
+        }
     }
 
     pub(super) fn imported_member_access_failure(

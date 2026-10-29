@@ -24,7 +24,6 @@ struct BasePlans {
     direct: Vec<BaseInitialization>,
     indirect: Vec<BaseInitialization>,
     const_default: bool,
-    deleted: bool,
 }
 enum InitializerLookup {
     Class,
@@ -687,18 +686,6 @@ impl Analyzer<'_> {
                 if let Some(binding) = child.binding {
                     self.check_direct_member_access(binding, scope, SourceOffset(0))?;
                 }
-                deleted |= self
-                    .graph
-                    .entity(child_class)
-                    .declared_destructor
-                    .is_some_and(|binding| {
-                        !self.direct_member_accessible(binding, scope)
-                            || self
-                                .graph
-                                .entity(self.graph.binding(binding).entity)
-                                .availability
-                                == super::graph::FunctionAvailability::Deleted
-                    });
                 if !union && child.const_default {
                     const_members += 1;
                 }
@@ -725,9 +712,7 @@ impl Analyzer<'_> {
             direct: bases,
             indirect: indirect_bases,
             const_default: bases_const_default,
-            deleted: base_deleted,
         } = base_plans;
-        deleted |= base_deleted;
         let members = self.graph.entity(class).members.len();
         let initialized = self.graph.entity(class).initialized_members;
         let const_default = bases_const_default
@@ -750,6 +735,7 @@ impl Analyzer<'_> {
         for &base in &indirect_bases {
             nothrow = nothrow && self.planned_base_nothrow(base, binding)?;
         }
+        deleted = deleted || !self.constructor_subobjects_destructible(class)?;
         let record = Constructor {
             facts: ConstructorFacts::Complete,
             class,
@@ -839,12 +825,11 @@ impl Analyzer<'_> {
             }
             bases_const_default &= base.const_default;
         }
-        let deleted = self.default_base_access(class, &bases)?;
+        self.default_base_access(class, &bases)?;
         Ok(BasePlans {
             direct: bases,
             indirect: Vec::new(),
             const_default: bases_const_default,
-            deleted,
         })
     }
 
@@ -884,7 +869,7 @@ impl Analyzer<'_> {
                 forwards: false,
             });
         }
-        plans.deleted |= self.default_base_access(class, &indirect_bases)?;
+        self.default_base_access(class, &indirect_bases)?;
         plans.indirect = indirect_bases;
         Ok(())
     }
@@ -893,8 +878,7 @@ impl Analyzer<'_> {
         &mut self,
         class: EntityId,
         bases: &[BaseInitialization],
-    ) -> Result<bool, Error> {
-        let mut deleted = false;
+    ) -> Result<(), Error> {
         let scope = self
             .graph
             .entity(class)
@@ -908,16 +892,8 @@ impl Analyzer<'_> {
             {
                 self.check_special_member_access(binding, class, scope, SourceOffset(0))?;
             }
-            if let Some(binding) = self.graph.entity(base.class).declared_destructor {
-                deleted |= !self.direct_member_accessible(binding, scope)
-                    || self
-                        .graph
-                        .entity(self.graph.binding(binding).entity)
-                        .availability
-                        == super::graph::FunctionAvailability::Deleted;
-            }
         }
-        Ok(deleted)
+        Ok(())
     }
 
     fn planned_base_nothrow(

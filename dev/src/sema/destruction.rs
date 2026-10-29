@@ -137,6 +137,82 @@ impl Graph {
     }
 }
 impl Analyzer<'_> {
+    /// `subobject_destructor_usable`: observe the declaration already completed.
+    fn subobject_destructor_usable(
+        &self,
+        class: EntityId,
+        parent: EntityId,
+        member: bool,
+    ) -> Result<bool, Error> {
+        let Some(facts) = self.graph.entity(class).destruction else {
+            return Ok(true);
+        };
+        if self.graph.entity(facts.declaration).availability == FunctionAvailability::Deleted {
+            return Ok(false);
+        }
+        let Some(binding) = self.graph.entity(class).declared_destructor else {
+            return Ok(true);
+        };
+        if self.graph.entity(class).scope.is_none()
+            || self.graph.binding(binding).entity != facts.declaration
+        {
+            return Ok(true);
+        }
+        let scope = self
+            .graph
+            .entity(parent)
+            .scope
+            .ok_or(Error::Invariant("subobject destructor access scope"))?;
+        Ok(self.subobject_destructor_accessible(
+            binding,
+            class,
+            if member { class } else { parent },
+            scope,
+        ))
+    }
+
+    pub(super) fn constructor_subobjects_destructible(
+        &self,
+        class: EntityId,
+    ) -> Result<bool, Error> {
+        for base in &self.graph.entity(class).bases {
+            if !self.subobject_destructor_usable(base.class, class, false)? {
+                return Ok(false);
+            }
+        }
+        for base in self.graph.indirect_virtual_bases(class) {
+            if !self.subobject_destructor_usable(base, class, false)? {
+                return Ok(false);
+            }
+        }
+        // Anonymous members' leaves are checked as members of the same parent,
+        // at their declaration position, without querying their own destructor.
+        let mut work = vec![(class, 0usize)];
+        while let Some((holder, next)) = work.last_mut() {
+            let Some(&member) = self.graph.entity(*holder).members.get(*next) else {
+                work.pop();
+                continue;
+            };
+            *next += 1;
+            let mut ty = self
+                .graph
+                .entity(member)
+                .ty
+                .ok_or(Error::Invariant("destructible member type"))?;
+            while let TypeKind::Array { element, .. } = self.graph.types.get(ty).kind {
+                ty = element;
+            }
+            let TypeKind::Class(child) = self.graph.types.get(ty).kind else {
+                continue;
+            };
+            if self.graph.anonymous_member_storage(child).is_some() {
+                work.push((child, 0));
+            } else if !self.subobject_destructor_usable(child, class, true)? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
     pub(super) fn implicit_destructor_nothrow(&mut self, class: EntityId) -> Result<bool, Error> {
         let indirect = self.graph.indirect_virtual_bases(class);
         let count = self.graph.entity(class).bases.len()
@@ -146,13 +222,9 @@ impl Analyzer<'_> {
             let Some((child, _)) = self.graph.destruction_child(class, index, &indirect)? else {
                 continue;
             };
-            let facts = self
-                .graph
-                .entity(child)
-                .destruction
-                .ok_or(Error::Invariant(
-                    "subobject destructor properties not complete",
-                ))?;
+            let Some(facts) = self.graph.entity(child).destruction else {
+                continue;
+            };
             let nothrow = match facts.unwind {
                 DestructorUnwind::Implicit { nothrow } => nothrow,
                 DestructorUnwind::Declared(function) => !self.function_may_throw(function)?,
@@ -167,9 +239,6 @@ impl Analyzer<'_> {
         &mut self,
         class: EntityId,
     ) -> Result<SubobjectDestruction, Error> {
-        let scope = self.graph.entity(class).scope.ok_or(Error::Invariant(
-            "destructor properties without class scope",
-        ))?;
         let mut facts = SubobjectDestruction {
             trivial: true,
             deleted: false,
@@ -183,25 +252,14 @@ impl Analyzer<'_> {
             else {
                 continue;
             };
-            let child_facts = self
-                .graph
-                .entity(child)
-                .destruction
-                .ok_or(Error::Invariant(
-                    "subobject destructor properties not complete",
-                ))?;
+            let Some(child_facts) = self.graph.entity(child).destruction else {
+                continue;
+            };
             facts.trivial &= child_facts.trivial;
             facts.deleted |= child_facts.deleted
                 || self.graph.entity(class).key == Keyword::Union && !child_facts.trivial;
-            if let Some(binding) = self.graph.destructor_binding(child) {
-                facts.deleted |= self
-                    .check_special_member_access(
-                        binding,
-                        if member { child } else { class },
-                        scope,
-                        SourceOffset(0),
-                    )
-                    .is_err();
+            if !(facts.deleted || member && self.graph.anonymous_member_storage(child).is_some()) {
+                facts.deleted = !self.subobject_destructor_usable(child, class, member)?;
             }
         }
         Ok(facts)
