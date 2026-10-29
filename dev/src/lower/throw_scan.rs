@@ -76,10 +76,8 @@ impl Function<'_, '_, '_, '_> {
             if facts.folded.is_some() {
                 continue;
             }
-            if let Some(crate::sema::lowering::CopyAction::Constructor { constructor, .. }) = self
-                .graph
-                .lower_class_copy(id)?
-                .or(self.graph.lower_conversion_copy(id))
+            if let Some(crate::sema::lowering::CopyAction::Constructor { constructor, .. }) =
+                self.graph.lower_class_copy(id)?
                 && self.entry_throws_in_context(
                     Entry::Constructor(constructor, Variant::Complete),
                     hidden,
@@ -92,6 +90,11 @@ impl Function<'_, '_, '_, '_> {
                     Entry::Constructor(constructor, Variant::Complete),
                     hidden,
                 )?
+            {
+                return Ok(true);
+            }
+            if let Some(function) = self.graph.lower_internal_copy_function(id, true)?
+                && self.call_throws_in_context(CallTarget::Direct(function), hidden)?
             {
                 return Ok(true);
             }

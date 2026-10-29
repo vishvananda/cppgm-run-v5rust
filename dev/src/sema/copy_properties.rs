@@ -369,11 +369,14 @@ impl Analyzer<'_> {
         facts.deleted |= explicitly_deleted;
         facts.trivial &= first;
         if inferred {
-            self.graph.entity_mut(function).exceptions = ExceptionState::Value(if facts.nothrow {
+            let entity = self.graph.entity_mut(function);
+            entity.exceptions = ExceptionState::Value(if facts.nothrow {
                 ExceptionSet::None
             } else {
                 ExceptionSet::All
             });
+            entity.constructor_exceptions =
+                super::construction::ConstructorExceptionSource::Declared;
         } else {
             facts.nothrow = !self.function_may_throw(function)?;
         }

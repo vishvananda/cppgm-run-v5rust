@@ -436,6 +436,22 @@ impl Function<'_, '_, '_, '_> {
         written: crate::sema::lowering::ConstructorArguments,
         location: crate::support::source::SourceOffset,
     ) -> Result<bool, Error> {
+        self.delegate_copy_storage_bound(
+            id,
+            object,
+            written,
+            location,
+            super::construction::CopyCall::Expression,
+        )
+    }
+    pub(super) fn delegate_copy_storage_bound(
+        &mut self,
+        id: ConstructorId,
+        object: Value,
+        written: crate::sema::lowering::ConstructorArguments,
+        location: SourceOffset,
+        call: super::construction::CopyCall,
+    ) -> Result<bool, Error> {
         if !self.graph.lower_constructor_copies_storage(id) {
             return Ok(false);
         }
@@ -486,8 +502,15 @@ impl Function<'_, '_, '_, '_> {
             };
             let parameters = parameters.to_vec();
             let parameters = parameters.as_slice();
-            let source =
-                self.bind_reference(source, parameters[0], super::conversions::Context::Argument)?;
+            let source = if let super::construction::CopyCall::InternalParameter {
+                reference,
+                projection,
+            } = call
+            {
+                self.bind_internal_copy_source(source, reference, projection)?
+            } else {
+                self.bind_reference(source, parameters[0], super::conversions::Context::Argument)?
+            };
             if !empty {
                 self.copy_object(ty, source, object)?;
             }

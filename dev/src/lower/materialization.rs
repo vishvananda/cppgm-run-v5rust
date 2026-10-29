@@ -321,6 +321,7 @@ impl Function<'_, '_, '_, '_> {
         let saved = self
             .converting_source
             .replace(self.without_parentheses(source));
+        let saved_constructor = self.converting_constructor.replace(constructor);
         let result = self.call_constructor(
             constructor,
             super::construction::Variant::Complete,
@@ -331,6 +332,7 @@ impl Function<'_, '_, '_, '_> {
             },
         );
         self.converting_source = saved;
+        self.converting_constructor = saved_constructor;
         result
     }
     pub(super) fn converting_reference_temporary(
@@ -425,6 +427,10 @@ impl Function<'_, '_, '_, '_> {
         ) || self.graph.lower_functional_call(source)?;
         if self.graph.lower_class_empty(class)?
             && self.graph.lower_class_copy(source)?.is_none()
+            && !(self.converting_source == Some(source)
+                && self
+                    .converting_constructor
+                    .is_some_and(|outer| self.graph.lower_parameter_copy(source, class, outer)))
             && functional
             && matches!(self.graph.lower_type(self.graph.lower_expression(source)?.ty)?,
                 TypeView::Class(source_class) if source_class == class)
@@ -753,6 +759,38 @@ impl Function<'_, '_, '_, '_> {
             .view(&*self.graph, &*self.tree, self.cursor)
             .storage_destructor(ty)?;
         let id = self.without_parentheses(id);
+        if self.converting_source == Some(id)
+            && let TypeView::Class(class) = self.graph.lower_type(ty)?
+            && self
+                .converting_constructor
+                .is_some_and(|outer| self.graph.lower_parameter_copy(id, class, outer))
+            && let Some(action) = self.graph.lower_demand_internal_copy(
+                self.tree,
+                self.cursor,
+                self.budget,
+                self.stack_base,
+                (id, class, false),
+            )?
+        {
+            let (reference, projection) =
+                self.graph
+                    .lower_parameter_binding(id)?
+                    .ok_or(crate::sema::Error::Invariant(
+                        "internal copy without binding",
+                    ))?;
+            self.materialize_copy(
+                id,
+                ty,
+                object,
+                Some(action),
+                CopyCall::InternalParameter {
+                    reference,
+                    projection,
+                },
+                location,
+            )?;
+            return Ok(());
+        }
         if let Some(action @ CopyAction::Constructor { constructor, .. }) =
             self.graph.lower_class_copy(id)?
             && matches!(self.graph.lower_type(ty)?, TypeView::Class(class) if class == self.graph.lower_constructor(constructor).class)
@@ -812,8 +850,15 @@ impl Function<'_, '_, '_, '_> {
                 if empty && skip_empty && self.side_effect_free(id, false, 0)? {
                     return Ok(true);
                 }
-                let source =
-                    self.bind_reference(id, reference, super::conversions::Context::Argument)?;
+                let source = if let CopyCall::InternalParameter {
+                    reference,
+                    projection,
+                } = call
+                {
+                    self.bind_internal_copy_source(id, reference, projection)?
+                } else {
+                    self.bind_reference(id, reference, super::conversions::Context::Argument)?
+                };
                 if !empty {
                     self.copy_object(ty, source, object)?;
                 }
@@ -825,11 +870,12 @@ impl Function<'_, '_, '_, '_> {
                 written_move,
             }) => {
                 if !written_move
-                    && self.delegate_copy_storage(
+                    && self.delegate_copy_storage_bound(
                         constructor,
                         object,
                         crate::sema::lowering::ConstructorArguments::Single(id),
                         location,
+                        call,
                     )?
                 {
                     return Ok(true);

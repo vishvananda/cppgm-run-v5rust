@@ -285,13 +285,20 @@ impl Function<'_, '_, '_, '_> {
         object: crate::lowir::model::Value,
     ) -> Result<bool, Error> {
         use crate::sema::lowering::CopyAction;
-        let Some((call, _)) = self.graph.lower_function_conversion(id)? else {
+        let Some((call, target)) = self.graph.lower_function_conversion(id)? else {
             return Ok(false);
         };
-        let Some(copy) = self.graph.lower_conversion_copy(id) else {
+        let crate::sema::lowering::TypeView::Class(class) = self.graph.lower_type(ty)? else {
+            return Ok(false);
+        };
+        if !matches!(self.graph.lower_type(target)?, crate::sema::lowering::TypeView::Class(destination) if destination == class)
+        {
+            return Ok(false);
+        }
+        if !self.graph.lower_has_conversion_copy(id) {
             self.conversion_call_into(id, call, Some(object))?;
             return Ok(true);
-        };
+        }
         let mut source = if call.place {
             self.conversion_call_into(
                 id,
@@ -312,6 +319,18 @@ impl Function<'_, '_, '_, '_> {
             }
             source = self.base_projection(source, ty, offset)?;
         }
+        let copy = self
+            .graph
+            .lower_demand_internal_copy(
+                self.tree,
+                self.cursor,
+                self.budget,
+                self.stack_base,
+                (id, class, true),
+            )?
+            .ok_or(crate::sema::Error::Invariant(
+                "selected result copy without action",
+            ))?;
         match copy {
             CopyAction::Storage { .. } => {
                 let crate::sema::lowering::TypeView::Class(class) = self.graph.lower_type(ty)?
@@ -322,9 +341,8 @@ impl Function<'_, '_, '_, '_> {
                     self.copy_object(ty, source, object)?;
                 }
             }
-            CopyAction::Constructor { constructor, .. } => self.call_copy_constructor(
+            CopyAction::Constructor { constructor, .. } => self.construct_from(
                 constructor,
-                super::construction::Variant::Complete,
                 object,
                 source,
                 self.tree.expressions.get(id).location,

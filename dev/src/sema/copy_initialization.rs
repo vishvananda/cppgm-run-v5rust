@@ -36,6 +36,31 @@ pub(crate) enum CopyAction {
         written_move: bool,
     },
 }
+/// A semantic selection whose reached operation has not necessarily requested
+/// executable metadata. The selection survives failed action acquisition.
+#[derive(Clone, Copy)]
+pub(super) struct InternalCopy {
+    pub class: EntityId,
+    pub selection: CopySelection,
+    pub location: SourceOffset,
+    pub projection: Option<super::inheritance::BasePathId>,
+    pub action: Option<CopyAction>,
+}
+impl InternalCopy {
+    pub(super) fn pending(
+        class: EntityId,
+        selection: CopySelection,
+        location: SourceOffset,
+    ) -> Self {
+        Self {
+            class,
+            selection,
+            location,
+            projection: None,
+            action: None,
+        }
+    }
+}
 #[derive(Clone, Copy)]
 pub(super) enum CopyUse {
     Object { direct: bool },
@@ -45,7 +70,6 @@ pub(super) enum CopyUse {
 #[derive(Clone, Copy)]
 enum CopyFailureSite {
     Constructor,
-    Operand,
     FinalTemporary,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -76,6 +100,112 @@ pub(super) struct ImplicitCopies {
     pub(super) passing: Option<ClassPassing>,
 }
 impl super::graph::Graph {
+    pub(super) fn selected_copy_function(
+        &self,
+        class: EntityId,
+        selection: CopySelection,
+    ) -> Result<EntityId, Error> {
+        match selection.origin {
+            CopyOrigin::Declared(binding) => Ok(self.binding(binding).entity),
+            CopyOrigin::Implicit { .. } => self
+                .copy_property_id(class, selection)?
+                .and_then(|id| self.copy_properties.get(id).declaration)
+                .ok_or(Error::Invariant(
+                    "selected implicit copy without declaration",
+                )),
+        }
+    }
+    pub(crate) fn lower_parameter_copy(
+        &self,
+        id: ast::ExprId,
+        class: EntityId,
+        outer: super::construction::ConstructorId,
+    ) -> bool {
+        self.expression_facts
+            .class_conversion(id)
+            .is_some_and(|(constructor, _)| constructor == outer)
+            && self
+                .expression_facts
+                .parameter_copy(id)
+                .is_some_and(|copy| copy.class == class)
+    }
+    pub(crate) fn lower_parameter_binding(
+        &self,
+        id: ast::ExprId,
+    ) -> Result<Option<(TypeId, Option<super::lowering::BaseProjection>)>, Error> {
+        self.expression_facts
+            .parameter_copy(id)
+            .map(|copy| {
+                Ok((
+                    copy.selection.binding.target,
+                    copy.projection
+                        .map(|path| self.lower_path_projection(path))
+                        .transpose()?,
+                ))
+            })
+            .transpose()
+    }
+    pub(crate) fn lower_has_conversion_copy(&self, id: ast::ExprId) -> bool {
+        self.expression_facts
+            .function_conversion(id)
+            .is_some_and(|step| step.copy.is_some())
+    }
+    pub(crate) fn lower_internal_copy_function(
+        &self,
+        id: ast::ExprId,
+        result: bool,
+    ) -> Result<Option<EntityId>, Error> {
+        let copy = if result {
+            self.expression_facts
+                .function_conversion(id)
+                .and_then(|step| step.copy)
+        } else {
+            self.expression_facts.parameter_copy(id)
+        };
+        copy.map(|copy| self.selected_copy_function(copy.class, copy.selection))
+            .transpose()
+    }
+    pub(crate) fn lower_demand_internal_copy(
+        &mut self,
+        tree: &mut ast::Tree,
+        cursor: &mut crate::syntax::cursor::Cursor<'_>,
+        budget: crate::support::stack::StackBudget,
+        stack_base: usize,
+        request: (ast::ExprId, EntityId, bool),
+    ) -> Result<Option<CopyAction>, Error> {
+        let (id, class, result_copy) = request;
+        let copy = if result_copy {
+            self.expression_facts
+                .function_conversion(id)
+                .and_then(|step| step.copy)
+        } else {
+            self.expression_facts.parameter_copy(id)
+        }
+        .filter(|copy| copy.class == class);
+        let Some(copy) = copy else {
+            return Ok(None);
+        };
+        if let Some(action) = copy.action {
+            return Ok(Some(action));
+        }
+        let mut analyzer = Analyzer::with_graph(tree, cursor, budget, Some(self))?;
+        analyzer.set_lowering();
+        analyzer.stack_base = stack_base;
+        let action = analyzer.internal_copy_action(copy);
+        *self = analyzer.graph;
+        let action = action?;
+        if result_copy {
+            if let Some(mut step) = self.expression_facts.function_conversion(id) {
+                if let Some(copy) = &mut step.copy {
+                    copy.action = Some(action);
+                }
+                self.expression_facts.set_function_conversion(id, step);
+            }
+        } else {
+            self.expression_facts.set_parameter_copy_action(id, action);
+        }
+        Ok(Some(action))
+    }
     pub(crate) fn lower_copy_form(
         &self,
         function: EntityId,
@@ -521,6 +651,42 @@ impl Analyzer<'_> {
         })
     }
 
+    pub(super) fn internal_copy_action(&mut self, copy: InternalCopy) -> Result<CopyAction, Error> {
+        if let Some(action) = copy.action {
+            return Ok(action);
+        }
+        let selected = copy.selection;
+        let function = self.graph.selected_copy_function(copy.class, selected)?;
+        let entity = self.graph.entity(function);
+        let non_copy = entity.copy_kind.is_none();
+        let provided = matches!(selected.origin, CopyOrigin::Declared(_))
+            && !matches!(
+                entity.special_definition,
+                Some(SpecialDefinition::Defaulted { .. })
+            );
+        if !non_copy {
+            let trivial = self
+                .graph
+                .copy_property_id(copy.class, selected)?
+                .is_some_and(|id| self.graph.copy_properties.get(id).trivial);
+            let empty_lifetime = !self.graph.destructor_trivial(copy.class)? && {
+                self.class_layout(copy.class, copy.location)?;
+                self.graph.lower_class_empty(copy.class)?
+            };
+            if !provided && trivial && !empty_lifetime {
+                return Ok(CopyAction::Storage {
+                    reference: selected.binding.target,
+                    skip_empty: false,
+                });
+            }
+        }
+        let constructor = self.copy_constructor_plan(copy.class, selected)?;
+        Ok(CopyAction::Constructor {
+            constructor,
+            elision: false,
+            written_move: false,
+        })
+    }
     pub(super) fn check_final_copy_selection(
         &mut self,
         class: EntityId,
@@ -542,24 +708,46 @@ impl Analyzer<'_> {
         self.copy_use_candidate(resolution, scope, location, CopyFailureSite::FinalTemporary)?;
         Ok(())
     }
-    pub(super) fn select_result_constructor(
+    pub(super) fn operand_constructor(
         &mut self,
         class: EntityId,
-        facts: super::expression_facts::ExprFacts,
+        ty: TypeId,
+        category: V,
+        direct: bool,
         scope: ScopeId,
         location: SourceOffset,
     ) -> Result<Option<CopySelection>, Error> {
+        if category == V::Prvalue && self.graph.class_of(ty) == Some(class) {
+            return Ok(None);
+        }
         let resolution = self.resolve_class_constructor(
             class,
-            facts,
-            ConstructorContext::Standard { explicit: true },
+            super::expression_facts::ExprFacts::new(ty, category),
+            if direct {
+                ConstructorContext::Direct
+            } else {
+                ConstructorContext::Copy
+            },
             ConstructorScope::StandardOnly,
         )?;
-        if let CopyResolution::Selected(candidate) = resolution
-            && !matches!(
+        let CopyResolution::Selected(candidate) = resolution else {
+            self.emit_substitution_failure(
+                location,
+                "no unambiguous constructor initializes the class object from the value",
+                false,
+            )?;
+            return Ok(None);
+        };
+        let mut selection = candidate.selection;
+        let function = self.graph.selected_copy_function(class, selection)?;
+        let signature = self.graph.entity(function).ty.ok_or(Error::Invariant(
+            "selected operand constructor without signature",
+        ))?;
+        if self.graph.types.function_parameter_count(signature)? == 0
+            || !matches!(
                 self.graph
                     .types
-                    .get(candidate.selection.binding.target)
+                    .get(self.graph.types.function_parameter(signature, 0)?)
                     .kind,
                 TypeKind::Reference { .. }
             )
@@ -569,8 +757,12 @@ impl Analyzer<'_> {
                 "a class object initialized through a constructor's class parameter is not supported",
             ));
         }
-        self.copy_use_candidate(resolution, scope, location, CopyFailureSite::Operand)
-            .map(|candidate| candidate.map(|candidate| candidate.selection))
+        self.check_function_not_deleted(function, location)?;
+        self.check_constructor_function_access(function, class, scope, location, None)?;
+        self.demand_selected_copy(class, selection)?;
+        self.note_throwing_copy(class, selection)?;
+        selection.binding.initialization = true;
+        Ok(Some(selection))
     }
     pub(super) fn select_subobject_copy(
         &mut self,
@@ -1062,9 +1254,6 @@ impl Analyzer<'_> {
             }
             (CopyFailureSite::Constructor, CopyResolution::Ambiguous) => {
                 "ambiguous call to overloaded function"
-            }
-            (CopyFailureSite::Operand, _) => {
-                "no unambiguous constructor initializes the class object from the value"
             }
             (CopyFailureSite::FinalTemporary, _) => {
                 "no unambiguous constructor initializes the object from the converted temporary"

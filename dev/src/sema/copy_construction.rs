@@ -207,7 +207,22 @@ impl Analyzer<'_> {
                 _ => None,
             })
         } else if let CopyOrigin::Declared(binding) = origin {
-            self.declared_constructor_plan(binding).map(Some)
+            let function = self.graph.binding(binding).entity;
+            let entity = self.graph.entity(function);
+            if let Some(id) = entity.constructor {
+                return Ok(Some(id));
+            }
+            if matches!(
+                entity.special_definition,
+                Some(super::special_members::SpecialDefinition::Defaulted { .. })
+            ) || self.graph.inherited_constructors.root(function).is_some()
+            {
+                return Err(Error::Invariant(
+                    "copy plan missing prepared constructor facts",
+                ));
+            }
+            let owner = entity.member_function.map_or(class, |member| member.class);
+            self.constructor_declaration_plan(binding, owner).map(Some)
         } else {
             Err(Error::Invariant("implicit copy plan without properties"))
         }

@@ -26,6 +26,10 @@ pub(super) enum CopyCall {
     Expression,
     Direct,
     ProjectedExpression(crate::sema::lowering::BaseProjection),
+    InternalParameter {
+        reference: TypeId,
+        projection: Option<crate::sema::lowering::BaseProjection>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -334,6 +338,13 @@ impl Function<'_, '_, '_, '_> {
                         } else {
                             slot
                         }
+                    } else if index == 0
+                        && let CopyCall::InternalParameter {
+                            reference,
+                            projection,
+                        } = call
+                    {
+                        lowering.bind_internal_copy_source(default, reference, projection)?
                     } else if index == 0
                         && let CopyCall::ProjectedExpression(projection) = call
                     {

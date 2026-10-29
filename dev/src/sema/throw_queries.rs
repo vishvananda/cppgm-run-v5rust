@@ -318,18 +318,10 @@ impl Analyzer<'_> {
                     return Ok(true);
                 }
                 if let Some(copy) = selected.copy {
-                    let throws = match (copy.selection.origin, copy.action) {
-                        (super::copy_initialization::CopyOrigin::Declared(binding), _) => {
-                            self.function_may_throw(self.graph.binding(binding).entity)?
-                        }
-                        (
-                            _,
-                            super::copy_initialization::CopyAction::Constructor {
-                                constructor, ..
-                            },
-                        ) => self.constructor_function_may_throw(constructor)?,
-                        (_, super::copy_initialization::CopyAction::Storage { .. }) => false,
-                    };
+                    let function = self
+                        .graph
+                        .selected_copy_function(copy.class, copy.selection)?;
+                    let throws = self.function_may_throw(function)?;
                     if throws {
                         return Ok(true);
                     }
@@ -345,6 +337,25 @@ impl Analyzer<'_> {
                         return Ok(true);
                     }
                     continue;
+                }
+            }
+            if let Some((constructor, _)) = self.graph.expression_facts.class_conversion(id) {
+                let plan = self.graph.constructors.get(constructor);
+                let throws = if let Some(binding) = plan.binding {
+                    self.function_may_throw(self.graph.binding(binding).entity)?
+                } else {
+                    !plan.nothrow
+                };
+                if throws {
+                    return Ok(true);
+                }
+                if let Some(copy) = self.graph.expression_facts.parameter_copy(id) {
+                    let function = self
+                        .graph
+                        .selected_copy_function(copy.class, copy.selection)?;
+                    if self.function_may_throw(function)? {
+                        return Ok(true);
+                    }
                 }
             }
             for index in 0..self.graph.expression_facts.arrow_calls(id).len() {
@@ -386,17 +397,6 @@ impl Analyzer<'_> {
                     }
                 }
                 None => (),
-            }
-            if let Some((constructor, _)) = self.graph.expression_facts.class_conversion(id) {
-                let plan = self.graph.constructors.get(constructor);
-                let throws = if let Some(binding) = plan.binding {
-                    self.function_may_throw(self.graph.binding(binding).entity)?
-                } else {
-                    !plan.nothrow
-                };
-                if throws {
-                    return Ok(true);
-                }
             }
             let invoked = !matches!(kind, ExprKind::Call { .. })
                 && (facts.call_form == super::expression_facts::CallForm::Operator

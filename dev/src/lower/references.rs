@@ -80,6 +80,34 @@ impl Function<'_, '_, '_, '_> {
             Ok(place)
         }
     }
+    pub(super) fn bind_internal_copy_source(
+        &mut self,
+        id: ast::ExprId,
+        reference: TypeId,
+        projection: Option<crate::sema::lowering::BaseProjection>,
+    ) -> Result<Value, Error> {
+        let TypeView::Reference { .. } = self.graph.lower_type(reference)? else {
+            return Err(
+                crate::sema::Error::Invariant("internal copy binding without reference").into(),
+            );
+        };
+        let facts = self.graph.lower_expression(id)?;
+        let source = if facts.is_place {
+            self.address(id)?
+        } else {
+            self.class_temporary(id, super::materialization::TemporaryUse::Argument, false)?
+        };
+        if let Some(projection) = projection {
+            self.project_base_access(
+                source,
+                facts.ty,
+                projection,
+                super::base_projections::BaseAccess::Complete,
+            )
+        } else {
+            Ok(source)
+        }
+    }
     pub(super) fn bind_reference(
         &mut self,
         id: ast::ExprId,

@@ -287,6 +287,7 @@ struct ClassConversion {
     constructor: super::construction::ConstructorId,
     arguments: super::constructor_initialization::ConstructorArguments,
     outer: Option<Conversion>,
+    parameter_copy: Option<super::copy_initialization::InternalCopy>,
 }
 #[derive(Clone, Copy)]
 enum CallView {
@@ -706,6 +707,7 @@ impl ExpressionFacts {
         id: ast::ExprId,
         constructor: super::construction::ConstructorId,
         outer: Conversion,
+        parameter_copy: Option<super::copy_initialization::InternalCopy>,
     ) {
         self.class_conversions.insert(
             self.root(id),
@@ -713,8 +715,31 @@ impl ExpressionFacts {
                 constructor,
                 arguments: super::constructor_initialization::ConstructorArguments::Single(id),
                 outer: Some(outer),
+                parameter_copy,
             },
         );
+    }
+    pub(super) fn parameter_copy(
+        &self,
+        id: ast::ExprId,
+    ) -> Option<super::copy_initialization::InternalCopy> {
+        self.class_conversions
+            .get(&self.root(id))
+            .and_then(|record| record.parameter_copy)
+    }
+    pub(super) fn set_parameter_copy_action(
+        &mut self,
+        id: ast::ExprId,
+        action: super::copy_initialization::CopyAction,
+    ) {
+        let root = self.root(id);
+        if let Some(copy) = self
+            .class_conversions
+            .get_mut(&root)
+            .and_then(|record| record.parameter_copy.as_mut())
+        {
+            copy.action = Some(action);
+        }
     }
     pub(super) fn root(&self, id: ast::ExprId) -> ast::ExprId {
         self.aliases

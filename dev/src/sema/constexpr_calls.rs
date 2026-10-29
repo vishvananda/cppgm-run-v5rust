@@ -35,6 +35,10 @@ pub(super) enum Returned {
 #[derive(Clone, Copy)]
 pub(super) enum ConstantArguments<'a> {
     Written(&'a [ast::ExprId]),
+    Converted {
+        expr: ast::ExprId,
+        copy: super::copy_initialization::InternalCopy,
+    },
     Bound(&'a [Address]),
     Values(&'a [Value]),
 }
@@ -42,6 +46,7 @@ impl ConstantArguments<'_> {
     fn len(self) -> usize {
         match self {
             Self::Written(values) => values.len(),
+            Self::Converted { .. } => 1,
             Self::Bound(values) => values.len(),
             Self::Values(values) => values.len(),
         }
@@ -60,6 +65,18 @@ impl ConstantArguments<'_> {
                 .first()
                 .copied()
                 .ok_or(Error::Invariant("copy without source")),
+            Self::Converted { expr, copy } => {
+                let TypeKind::Reference { element, .. } =
+                    analyzer.graph.types.get(copy.selection.binding.target).kind
+                else {
+                    return Err(Error::Invariant("internal copy reference"));
+                };
+                let place = analyzer.constant_object_place(expr, scope)?;
+                let mut place =
+                    analyzer.constant_project_path(place, copy.projection, copy.location)?;
+                place.designated = element;
+                Ok(place)
+            }
             Self::Written(values) => {
                 let &expr = values
                     .first()
@@ -897,8 +914,9 @@ impl Analyzer<'_> {
                 )?);
                 continue;
             }
-            let written = match arguments {
-                ConstantArguments::Written(values) => values,
+            let written = match &arguments {
+                ConstantArguments::Written(values) => *values,
+                ConstantArguments::Converted { expr, .. } => std::slice::from_ref(expr),
                 ConstantArguments::Bound(_) | ConstantArguments::Values(_) => &[],
             };
             if postfix && index == written.len() {
@@ -924,12 +942,45 @@ impl Analyzer<'_> {
                     })?;
                     let value = match analyzer.graph.types.get(parameter).kind {
                         TypeKind::Reference { element, .. } => Ok(Returned::Place(
-                            analyzer.bind_constant_reference(argument, element, scope)?,
+                            if index == 0
+                                && matches!(arguments, ConstantArguments::Converted { .. })
+                            {
+                                arguments.first_place(analyzer, parameter, scope)?
+                            } else {
+                                analyzer.bind_constant_reference(argument, element, scope)?
+                            },
                         )),
                         TypeKind::Class(_) => {
                             let place =
                                 analyzer.allocate_constant_object(object, None, location)?;
-                            analyzer.initialize_constant_class_from(argument, place, scope)?;
+                            let internal = analyzer
+                                .graph
+                                .expression_facts
+                                .class_conversion(argument)
+                                .filter(|(constructor, _)| {
+                                    analyzer.graph.constructors.get(*constructor).declaration
+                                        == Some(function)
+                                })
+                                .and_then(|_| {
+                                    analyzer.graph.expression_facts.parameter_copy(argument)
+                                })
+                                .filter(|copy| {
+                                    index == 0
+                                        && analyzer.graph.class_of(parameter) == Some(copy.class)
+                                });
+                            if let Some(copy) = internal {
+                                analyzer.run_constant_internal_copy(
+                                    place,
+                                    copy,
+                                    ConstantArguments::Converted {
+                                        expr: argument,
+                                        copy,
+                                    },
+                                    scope,
+                                )?;
+                            } else {
+                                analyzer.initialize_constant_class_from(argument, place, scope)?;
+                            }
                             Ok(Returned::Place(place))
                         }
                         TypeKind::Complex(_) => {

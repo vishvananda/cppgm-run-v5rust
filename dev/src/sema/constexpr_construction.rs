@@ -199,6 +199,36 @@ impl Analyzer<'_> {
                 self.tree.expressions.get(expr).location,
             );
         }
+        if let Some(step) = self.graph.expression_facts.function_conversion(expr)
+            && self.graph.class_of(target.designated) == self.graph.class_of(step.after.result)
+        {
+            if let Some(copy) = step.copy {
+                let destination = if step.category == ValueCategory::Prvalue {
+                    Some(self.allocate_constant_object(step.result, None, location)?)
+                } else {
+                    None
+                };
+                let returned = self.constant_conversion_result_into(expr, scope, destination)?;
+                let super::constexpr_calls::Returned::Place(source) = returned else {
+                    return Err(Error::Invariant("class conversion without returned place"));
+                };
+                let mut source = self.constant_project_path(source, step.after_path, location)?;
+                let TypeKind::Reference { element, .. } =
+                    self.graph.types.get(copy.selection.binding.target).kind
+                else {
+                    return Err(Error::Invariant("result copy reference"));
+                };
+                source.designated = element;
+                return self.run_constant_internal_copy(
+                    target,
+                    copy,
+                    ConstantArguments::Bound(&[source]),
+                    scope,
+                );
+            }
+            self.constant_conversion_result_into(expr, scope, Some(target))?;
+            return Ok(());
+        }
         if let Some(super::copy_initialization::CopyAction::Storage { reference, .. }) =
             self.graph.lower_class_copy(expr)?
         {
@@ -223,6 +253,43 @@ impl Analyzer<'_> {
             return self.run_constant_constructor(target, constructor, &[expr], scope, location);
         }
         self.materialize_constant_object(expr, target, scope)
+    }
+    pub(super) fn run_constant_internal_copy(
+        &mut self,
+        target: Address,
+        copy: super::copy_initialization::InternalCopy,
+        values: ConstantArguments<'_>,
+        scope: ScopeId,
+    ) -> Result<(), Error> {
+        let function = self
+            .graph
+            .selected_copy_function(copy.class, copy.selection)?;
+        let entity = self.graph.entity(function);
+        if entity.availability == super::graph::FunctionAvailability::Deleted {
+            return Err(nonconstant(copy.location, "a call of a deleted function"));
+        }
+        let trivial = self
+            .graph
+            .copy_property_id(copy.class, copy.selection)?
+            .is_some_and(|id| self.graph.copy_properties.get(id).trivial);
+        if trivial {
+            let source = values.first_place(self, copy.selection.binding.target, scope)?;
+            return self.copy_constant_object(target, source, copy.location);
+        }
+        let entity = self.graph.entity(function);
+        let generated_copy = entity.copy_kind.is_some()
+            && (matches!(
+                entity.special_definition,
+                Some(super::special_members::SpecialDefinition::Defaulted { .. })
+            ) || entity.copy_origin == super::copy_construction::Origin::Implicit);
+        if !generated_copy && !entity.constexpr {
+            return Err(nonconstant(
+                copy.location,
+                "a call of a function that is not constexpr",
+            ));
+        }
+        let constructor = self.copy_constructor_plan(copy.class, copy.selection)?;
+        self.run_constant_constructor_inputs(target, constructor, values, scope, copy.location)
     }
     pub(super) fn constant_constructor_arguments(
         &self,
@@ -750,11 +817,21 @@ impl Analyzer<'_> {
         if self.graph.constructors.get(id).deleted {
             return Err(nonconstant(location, "a call of a deleted function"));
         }
-        if self.graph.lower_constructor_copies_storage(id) {
+        if self.graph.constructors.get(id).copy.is_some()
+            && self.graph.lower_constructor_trivial(id)
+        {
             return match values {
                 ConstantArguments::Values(_) => Err(Error::Invariant(
                     "literal values used for a copy constructor",
                 )),
+                ConstantArguments::Converted { .. } => {
+                    let parameter = self
+                        .graph
+                        .types
+                        .function_parameter(self.graph.lower_constructor_type(id)?, 0)?;
+                    let source = values.first_place(self, parameter, scope)?;
+                    self.copy_constant_object(target, source, location)
+                }
                 ConstantArguments::Written(values) => {
                     let &source = values
                         .first()

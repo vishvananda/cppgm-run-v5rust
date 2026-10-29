@@ -892,6 +892,14 @@ impl Analyzer<'_> {
         id: ast::ExprId,
         scope: ScopeId,
     ) -> Result<Returned, Error> {
+        self.constant_conversion_result_into(id, scope, None)
+    }
+    pub(super) fn constant_conversion_result_into(
+        &mut self,
+        id: ast::ExprId,
+        scope: ScopeId,
+        destination: Option<Address>,
+    ) -> Result<Returned, Error> {
         let location = self.tree.expressions.get(id).location;
         let step = self
             .graph
@@ -907,7 +915,16 @@ impl Analyzer<'_> {
                 "a virtual conversion function in a constant expression",
             ));
         }
-        self.invoke_constant_function(function, &[], Some(place), scope, location)
+        self.invoke_constant_function_into(
+            function,
+            (
+                super::constexpr_calls::ConstantArguments::Written(&[]),
+                false,
+            ),
+            (Some(place), destination),
+            scope,
+            location,
+        )
     }
 }
 

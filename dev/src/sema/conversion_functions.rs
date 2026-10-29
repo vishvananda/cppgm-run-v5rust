@@ -68,12 +68,6 @@ pub(super) enum ConversionTarget {
 }
 
 #[derive(Clone, Copy)]
-pub(super) struct ResultCopy {
-    pub selection: super::copy_initialization::CopySelection,
-    pub action: super::copy_initialization::CopyAction,
-}
-
-#[derive(Clone, Copy)]
 pub(super) struct FunctionConversion {
     pub binding: BindingId,
     pub result: TypeId,
@@ -82,7 +76,7 @@ pub(super) struct FunctionConversion {
     pub after: Conversion,
     pub after_path: Option<BasePathId>,
     pub usage: ConversionUse,
-    pub copy: Option<ResultCopy>,
+    pub copy: Option<super::copy_initialization::InternalCopy>,
 }
 
 impl Analyzer<'_> {
@@ -783,40 +777,19 @@ impl Analyzer<'_> {
         let mut selected = selected.conversion;
         if available && let Some(class) = self.graph.class_of(sequence.conversion.target) {
             let produced = ExprFacts::new(selected.result, selected.category);
-            // operand_constructor elides only a prvalue of the destination's own
-            // unqualified class; it does not select or demand a copy for it.
-            if (selected.category != ValueCategory::Prvalue
-                || self.bare_type(selected.result)?
-                    != self
-                        .graph
-                        .entity(class)
-                        .ty
-                        .ok_or(Error::Invariant("conversion destination without type"))?)
-                && let Some(copy) =
-                    self.select_result_constructor(class, produced, scope, location)?
-            {
+            if let Some(copy) = self.operand_constructor(
+                class,
+                selected.result,
+                selected.category,
+                true,
+                scope,
+                location,
+            )? {
                 selected.after_path =
                     self.conversion_projection_path(produced, copy.binding, location)?;
-                let action = self.copy_action(
-                    class,
-                    copy,
-                    super::copy_initialization::CopyUse::Value { in_place: false },
-                    location,
-                )?;
-                if matches!(
-                    action,
-                    super::copy_initialization::CopyAction::Storage { .. }
-                ) && matches!(
-                    copy.origin,
-                    super::copy_initialization::CopyOrigin::Implicit { .. }
-                ) {
-                    self.demand_selected_copy(class, copy)?;
-                }
-                self.note_throwing_copy(class, copy)?;
-                selected.copy = Some(ResultCopy {
-                    selection: copy,
-                    action,
-                });
+                selected.copy = Some(super::copy_initialization::InternalCopy::pending(
+                    class, copy, location,
+                ));
             }
         }
         if available
@@ -975,7 +948,7 @@ mod tests {
 
     #[test]
     fn class_results_retain_selected_transfers_without_replacing_or_reparsing_receivers() {
-        use super::super::{copy_initialization::CopyAction, lookup::Filter};
+        use super::super::lookup::Filter;
         let source = SourceBuffer::new(
             br"
             struct A{int n;A();A(const A&)=delete;};
@@ -1043,15 +1016,12 @@ mod tests {
             let step = graph.expression_facts.function_conversion(operand).unwrap();
             assert_eq!(step.after_path.is_some(), projected);
             assert_eq!(step.copy.is_some(), copied);
-            if let Some(CopyAction::Constructor {
-                constructor,
-                elision: false,
-                ..
-            }) = step.copy.map(|copy| copy.action)
-            {
-                assert_eq!(*shared_copy.get_or_insert(constructor), constructor);
-            } else {
-                assert!(!copied);
+            if let Some(copy) = step.copy {
+                assert!(copy.action.is_none());
+                let function = graph
+                    .selected_copy_function(copy.class, copy.selection)
+                    .unwrap();
+                assert_eq!(*shared_copy.get_or_insert(function), function);
             }
             assert!(graph.lower_class_copy(operand).unwrap().is_none());
             assert_eq!(

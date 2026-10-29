@@ -83,6 +83,7 @@ pub(super) struct Function<'a, 'source, 'program, 'symbols> {
     // conversion is active; the outer construction use must not recur.
     pub source_site: Option<crate::support::source::SourceOffset>,
     pub converting_source: Option<ast::ExprId>,
+    pub converting_constructor: Option<crate::sema::lowering::ConstructorId>,
     pub initialization_context: super::class_results::InitializationContext,
     pub reference_lifetimes: super::reference_lifetimes::Extensions,
     pub next_static: u32,
@@ -443,6 +444,7 @@ impl<'a, 'source, 'program, 'symbols> Function<'a, 'source, 'program, 'symbols> 
             static_initializer: false,
             initialization_output: None,
             converting_source: None,
+            converting_constructor: None,
             source_site: None,
             initialization_context: super::class_results::InitializationContext::Ordinary,
             reference_lifetimes: super::reference_lifetimes::Extensions::default(),

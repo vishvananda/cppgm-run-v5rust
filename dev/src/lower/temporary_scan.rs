@@ -425,7 +425,7 @@ impl Function<'_, '_, '_, '_> {
             {
                 summary.made |= !self.graph.lower_builtin_operand(id)
                     && self.temporary_type_destroyed(target)?;
-                if self.graph.lower_conversion_copy(id).is_some() && !call.place {
+                if self.graph.lower_has_conversion_copy(id) && !call.place {
                     summary.made |= self.temporary_type_destroyed(call.result)?;
                 }
             }

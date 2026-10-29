@@ -405,18 +405,28 @@ impl Analyzer<'_> {
             .entity(self.graph.binding(binding).entity)
             .ty
             .ok_or(Error::Invariant("converting constructor without type"))?;
+        let mut parameter_copy = None;
         if self.graph.types.function_parameter_count(ty)? != 0 {
             let parameter = self.graph.types.function_parameter(ty, 0)?;
             if let Some(class) = self.graph.class_of(parameter) {
                 self.check_class_destruction(parameter, scope, location)?;
-                if first.rank != R::Ellipsis && self.same_class_source(class, id)? {
-                    self.record_class_copy(
-                        id,
-                        parameter,
+                if first.rank != R::Ellipsis {
+                    let source = self.graph.expression_facts.get(id)?;
+                    if let Some(selection) = self.operand_constructor(
+                        class,
+                        source.ty,
+                        source.category,
+                        false,
                         scope,
-                        super::copy_initialization::CopyUse::Value { in_place: false },
                         location,
-                    )?;
+                    )? {
+                        let mut copy = super::copy_initialization::InternalCopy::pending(
+                            class, selection, location,
+                        );
+                        copy.projection =
+                            self.conversion_projection_path(source, selection.binding, location)?;
+                        parameter_copy = Some(copy);
+                    }
                 }
             }
         }
@@ -434,9 +444,12 @@ impl Analyzer<'_> {
             // storage demand is shared with a written ellipsis argument.
             self.demand_variadic_class_storage(first.target);
         }
-        self.graph
-            .expression_facts
-            .set_user_conversion(id, constructor, sequence.conversion);
+        self.graph.expression_facts.set_user_conversion(
+            id,
+            constructor,
+            sequence.conversion,
+            parameter_copy,
+        );
         self.demand_constructor_use(constructor)?;
         self.note_throwing_function(self.graph.binding(binding).entity);
         self.request_constructor_defaults(binding, 1)?;
