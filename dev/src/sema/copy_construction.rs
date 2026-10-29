@@ -325,7 +325,6 @@ impl Analyzer<'_> {
             callable_type,
             nothrow: facts.nothrow,
             deleted: facts.deleted,
-            const_default: true,
             members: Vec::new(),
             written_members: Vec::new(),
             bases: Vec::new(),

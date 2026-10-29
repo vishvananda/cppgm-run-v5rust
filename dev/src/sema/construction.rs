@@ -23,7 +23,6 @@ pub(crate) struct BaseInitialization {
 struct BasePlans {
     direct: Vec<BaseInitialization>,
     indirect: Vec<BaseInitialization>,
-    const_default: bool,
 }
 enum InitializerLookup {
     Class,
@@ -88,7 +87,6 @@ pub(super) struct Constructor {
     pub callable_type: TypeId,
     pub nothrow: bool,
     pub(super) deleted: bool,
-    pub(super) const_default: bool,
     pub members: Vec<(EntityId, Option<ast::Initializer>)>,
     pub written_members: Vec<bool>,
     pub bases: Vec<BaseInitialization>,
@@ -133,6 +131,7 @@ pub(super) struct Constructors {
     // The class retains one selected function, declared or implicit, before
     // its structural/default facts. Absence is never a cached failure.
     default_functions: std::collections::HashMap<EntityId, DefaultFunction>,
+    const_default_classes: std::collections::HashSet<EntityId>,
 }
 #[derive(Clone, Copy)]
 pub(super) struct DefaultFunction {
@@ -142,11 +141,19 @@ pub(super) struct DefaultFunction {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum DefaultDemand {
     Callable,
+    Facts,
     MemberActions,
 }
 impl Constructors {
     pub(super) fn default_function(&self, class: EntityId) -> Option<DefaultFunction> {
         self.default_functions.get(&class).copied()
+    }
+
+    pub(super) fn const_default(&self, class: EntityId) -> bool {
+        self.const_default_classes.contains(&class)
+    }
+    pub(super) fn record_const_default(&mut self, class: EntityId) {
+        self.const_default_classes.insert(class);
     }
 
     pub(super) fn add(&mut self, constructor: Constructor) -> Result<ConstructorId, Error> {
@@ -211,25 +218,6 @@ impl Constructors {
     }
 }
 impl Analyzer<'_> {
-    pub(super) fn validate_const_default(
-        &self,
-        target: TypeId,
-        constructor: ConstructorId,
-        location: crate::support::source::SourceOffset,
-    ) -> Result<(), Error> {
-        let plan = self.graph.constructors.get(constructor);
-        if self.graph.types.get(target).cv.0 & 1 != 0 && !plan.const_default {
-            return Err(Error::at(
-                location,
-                if self.graph.entity(plan.class).key == Keyword::Union {
-                    "a const union object initializes no member"
-                } else {
-                    "a const object leaves a member uninitialized"
-                },
-            ));
-        }
-        Ok(())
-    }
     pub(super) fn default_initialize_declaration(
         &mut self,
         binding: BindingId,
@@ -296,17 +284,7 @@ impl Analyzer<'_> {
                 self.graph.binding_scope(binding),
                 location,
             )?;
-            let record = self.graph.constructors.get(constructor);
-            if self.graph.types.get(object).cv.0 & 1 != 0 && !record.const_default {
-                return Err(Error::at(
-                    location,
-                    if self.graph.entity(class).key == Keyword::Union {
-                        "a const union object initializes no member"
-                    } else {
-                        "a const object leaves a member uninitialized"
-                    },
-                ));
-            }
+            self.validate_const_default(object, constructor, location)?;
             self.graph.entity_mut(variable).constructor = Some(constructor);
             if self.lowering()
                 && self.unevaluated == 0
@@ -449,7 +427,9 @@ impl Analyzer<'_> {
         };
         // A cached plan is shared; its omitted arguments belong to this use's
         // emitting owner, even when an unused inline body first built the plan.
-        if let Some(binding) = self.graph.constructors.get(id).binding {
+        if demand == DefaultDemand::Callable
+            && let Some(binding) = self.graph.constructors.get(id).binding
+        {
             self.request_constructor_defaults(binding, 0)?;
         }
         Ok(id)
@@ -521,6 +501,22 @@ impl Analyzer<'_> {
                 ConstructorState::Ready(id)
             });
         result
+    }
+
+    pub(super) fn implicit_constructor_function(
+        &mut self,
+        class: EntityId,
+    ) -> Result<Option<DefaultFunction>, Error> {
+        if let Some(slot) = self.graph.constructors.default_function(class) {
+            return Ok(Some(slot));
+        }
+        if self.declared_default_constructor(class)?.is_none()
+            && self.graph.entity(class).user_constructor.is_some()
+        {
+            return Ok(None);
+        }
+        self.default_constructor_plan(class, SourceOffset(0), DefaultDemand::Facts)?;
+        Ok(self.graph.constructors.default_function(class))
     }
 
     pub(super) fn default_constructor_binding(
@@ -632,7 +628,6 @@ impl Analyzer<'_> {
         let mut base_plans = self.default_base_plans(class, binding)?;
         let mut plans = Vec::with_capacity(self.graph.entity(class).members.len());
         let mut subobjects = Vec::new();
-        let mut const_members = 0;
         for index in 0..self.graph.entity(class).members.len() {
             let member_id = self.graph.entity(class).members[index];
             self.request_member_initializer(member_id)?;
@@ -685,15 +680,7 @@ impl Analyzer<'_> {
                 if let Some(binding) = child.binding {
                     self.check_direct_member_access(binding, scope, SourceOffset(0))?;
                 }
-                if !union && child.const_default {
-                    const_members += 1;
-                }
-                if self.graph.types.get(ty).cv.0 & 1 != 0 && !child.const_default {
-                    return Err(Error::at(
-                        SourceOffset(0),
-                        "a const object leaves a member uninitialized",
-                    ));
-                }
+                self.validate_const_default(ty, id, SourceOffset(0))?;
                 subobjects.push(MemberConstruction {
                     member: member_id,
                     constructor: id,
@@ -710,17 +697,7 @@ impl Analyzer<'_> {
         let BasePlans {
             direct: bases,
             indirect: indirect_bases,
-            const_default: bases_const_default,
         } = base_plans;
-        let members = self.graph.entity(class).members.len();
-        let initialized = self.graph.entity(class).initialized_members;
-        let const_default = bases_const_default
-            && (members == 0
-                || if union {
-                    initialized == 1
-                } else {
-                    initialized + const_members == members
-                });
         let callable_type = self.constructor_signature(binding)?;
         if let Some(binding) = binding {
             let entity = self.graph.entity(self.graph.binding(binding).entity);
@@ -744,15 +721,6 @@ impl Analyzer<'_> {
             callable_type,
             nothrow,
             deleted,
-            const_default: const_default
-                || binding.is_some_and(|binding| {
-                    matches!(
-                        self.graph
-                            .entity(self.graph.binding(binding).entity)
-                            .special_definition,
-                        Some(SpecialDefinition::Defaulted { first: false, .. })
-                    )
-                }),
             written_members: vec![false; plans.len()],
             members: plans,
             bases,
@@ -799,7 +767,6 @@ impl Analyzer<'_> {
         class: EntityId,
         binding: Option<BindingId>,
     ) -> Result<BasePlans, Error> {
-        let mut bases_const_default = true;
         let mut bases = Vec::with_capacity(self.graph.entity(class).bases.len());
         let inherited = binding.and_then(|binding| {
             self.graph
@@ -836,13 +803,11 @@ impl Analyzer<'_> {
             if base.deleted {
                 return Err(Error::at(SourceOffset(0), "use of a deleted function"));
             }
-            bases_const_default &= base.const_default;
         }
         self.default_base_access(class, &bases)?;
         Ok(BasePlans {
             direct: bases,
             indirect: Vec::new(),
-            const_default: bases_const_default,
         })
     }
 
@@ -873,7 +838,6 @@ impl Analyzer<'_> {
         let mut indirect_bases = Vec::new();
         for base in self.indirect_constructor_bases(class) {
             let constructor = self.default_constructor(base, SourceOffset(0))?;
-            plans.const_default &= self.graph.constructors.get(constructor).const_default;
             indirect_bases.push(BaseInitialization {
                 class: base,
                 constructor: Some(constructor),
@@ -1138,7 +1102,6 @@ impl Analyzer<'_> {
             nothrow: false,
             deleted: self.graph.entity(entity).availability
                 == super::graph::FunctionAvailability::Deleted,
-            const_default: true,
             members: Vec::new(),
             written_members: Vec::new(),
             bases: Vec::new(),

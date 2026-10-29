@@ -177,17 +177,10 @@ impl Analyzer<'_> {
                 if let TypeKind::Class(child) = self.graph.types.get(object).kind {
                     let constructor = self.default_constructor(child, location)?;
                     self.validate_constructor_use(constructor, scope, location)?;
-                    if self.graph.types.get(object).cv.0 & 1 != 0
-                        && !self.graph.constructors.get(constructor).const_default
-                    {
-                        return Err(Error::at(
-                            location,
-                            "a const object leaves a member uninitialized",
-                        ));
-                    }
                     if !matches!(self.graph.types.get(ty).kind, TypeKind::Array { .. }) {
                         self.demand_constructor_use(constructor)?;
                     }
+                    self.validate_const_default(object, constructor, location)?;
                     subobjects.push(MemberConstruction {
                         member,
                         constructor,
@@ -277,7 +270,6 @@ impl Analyzer<'_> {
             callable_type,
             nothrow,
             deleted: false,
-            const_default: false,
             members,
             written_members,
             bases: Vec::new(),

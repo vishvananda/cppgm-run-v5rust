@@ -36,6 +36,7 @@ mod class_conditionals;
 mod class_templates;
 mod complex_constants;
 mod complex_values;
+mod const_default;
 mod constant_addresses;
 mod constant_floats;
 mod constant_mutations;
