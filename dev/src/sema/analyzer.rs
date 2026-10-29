@@ -33,6 +33,7 @@ pub(super) enum SpecializationMode {
 #[derive(Default)]
 pub(super) struct UnitState {
     pub potentially_throwing: u32,
+    pub arguments: super::procedural_calls::ArgumentPolicy,
     pub substitution: super::substitution_state::State,
     pub text_literals: std::collections::HashMap<crate::lex::identifiers::NameId, ast::ExprId>,
     pub library_nans: [Option<super::graph::BindingId>; 3],

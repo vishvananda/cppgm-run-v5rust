@@ -565,6 +565,12 @@ impl Graph {
     pub(crate) fn lower_constructor_entity(&self, id: ConstructorId) -> Option<EntityId> {
         self.constructors.get(id).declaration
     }
+    pub(crate) fn lower_constructor_type(&self, id: ConstructorId) -> Result<TypeId, Error> {
+        let plan = self.constructors.get(id);
+        plan.declaration.map_or(Ok(plan.callable_type), |entity| {
+            self.lower_entity_type(entity)
+        })
+    }
     // An argument's odr-use schedules definitions only. A declaration is emitted
     // when generated code actually refers to the function (C++ demand_entry).
     pub(crate) fn lower_argument_functions(

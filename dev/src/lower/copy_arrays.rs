@@ -76,7 +76,13 @@ impl Function<'_, '_, '_, '_> {
                 base
             };
             let from = self.element_address(base, index, size, element)?;
-            self.call_copy_constructor(constructor, Variant::Complete, to, from, SourceOffset(0))?;
+            self.call_subobject_copy_constructor(
+                constructor,
+                Variant::Complete,
+                to,
+                from,
+                SourceOffset(0),
+            )?;
             if guarded && index + 1 < count {
                 self.copied_subobject(element, to, None);
             }
@@ -339,9 +345,17 @@ impl Function<'_, '_, '_, '_> {
         if let Some(cleanup) = cleanup {
             self.effect(I::Runtime(R::EhTry(cleanup)))?;
         }
+        let saved = self.copying.active;
         self.copying.active = false;
-        self.call_copy_constructor(constructor, Variant::Complete, to, from, location)?;
-        self.copying.active = true;
+        let result = self.call_subobject_copy_constructor(
+            constructor,
+            Variant::Complete,
+            to,
+            from,
+            location,
+        );
+        self.copying.active = saved;
+        result?;
         if guarded {
             self.effect(I::Runtime(R::EhEnd))?;
         }

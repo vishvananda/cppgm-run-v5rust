@@ -56,6 +56,13 @@ enum ConstructorContext {
     Standard { explicit: bool },
 }
 #[derive(Clone, Copy)]
+enum ConstructorScope {
+    Ordinary,
+    StandardOnly,
+    Inherit,
+}
+
+#[derive(Clone, Copy)]
 pub(super) enum ClassPassing {
     Direct,
     Indirect,
@@ -530,6 +537,7 @@ impl Analyzer<'_> {
             class,
             facts,
             ConstructorContext::Standard { explicit: true },
+            ConstructorScope::StandardOnly,
         )?;
         self.copy_use_candidate(resolution, scope, location, CopyFailureSite::FinalTemporary)?;
         Ok(())
@@ -545,6 +553,7 @@ impl Analyzer<'_> {
             class,
             facts,
             ConstructorContext::Standard { explicit: true },
+            ConstructorScope::StandardOnly,
         )?;
         if let CopyResolution::Selected(candidate) = resolution
             && !matches!(
@@ -575,6 +584,7 @@ impl Analyzer<'_> {
             class,
             facts,
             ConstructorContext::Standard { explicit: direct },
+            ConstructorScope::Inherit,
         )?;
         self.check_copy_selection(resolution, None, SourceOffset(0))
             .map(|candidate| candidate.selection)
@@ -602,7 +612,12 @@ impl Analyzer<'_> {
         // Deletion/access are checked only after choosing which pass to keep.
         let mut view = facts;
         view.category = V::Xvalue;
-        let resolution = self.resolve_class_copy(class, view, false)?;
+        let resolution = self.resolve_class_constructor(
+            class,
+            view,
+            ConstructorContext::Copy,
+            ConstructorScope::Inherit,
+        )?;
         if let CopyResolution::Selected(candidate) = resolution
             && let TypeKind::Reference {
                 element,
@@ -627,7 +642,7 @@ impl Analyzer<'_> {
         facts: super::expression_facts::ExprFacts,
         direct: bool,
     ) -> Result<CopyResolution, Error> {
-        self.resolve_class_constructor(
+        let selected = self.resolve_class_constructor(
             class,
             facts,
             if direct {
@@ -635,19 +650,40 @@ impl Analyzer<'_> {
             } else {
                 ConstructorContext::Copy
             },
-        )
+            ConstructorScope::Ordinary,
+        )?;
+        self.specialize_constructor_selection(class, selected)
     }
     fn resolve_class_constructor(
         &mut self,
         class: EntityId,
         facts: super::expression_facts::ExprFacts,
         context: ConstructorContext,
+        scope: ConstructorScope,
     ) -> Result<CopyResolution, Error> {
+        let copies = self.implicit_copy_candidates(class)?;
+        let policy = match scope {
+            ConstructorScope::Ordinary => super::procedural_calls::ArgumentPolicy::constructor(
+                (context == ConstructorContext::Direct).then_some(class),
+                false,
+            ),
+            ConstructorScope::StandardOnly => self.graph.analysis.arguments.standard(),
+            ConstructorScope::Inherit => self.graph.analysis.arguments,
+        };
         let mut scratch = std::mem::take(&mut self.copy_scratch);
-        let selected = self.rank_class_copy(class, facts, context, &mut scratch.candidates);
+        let selected = self.with_argument_policy(policy, |analyzer| {
+            analyzer.rank_class_copy(class, facts, context, copies, &mut scratch.candidates)
+        });
         scratch.candidates.clear();
         self.copy_scratch = scratch;
-        let mut selected = selected?;
+        selected
+    }
+
+    fn specialize_constructor_selection(
+        &mut self,
+        class: EntityId,
+        mut selected: CopyResolution,
+    ) -> Result<CopyResolution, Error> {
         if let CopyResolution::Selected(candidate) = &mut selected
             && let CopyOrigin::Declared(binding) = candidate.selection.origin
         {
@@ -667,7 +703,12 @@ impl Analyzer<'_> {
         facts: super::expression_facts::ExprFacts,
     ) -> Result<bool, Error> {
         Ok(matches!(
-            self.resolve_class_copy(class, facts, true)?,
+            self.resolve_class_constructor(
+                class,
+                facts,
+                ConstructorContext::Direct,
+                ConstructorScope::Ordinary
+            )?,
             CopyResolution::NoViable { .. }
         ))
     }
@@ -676,9 +717,9 @@ impl Analyzer<'_> {
         class: EntityId,
         facts: super::expression_facts::ExprFacts,
         context: ConstructorContext,
+        copies: ImplicitCopies,
         candidates: &mut Vec<Candidate>,
     ) -> Result<CopyResolution, Error> {
-        let copies = self.implicit_copy_candidates(class)?;
         candidates.clear();
         let declared = self
             .graph
@@ -715,7 +756,7 @@ impl Analyzer<'_> {
         .into_iter()
         .flatten()
         {
-            if let Some(sequence) = self.copy_argument_sequence(facts, parameter, class, context)? {
+            if let Some(sequence) = self.copy_argument_sequence(facts, parameter)? {
                 candidates.push(Candidate {
                     selection: CopySelection {
                         origin: CopyOrigin::Implicit { class, kind },
@@ -833,9 +874,7 @@ impl Analyzer<'_> {
                 }
             } else {
                 let parameter = self.graph.types.function_parameter(ty, 0)?;
-                let Some(sequence) =
-                    self.copy_argument_sequence(facts, parameter, class, context)?
-                else {
+                let Some(sequence) = self.copy_argument_sequence(facts, parameter)? else {
                     continue;
                 };
                 sequence
@@ -861,8 +900,6 @@ impl Analyzer<'_> {
         &mut self,
         source: super::expression_facts::ExprFacts,
         parameter: TypeId,
-        class: EntityId,
-        context: ConstructorContext,
     ) -> Result<Option<ArgumentSequence>, Error> {
         if let Some(conversion) = self.scalar_sequence(source, parameter, false)? {
             return Ok(Some(ArgumentSequence {
@@ -872,12 +909,10 @@ impl Analyzer<'_> {
                 user_conversion: None,
             }));
         }
-        if matches!(context, ConstructorContext::Standard { .. }) {
+        if !self.graph.analysis.arguments.allows_user() {
             return Ok(None);
         }
-        let direct = context == ConstructorContext::Direct
-            && matches!(self.graph.types.get(parameter).kind,
-            TypeKind::Reference { element, .. } if self.graph.class_of(element) == Some(class));
+        let direct = self.graph.analysis.arguments.direct(&self.graph, parameter);
         self.user_conversion_sequence(source, parameter, direct)
     }
     fn compare_copy_candidates(&mut self, a: Candidate, b: Candidate) -> Result<Ordering, Error> {
@@ -938,7 +973,9 @@ impl Analyzer<'_> {
         } else {
             ConstructorContext::Direct
         };
-        let resolution = self.resolve_class_constructor(class, facts, context)?;
+        let resolution =
+            self.resolve_class_constructor(class, facts, context, ConstructorScope::Ordinary)?;
+        let resolution = self.specialize_constructor_selection(class, resolution)?;
         if let CopyResolution::Selected(candidate) = resolution
             && let CopyOrigin::Declared(binding) = candidate.selection.origin
         {
@@ -1260,7 +1297,7 @@ mod tests {
     }
     #[test]
     fn direct_constructor_queries_keep_sequences_in_scratch_until_application() {
-        use super::{ConstructorContext, CopyResolution};
+        use super::{ConstructorContext, ConstructorScope, CopyResolution};
         use crate::sema::{
             expression_facts::{ExprFacts, ValueCategory},
             procedural_calls::UserConversion,
@@ -1300,7 +1337,12 @@ mod tests {
         let demands = analyzer.graph.root_demands.as_slice().len();
         for _ in 0..3 {
             let CopyResolution::Selected(candidate) = analyzer
-                .resolve_class_constructor(target, facts, ConstructorContext::Direct)
+                .resolve_class_constructor(
+                    target,
+                    facts,
+                    ConstructorContext::Direct,
+                    ConstructorScope::Ordinary,
+                )
                 .unwrap()
             else {
                 panic!("direct constructor selection");
@@ -1313,9 +1355,14 @@ mod tests {
                 ConstructorContext::CopyList,
                 ConstructorContext::Standard { explicit: true },
             ] {
+                let scope = if matches!(context, ConstructorContext::Standard { .. }) {
+                    ConstructorScope::StandardOnly
+                } else {
+                    ConstructorScope::Ordinary
+                };
                 assert!(matches!(
                     analyzer
-                        .resolve_class_constructor(target, facts, context)
+                        .resolve_class_constructor(target, facts, context, scope)
                         .unwrap(),
                     CopyResolution::NoViable { .. }
                 ));

@@ -135,18 +135,22 @@ impl Analyzer<'_> {
         if self.graph.entity(class).copy_preparation == Preparation::Active {
             return Err(Error::Invariant("cyclic copy property demand"));
         }
-        self.graph.entity_mut(class).copy_preparation = Preparation::Active;
-        let mut work = vec![(class, 0usize)];
-        while let Some((current, index)) = work.last_mut() {
-            let count =
-                self.graph.entity(*current).bases.len() + self.graph.entity(*current).members.len();
-            if *index < count {
-                let child = self.graph.copy_child(*current, *index)?;
-                *index += 1;
-                if let Some((child, _, _)) = child {
-                    match self.graph.entity(child).copy_preparation {
+        let policy = self.graph.analysis.arguments.copy_members();
+        self.with_argument_policy(policy, |analyzer| {
+            analyzer.graph.entity_mut(class).copy_preparation = Preparation::Active;
+            let mut work = vec![(class, 0usize)];
+            while let Some((current, index)) = work.last_mut() {
+                let count = analyzer.graph.entity(*current).bases.len()
+                    + analyzer.graph.entity(*current).members.len();
+                if *index < count {
+                    let child = analyzer.graph.copy_child(*current, *index)?;
+                    *index += 1;
+                    let Some((child, _, _)) = child else {
+                        continue;
+                    };
+                    match analyzer.graph.entity(child).copy_preparation {
                         Preparation::Pending => {
-                            self.graph.entity_mut(child).copy_preparation = Preparation::Active;
+                            analyzer.graph.entity_mut(child).copy_preparation = Preparation::Active;
                             work.push((child, 0));
                         }
                         Preparation::Active => {
@@ -154,15 +158,15 @@ impl Analyzer<'_> {
                         }
                         Preparation::Ready => (),
                     }
+                    continue;
                 }
-                continue;
+                let current = *current;
+                work.pop();
+                analyzer.complete_copy_properties(current)?;
+                analyzer.graph.entity_mut(current).copy_preparation = Preparation::Ready;
             }
-            let current = *current;
-            work.pop();
-            self.complete_copy_properties(current)?;
-            self.graph.entity_mut(current).copy_preparation = Preparation::Ready;
-        }
-        Ok(())
+            Ok(())
+        })
     }
     fn accepts_const_copy(&self, class: EntityId) -> Result<bool, Error> {
         if let Some((parameter, _)) = self

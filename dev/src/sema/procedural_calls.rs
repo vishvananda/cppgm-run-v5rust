@@ -9,7 +9,7 @@ use super::{
     },
     function_resolution::CallTarget,
     function_templates::TemplateOrdering,
-    graph::{BindingId, ScopeId},
+    graph::{BindingId, EntityId, ScopeId},
     types::{RefKind, Scalar, TypeId, TypeKind},
 };
 use crate::{
@@ -80,6 +80,43 @@ impl CallScratch {
         self.surrogates.clear();
     }
 }
+/// The source `implicit_sequence` reads these ambient settings, including while
+/// nested deduction visits ordinary calls. `InstantiationContext` resets both.
+#[derive(Clone, Copy, Default)]
+pub(super) struct ArgumentPolicy {
+    direct_class: Option<EntityId>,
+    standard_only: bool,
+}
+impl ArgumentPolicy {
+    pub(super) fn constructor(direct_class: Option<EntityId>, standard_only: bool) -> Self {
+        Self {
+            direct_class,
+            standard_only,
+        }
+    }
+    pub(super) fn standard(self) -> Self {
+        Self {
+            standard_only: true,
+            ..self
+        }
+    }
+    pub(super) fn copy_members(self) -> Self {
+        Self {
+            direct_class: None,
+            ..self
+        }
+    }
+    pub(super) fn allows_user(self) -> bool {
+        !self.standard_only
+    }
+    pub(super) fn direct(self, graph: &super::graph::Graph, parameter: TypeId) -> bool {
+        self.direct_class.is_some_and(|class| {
+            matches!(graph.types.get(parameter).kind,
+            TypeKind::Reference { element, .. } if graph.class_of(element) == Some(class))
+        })
+    }
+}
+
 #[derive(Clone, Copy)]
 enum ArgumentConversions {
     Standard,
@@ -103,6 +140,17 @@ pub(super) enum UserConversion {
     Function(BindingId),
 }
 impl Analyzer<'_> {
+    pub(super) fn with_argument_policy<T>(
+        &mut self,
+        policy: ArgumentPolicy,
+        action: impl FnOnce(&mut Self) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        let saved = std::mem::replace(&mut self.graph.analysis.arguments, policy);
+        let result = action(self);
+        self.graph.analysis.arguments = saved;
+        result
+    }
+
     pub(super) fn procedural_call(
         &mut self,
         id: ast::ExprId,
@@ -975,8 +1023,10 @@ impl Analyzer<'_> {
         if application.is_none()
             && !overloaded
             && matches!(conversions, ArgumentConversions::UserDefined)
+            && self.graph.analysis.arguments.allows_user()
         {
-            let mut sequence = self.user_conversion_sequence(facts, target, false)?;
+            let direct = self.graph.analysis.arguments.direct(&self.graph, target);
+            let mut sequence = self.user_conversion_sequence(facts, target, direct)?;
             if let Some(sequence) = &mut sequence {
                 sequence.function = function;
             }
@@ -1011,9 +1061,19 @@ impl Analyzer<'_> {
         set: Candidates,
         args: &[ast::ExprId],
         scratch: &mut CallScratch,
+        input: super::constructor_initialization::ClassInput,
     ) -> Result<Option<CallSelection>, Error> {
-        self.rank_call(set, args, None, scratch)?;
-        let resolution = self.call_resolution(args.len(), 0, scratch)?;
+        let (Candidates::Constructors { class, .. } | Candidates::ConvertingMember(class)) = set
+        else {
+            return Err(Error::Invariant("constructor resolution without class"));
+        };
+        let copies = self.prepare_call_candidates(set, scratch)?;
+        let direct = (!input.copy_list && !input.converting && args.len() == 1).then_some(class);
+        let policy = ArgumentPolicy::constructor(direct, input.converting);
+        let resolution = self.with_argument_policy(policy, |analyzer| {
+            analyzer.rank_prepared_call(set, args, None, None, scratch, copies)?;
+            analyzer.call_resolution(args.len(), 0, scratch)
+        })?;
         let message = match resolution {
             CallResolution::Selected(selected) => return Ok(Some(selected)),
             CallResolution::NoViable => "no viable function for the call",
@@ -1061,10 +1121,17 @@ impl Analyzer<'_> {
         prefix: Option<ExprFacts>,
         scratch: &mut CallScratch,
     ) -> Result<(), Error> {
+        let copies = self.prepare_call_candidates(set, scratch)?;
+        self.rank_prepared_call(set, args, object, prefix, scratch, copies)
+    }
+
+    fn prepare_call_candidates(
+        &mut self,
+        set: Candidates,
+        scratch: &mut CallScratch,
+    ) -> Result<[Option<BindingId>; 2], Error> {
         scratch.candidates.clear();
         scratch.sequences.clear();
-        let offset = usize::from(prefix.is_some());
-        let written = args.len() + offset;
         let copies = if let Candidates::Constructors {
             class,
             copies: true,
@@ -1086,6 +1153,20 @@ impl Analyzer<'_> {
                 scratch.offered.push(binding);
             }
         }
+        Ok(copies)
+    }
+
+    fn rank_prepared_call(
+        &mut self,
+        set: Candidates,
+        args: &[ast::ExprId],
+        object: Option<super::expression_facts::ObjectArgument>,
+        prefix: Option<ExprFacts>,
+        scratch: &mut CallScratch,
+        copies: [Option<BindingId>; 2],
+    ) -> Result<(), Error> {
+        let offset = usize::from(prefix.is_some());
+        let written = args.len() + offset;
         let declared = scratch.offered.len();
         if declared == 0 && copies.iter().all(Option::is_none) {
             return Ok(());
@@ -1809,6 +1890,119 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::{SyntaxUnit, ast},
     };
+
+    #[test]
+    fn ambient_argument_policy_controls_real_sequences_and_instantiation_lifetime() {
+        use super::ArgumentPolicy;
+        use crate::sema::types::{RefKind, Scalar};
+        let source = SourceBuffer::new(
+            b"struct A{};struct X{explicit operator A&();operator int();};extern X x;int result=x;"
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"argument-policy-context").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let declarations = tree.decl_lists.get(declarations).to_vec();
+        let class_name = cursor.intern_name(b"A").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_semantics(true);
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let global = analyzer.graph.global;
+        for &declaration in &declarations[..3] {
+            analyzer.declaration(declaration, global).unwrap();
+        }
+        let class = analyzer
+            .graph
+            .binding(
+                analyzer
+                    .graph
+                    .own(global, class_name, Filter::Prefix)
+                    .unwrap(),
+            )
+            .entity;
+        let reference = analyzer
+            .graph
+            .types
+            .reference(analyzer.graph.entity(class).ty.unwrap(), RefKind::Lvalue)
+            .unwrap();
+        let integer = analyzer
+            .graph
+            .types
+            .scalar(Scalar::Basic(crate::types::FundamentalType::Int))
+            .unwrap();
+        let ast::DeclKind::Simple { declarators, .. } =
+            analyzer.tree.declarations.get(declarations[3]).kind
+        else {
+            panic!("initializer");
+        };
+        let initializer = analyzer.tree.init_declarators.get(declarators)[0]
+            .initializer
+            .unwrap();
+        let ast::InitializerKind::Assign(expression) = initializer.kind else {
+            panic!("operand");
+        };
+        analyzer.typed_expression(expression, global).unwrap();
+        for (policy, target, allowed) in [
+            (ArgumentPolicy::constructor(None, true), integer, false),
+            (
+                ArgumentPolicy::constructor(Some(class), false),
+                reference,
+                true,
+            ),
+        ] {
+            let result: Result<(), crate::sema::Error> =
+                analyzer.with_argument_policy(policy, |analyzer| {
+                    assert_eq!(
+                        analyzer.argument_sequence(expression, target)?.is_some(),
+                        allowed
+                    );
+                    let limit = analyzer.graph.binding_limit();
+                    let nested: Result<(), crate::sema::Error> = analyzer.instantiation_context(
+                        analyzer.instantiation_depth,
+                        initializer.location,
+                        limit,
+                        |analyzer| {
+                            assert_eq!(
+                                analyzer.argument_sequence(expression, target)?.is_some(),
+                                !allowed
+                            );
+                            Err(crate::sema::Error::Invariant(
+                                "test argument activation exit",
+                            ))
+                        },
+                    );
+                    assert!(matches!(
+                        nested,
+                        Err(crate::sema::Error::Invariant(
+                            "test argument activation exit"
+                        ))
+                    ));
+                    assert_eq!(
+                        analyzer.argument_sequence(expression, target)?.is_some(),
+                        allowed
+                    );
+                    Err(crate::sema::Error::Invariant(
+                        "test argument resolution exit",
+                    ))
+                });
+            assert!(matches!(
+                result,
+                Err(crate::sema::Error::Invariant(
+                    "test argument resolution exit"
+                ))
+            ));
+            assert_eq!(
+                analyzer
+                    .argument_sequence(expression, target)
+                    .unwrap()
+                    .is_some(),
+                !allowed
+            );
+        }
+    }
 
     #[test]
     fn ellipsis_retains_class_operand_identity_without_selecting_a_copy() {

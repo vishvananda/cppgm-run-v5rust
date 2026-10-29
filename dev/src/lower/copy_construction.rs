@@ -414,7 +414,7 @@ impl Function<'_, '_, '_, '_> {
                     )?,
             });
         }
-        let result = self.call_copy_constructor(
+        let result = self.call_subobject_copy_constructor(
             id,
             if transfer.member.is_none() {
                 Variant::Base
@@ -566,6 +566,57 @@ impl Function<'_, '_, '_, '_> {
                 }
             }
         })
+    }
+    /// `copy_lowering.cpp::copy_call`: constructor plans have no parameter copy.
+    /// Keep this policy above the lower-level `call_copy` entry/default demand.
+    pub(super) fn call_subobject_copy_constructor(
+        &mut self,
+        id: ConstructorId,
+        variant: Variant,
+        destination: Value,
+        source: Value,
+        location: SourceOffset,
+    ) -> Result<(), Error> {
+        let signature = self.graph.lower_constructor_type(id)?;
+        let TypeView::Function { parameters, .. } = self.graph.lower_type(signature)? else {
+            return Err(crate::sema::Error::Invariant("subobject copy signature").into());
+        };
+        let parameter = *parameters
+            .first()
+            .ok_or(crate::sema::Error::Invariant("subobject copy parameter"))?;
+        if matches!(
+            self.graph.lower_type(parameter)?,
+            TypeView::Reference { .. }
+        ) {
+            return self.call_copy_constructor(id, variant, destination, source, location);
+        }
+        // Source caller_destroyed observes passed_directly before destruction,
+        // even though copied_parameter must subsequently reject the null copy.
+        let caller_destroyed = if let TypeView::Class(class) = self.graph.lower_type(parameter)? {
+            !self.graph.lower_direct_class_parameter(class)?
+                && self
+                    .symbols
+                    .view(&*self.graph, &*self.tree, self.cursor)
+                    .storage_destructor(parameter)?
+                    .is_some()
+        } else {
+            false
+        };
+        if caller_destroyed {
+            if !self.lifetime.full_expression {
+                self.lifetime.full_expression = true;
+                self.lifetime.region_start = super::lifetime::RegionStart::Pending;
+                self.lifetime.temporary_segment = super::lifetime::TemporarySegment::Eager;
+                self.ensure_insertion()?;
+                self.lifetime.expression_start = Some(self.builder.position()?);
+            }
+            self.open_temporary_region()?;
+        }
+        Err(crate::sema::Error::at(
+            location,
+            "a by-value assignment parameter without its constructor",
+        )
+        .into())
     }
     pub(super) fn call_copy_constructor(
         &mut self,

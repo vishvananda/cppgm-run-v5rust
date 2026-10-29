@@ -530,6 +530,7 @@ impl Analyzer<'_> {
                 },
                 args,
                 &mut scratch,
+                input,
             )
         };
         let chosen = chosen.and_then(|selected| {

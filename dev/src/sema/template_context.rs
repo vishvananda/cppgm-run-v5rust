@@ -39,6 +39,7 @@ impl Levels {
 
 #[derive(Default)]
 struct Context {
+    arguments: super::procedural_calls::ArgumentPolicy,
     access: DeclarationAccess,
     body: Option<BodyContext>,
     head: Option<HeadId>,
@@ -69,6 +70,7 @@ struct Context {
 impl Context {
     fn swap(&mut self, analyzer: &mut Analyzer<'_>) {
         use std::mem::swap;
+        swap(&mut self.arguments, &mut analyzer.graph.analysis.arguments);
         swap(&mut self.access, &mut analyzer.declaration_access);
         swap(&mut self.body, &mut analyzer.body_context);
         swap(&mut self.head, &mut analyzer.template_head);
