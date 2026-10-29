@@ -126,15 +126,14 @@ impl Constructor {
 #[derive(Default)]
 pub(super) struct Constructors {
     records: Vec<Constructor>,
-    implicit_functions: std::collections::HashMap<EntityId, EntityId>,
-    // A successful default query keeps the declared function's identity, even
-    // when it belongs to an inherited template. Plans and emission are separate.
-    defaults: std::collections::HashMap<EntityId, DefaultSelection>,
+    // The class retains one selected function, declared or implicit, before
+    // its structural/default facts. Absence is never a cached failure.
+    default_functions: std::collections::HashMap<EntityId, DefaultFunction>,
 }
 #[derive(Clone, Copy)]
-enum DefaultSelection {
-    InProgress,
-    Ready(BindingId),
+pub(super) struct DefaultFunction {
+    pub function: EntityId,
+    pub declared: Option<BindingId>,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum DefaultDemand {
@@ -142,6 +141,10 @@ enum DefaultDemand {
     MemberActions,
 }
 impl Constructors {
+    pub(super) fn default_function(&self, class: EntityId) -> Option<DefaultFunction> {
+        self.default_functions.get(&class).copied()
+    }
+
     pub(super) fn add(&mut self, constructor: Constructor) -> Result<ConstructorId, Error> {
         let id = ConstructorId(
             u32::try_from(self.records.len())
@@ -526,30 +529,20 @@ impl Analyzer<'_> {
         &mut self,
         class: EntityId,
     ) -> Result<Option<BindingId>, Error> {
-        match self.graph.constructors.defaults.get(&class) {
-            Some(DefaultSelection::Ready(binding)) => return Ok(Some(*binding)),
-            Some(DefaultSelection::InProgress) => {
-                return Err(Error::at(
-                    SourceOffset(0),
-                    "template instantiation nested too deeply",
-                ));
-            }
-            None => (),
+        if let Some(function) = self.graph.constructors.default_function(class) {
+            return Ok(function.declared);
         }
-        self.graph
-            .constructors
-            .defaults
-            .insert(class, DefaultSelection::InProgress);
-        let result = self.find_default_constructor(class);
-        if let Ok(Some(binding)) = result {
-            self.graph
-                .constructors
-                .defaults
-                .insert(class, DefaultSelection::Ready(binding));
-        } else {
-            self.graph.constructors.defaults.remove(&class);
+        let selected = self.find_default_constructor(class)?;
+        if let Some(binding) = selected {
+            self.graph.constructors.default_functions.insert(
+                class,
+                DefaultFunction {
+                    function: self.graph.binding(binding).entity,
+                    declared: Some(binding),
+                },
+            );
         }
-        result
+        Ok(selected)
     }
 
     fn find_default_constructor(&mut self, class: EntityId) -> Result<Option<BindingId>, Error> {
@@ -622,9 +615,8 @@ impl Analyzer<'_> {
             // no function declaration unless one was separately queried.
             self.graph
                 .constructors
-                .implicit_functions
-                .get(&class)
-                .copied()
+                .default_function(class)
+                .map(|slot| slot.function)
         } else {
             Some(self.implicit_default_declaration(class)?)
         };
@@ -966,20 +958,22 @@ impl Analyzer<'_> {
     }
 
     fn implicit_default_declaration(&mut self, class: EntityId) -> Result<EntityId, Error> {
-        let function =
-            if let Some(&function) = self.graph.constructors.implicit_functions.get(&class) {
-                function
-            } else {
-                let signature = self.constructor_signature(None)?;
-                let function = self.graph.add_implicit_constructor(class, signature)?;
-                self.graph.entity_mut(function).exceptions =
-                    super::exceptions::ExceptionState::Value(super::exceptions::ExceptionSet::All);
-                self.graph
-                    .constructors
-                    .implicit_functions
-                    .insert(class, function);
-                function
-            };
+        let function = if let Some(slot) = self.graph.constructors.default_function(class) {
+            slot.function
+        } else {
+            let signature = self.constructor_signature(None)?;
+            let function = self.graph.add_implicit_constructor(class, signature)?;
+            self.graph.entity_mut(function).exceptions =
+                super::exceptions::ExceptionState::Value(super::exceptions::ExceptionSet::All);
+            self.graph.constructors.default_functions.insert(
+                class,
+                DefaultFunction {
+                    function,
+                    declared: None,
+                },
+            );
+            function
+        };
         if let ConstructorState::Ready(id) = self.graph.entity(class).default_construction
             && self.graph.constructors.get(id).declaration.is_none()
         {
@@ -1761,7 +1755,7 @@ mod tests {
     }
     #[test]
     fn default_queries_share_base_identity_without_demanding_derived_plans() {
-        use super::{ConstructorState, DefaultSelection};
+        use super::ConstructorState;
         let source = SourceBuffer::new(
             br"
             struct B { int n; template<class T=int> B(T x=T(8)):n(x){} };
@@ -1801,13 +1795,6 @@ mod tests {
         let binding = analyzer.graph.constructors.get(first).binding.unwrap();
         assert_eq!(analyzer.graph.constructors.get(first).class, classes[0]);
         for &class in &classes[1..4] {
-            assert!(
-                !analyzer
-                    .graph
-                    .constructors
-                    .implicit_functions
-                    .contains_key(&class)
-            );
             assert_eq!(
                 analyzer
                     .default_constructor(class, crate::support::source::SourceOffset(0))
@@ -1815,7 +1802,12 @@ mod tests {
                 first
             );
             assert!(
-                matches!(analyzer.graph.constructors.defaults.get(&class), Some(DefaultSelection::Ready(known)) if *known == binding)
+                analyzer
+                    .graph
+                    .constructors
+                    .default_function(class)
+                    .is_some_and(|slot| slot.declared == Some(binding)
+                        && slot.function == analyzer.graph.binding(binding).entity)
             );
             let ConstructorState::Ready(plan) = analyzer.graph.entity(class).default_construction
             else {
@@ -1834,7 +1826,7 @@ mod tests {
                 .all(|&id| graph.entity(graph.binding(id).entity).constructor.is_none())
         );
         let unused = classes[4];
-        assert!(!graph.constructors.defaults.contains_key(&unused));
+        assert!(graph.constructors.default_function(unused).is_none());
         assert!(matches!(
             graph.entity(unused).default_construction,
             ConstructorState::NotStarted
@@ -1876,7 +1868,13 @@ mod tests {
                     ..
                 })
             ));
-            assert!(!analyzer.graph.constructors.defaults.contains_key(&class));
+            assert!(
+                analyzer
+                    .graph
+                    .constructors
+                    .default_function(class)
+                    .is_none()
+            );
             assert!(matches!(
                 analyzer.graph.entity(class).default_construction,
                 super::ConstructorState::NotStarted
