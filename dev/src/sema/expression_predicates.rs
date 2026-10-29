@@ -303,6 +303,12 @@ mod tests {
         assert_eq!(analyzer.unevaluated, 0);
     }
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ThrowingContext {
+    Preserve,
+    Live,
+}
+
 #[derive(Clone, Copy, Default)]
 struct Properties {
     viable: bool,
@@ -398,7 +404,7 @@ impl Analyzer<'_> {
         // Call facts own temporary/throwing information by ExprId, so this
         // unevaluated query needs no synthetic function or body identity.
         let facts = match self.substitution_trial(|analyzer| {
-            analyzer.trait_expression_context(|analyzer| {
+            analyzer.trait_expression_context(ThrowingContext::Preserve, |analyzer| {
                 analyzer.builtin_invoke(call, arguments, scope)
             })
         }) {
@@ -507,7 +513,7 @@ impl Analyzer<'_> {
             kind: ast::InitializerKind::Parenthesized(operands),
         };
         let selection = self.substitution_trial(|analyzer| {
-            analyzer.trait_expression_context(|analyzer| {
+            analyzer.trait_expression_context(ThrowingContext::Preserve, |analyzer| {
                 let constructor = if class.is_some() {
                     if !analyzer.type_construction_operands(operands, scope)? {
                         return Ok((None, None));
@@ -520,11 +526,13 @@ impl Analyzer<'_> {
                     None
                 };
                 let destroyed = if reference {
-                    analyzer
-                        .graph
-                        .expression_facts
-                        .known(analyzer.tree.expr_lists.get(operands)[0])
-                        .and_then(|facts| facts.conversion)
+                    let operand = analyzer.tree.expr_lists.get(operands)[0];
+                    let conversion = if analyzer.graph.expression_facts.known(operand).is_some() {
+                        analyzer.graph.expression_facts.outer_conversion(operand)?
+                    } else {
+                        None
+                    };
+                    conversion
                         .filter(|binding| {
                             binding.temporary
                                 && matches!(
@@ -710,7 +718,7 @@ impl Analyzer<'_> {
             )
         };
         match self.substitution_trial(|analyzer| {
-            analyzer.trait_expression_context(|analyzer| {
+            analyzer.trait_expression_context(ThrowingContext::Live, |analyzer| {
                 analyzer.object_initializer(
                     ast::Initializer { location, kind },
                     scope,
@@ -727,7 +735,7 @@ impl Analyzer<'_> {
             }
             Err(error) => return Err(error),
         }
-        let binding = self.graph.expression_facts.get(operand)?.conversion;
+        let binding = self.graph.expression_facts.outer_conversion(operand)?;
         let direct_prvalue = prvalue
             && matches!(
                 self.graph.types.get(source).kind,
@@ -816,6 +824,7 @@ impl Analyzer<'_> {
 
     fn trait_expression_context<T>(
         &mut self,
+        throwing: ThrowingContext,
         action: impl FnOnce(&mut Self) -> Result<T, Error>,
     ) -> Result<T, Error> {
         let inserted_body = self.body_context.is_none();
@@ -824,11 +833,15 @@ impl Analyzer<'_> {
             self.body_context = Some(super::procedural_statements::BodyContext::new(result, None));
         }
         self.unevaluated += 1;
+        let saved_throwing = self.graph.analysis.potentially_throwing;
         let result = action(self);
-        self.unevaluated -= 1;
         if inserted_body {
             self.body_context = None;
         }
+        if throwing == ThrowingContext::Preserve {
+            self.graph.analysis.potentially_throwing = saved_throwing;
+        }
+        self.unevaluated -= 1;
         result
     }
     fn conversion_query(
@@ -879,45 +892,47 @@ impl Analyzer<'_> {
         };
         let owner = self.graph.analysis.substitution.current().owner;
         let selection = self.with_substitution_soft(owner, |analyzer| {
-            let (constructor, mut nothrow) = analyzer.trait_expression_context(|analyzer| {
-                // The source initializes first, then checks destruction only
-                // without failure, but asks an existing destructor's noexcept
-                // even when initialization left a soft failure.
-                let initialization = (|| {
-                    if analyzer.graph.class_of(to).is_some() {
-                        analyzer
-                            .initialize_class_object(to, initializer, scope, location)
-                            .map(|selected| selected.map(|(constructor, _)| constructor))
-                    } else {
-                        analyzer.object_initializer(initializer, scope, to, location)?;
-                        Ok(None)
-                    }
-                })();
-                let constructor = match initialization {
-                    Ok(constructor) => constructor,
-                    Err(Error::SubstitutionRejected(_) | Error::SubstitutionNull) => None,
-                    Err(error) => return Err(error),
-                };
-                if analyzer
-                    .graph
-                    .analysis
-                    .substitution
-                    .current()
-                    .failure
-                    .is_none()
-                {
-                    match analyzer.check_class_destruction(to, scope, location) {
-                        Ok(()) | Err(Error::SubstitutionRejected(_) | Error::SubstitutionNull) => {}
+            let (constructor, mut nothrow) =
+                analyzer.trait_expression_context(ThrowingContext::Preserve, |analyzer| {
+                    // The source initializes first, then checks destruction only
+                    // without failure, but asks an existing destructor's noexcept
+                    // even when initialization left a soft failure.
+                    let initialization = (|| {
+                        if analyzer.graph.class_of(to).is_some() {
+                            analyzer
+                                .initialize_class_object(to, initializer, scope, location)
+                                .map(|selected| selected.map(|(constructor, _)| constructor))
+                        } else {
+                            analyzer.object_initializer(initializer, scope, to, location)?;
+                            Ok(None)
+                        }
+                    })();
+                    let constructor = match initialization {
+                        Ok(constructor) => constructor,
+                        Err(Error::SubstitutionRejected(_) | Error::SubstitutionNull) => None,
                         Err(error) => return Err(error),
+                    };
+                    if analyzer
+                        .graph
+                        .analysis
+                        .substitution
+                        .current()
+                        .failure
+                        .is_none()
+                    {
+                        match analyzer.check_class_destruction(to, scope, location) {
+                            Ok(())
+                            | Err(Error::SubstitutionRejected(_) | Error::SubstitutionNull) => {}
+                            Err(error) => return Err(error),
+                        }
                     }
-                }
-                let nothrow = if let Some(class) = analyzer.graph.class_of(to) {
-                    analyzer.available_destructor_nothrow(class)?
-                } else {
-                    true
-                };
-                Ok((constructor, nothrow))
-            })?;
+                    let nothrow = if let Some(class) = analyzer.graph.class_of(to) {
+                        analyzer.available_destructor_nothrow(class)?
+                    } else {
+                        true
+                    };
+                    Ok((constructor, nothrow))
+                })?;
             if analyzer
                 .graph
                 .analysis
@@ -988,8 +1003,9 @@ impl Analyzer<'_> {
             })
             .map_err(|_| Error::Limit("assignment query syntax limit"))?;
         let facts = match self.substitution_trial(|analyzer| {
-            analyzer
-                .trait_expression_context(|analyzer| analyzer.typed_expression(assignment, scope))
+            analyzer.trait_expression_context(ThrowingContext::Preserve, |analyzer| {
+                analyzer.typed_expression(assignment, scope)
+            })
         }) {
             Ok(Some(facts)) => facts,
             Ok(None) => return Ok(Properties::default()),

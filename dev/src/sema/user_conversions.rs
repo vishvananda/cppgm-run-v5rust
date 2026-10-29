@@ -426,6 +426,7 @@ impl Analyzer<'_> {
             .expression_facts
             .set_user_conversion(id, constructor, sequence.conversion);
         self.demand_constructor_use(constructor)?;
+        self.note_throwing_function(self.graph.binding(binding).entity);
         self.request_constructor_defaults(binding, 1)?;
         Ok(true)
     }

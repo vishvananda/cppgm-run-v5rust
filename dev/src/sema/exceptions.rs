@@ -143,6 +143,23 @@ impl Specifications {
 }
 
 impl super::graph::Graph {
+    // The C++ event owners read the current boolean after odr_use. Reading
+    // it must not independently demand a pending specification (notably in U).
+    pub(super) fn function_nothrow_value(&self, function: EntityId) -> bool {
+        let entity = self.entity(function);
+        if entity.builtin.is_some() {
+            return true;
+        }
+        if entity.constructor_exceptions
+            == super::construction::ConstructorExceptionSource::SubobjectPlan
+        {
+            return entity
+                .constructor
+                .is_some_and(|id| self.constructors.get(id).nothrow);
+        }
+        matches!(entity.exceptions, ExceptionState::Value(ExceptionSet::None))
+    }
+
     pub(crate) fn lower_demand_function_nothrow(
         &mut self,
         tree: &mut ast::Tree,

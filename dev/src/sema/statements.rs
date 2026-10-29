@@ -124,14 +124,19 @@ impl Analyzer<'_> {
             {
                 self.semantic_return(id, operand, scope)
             }
-            StmtKind::Throw(operand)
+            StmtKind::Throw(Some(operand))
                 if self.semantic()
                     && self.template_depth == 0
-                    && !self.reserved_context.pattern =>
+                    && !self.reserved_context.pattern
+                    && self.body_context.is_some() =>
             {
-                if let Some(operand) = operand {
-                    self.throw_operand(operand, scope, self.tree.statements.get(id).location)?;
+                // statement ignores the nullable thrown type; a throw
+                // expression instead returns null before its own event.
+                match self.throw_operand(operand, scope, self.tree.statements.get(id).location) {
+                    Ok(_) | Err(Error::SubstitutionRejected(_) | Error::SubstitutionNull) => {}
+                    Err(error) => return Err(error),
                 }
+                self.note_potentially_throwing();
                 Ok(())
             }
             StmtKind::Expression(operand)

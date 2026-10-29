@@ -167,7 +167,9 @@ impl Analyzer<'_> {
             self.throw_operand(operand, scope, self.tree.expressions.get(id).location)?;
         }
         let ty = self.graph.types.scalar(Scalar::Void)?;
-        self.new_expression_facts(ty, ValueCategory::Prvalue)
+        let facts = self.new_expression_facts(ty, ValueCategory::Prvalue)?;
+        self.note_potentially_throwing();
+        Ok(facts)
     }
 
     pub(super) fn try_statement(

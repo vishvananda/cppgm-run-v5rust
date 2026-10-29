@@ -695,6 +695,12 @@ impl ExpressionFacts {
             .get(&self.root(id))
             .and_then(|record| record.outer)
     }
+    // C++ facts->conversion is the outer conversion. Constructor conversions
+    // retain their parameter step separately in Rust's scalar facts.
+    pub(super) fn outer_conversion(&self, id: ast::ExprId) -> Result<Option<Conversion>, Error> {
+        Ok(self.user_conversion(id).or(self.get(id)?.conversion))
+    }
+
     pub(super) fn set_user_conversion(
         &mut self,
         id: ast::ExprId,

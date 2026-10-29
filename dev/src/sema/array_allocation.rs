@@ -153,6 +153,7 @@ impl Analyzer<'_> {
             let constructor = self.default_constructor(class, location)?;
             self.validate_constructor_use(constructor, scope, location)?;
             self.demand_constructor_use(constructor)?;
+            self.note_throwing_constructor(constructor);
             Some((constructor, ConstructorArguments::Values(List::default())))
         } else {
             None

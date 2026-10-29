@@ -506,6 +506,7 @@ impl Analyzer<'_> {
         let function = selected?;
         self.demand_specialization_body(function);
         self.demand_function(function, true)?;
+        self.note_throwing_function(self.graph.binding(function).entity);
         let array = if let Some(count) = count {
             Some(self.initialize_array_allocation(
                 count,
@@ -532,6 +533,7 @@ impl Analyzer<'_> {
             self.validate_constructor_use(constructor, scope, location)?;
             self.validate_const_default(target, constructor, location)?;
             self.demand_constructor_use(constructor)?;
+            self.note_throwing_constructor(constructor);
             Some((constructor, ConstructorArguments::Values(List::default())))
         } else {
             if self.graph.types.get(target).cv.0 & 1 != 0 {

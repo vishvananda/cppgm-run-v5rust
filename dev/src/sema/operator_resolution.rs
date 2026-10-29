@@ -374,6 +374,7 @@ impl Analyzer<'_> {
         }
         self.demand_specialization_body(binding);
         self.demand_function(binding, true)?;
+        self.note_throwing_function(self.graph.binding(binding).entity);
         let ty = self
             .graph
             .binding(binding)

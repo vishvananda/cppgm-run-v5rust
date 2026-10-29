@@ -13,6 +13,30 @@ use super::{
 use crate::syntax::ast::{self, ExprKind};
 
 impl Analyzer<'_> {
+    // These are the source owner's initialization events, not ordinary call
+    // counts or work statistics. Its uint32_t state lives for the whole unit.
+    pub(super) fn note_potentially_throwing(&mut self) {
+        self.graph.analysis.potentially_throwing =
+            self.graph.analysis.potentially_throwing.wrapping_add(1);
+    }
+    pub(super) fn note_throwing_function(&mut self, function: super::graph::EntityId) {
+        if !self.graph.function_nothrow_value(function) {
+            self.note_potentially_throwing();
+        }
+    }
+    pub(super) fn note_throwing_constructor(
+        &mut self,
+        constructor: super::construction::ConstructorId,
+    ) {
+        let plan = self.graph.constructors.get(constructor);
+        let nothrow = plan.declaration.map_or(plan.nothrow, |function| {
+            self.graph.function_nothrow_value(function)
+        });
+        if !nothrow {
+            self.note_potentially_throwing();
+        }
+    }
+
     pub(super) fn constructor_function_may_throw(
         &mut self,
         id: super::construction::ConstructorId,
@@ -508,6 +532,39 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn initialization_events_keep_lambda_and_trait_counter_lifetimes() {
+        let source = SourceBuffer::new(
+            br#"struct A{A();A(int);};void ordinary(){A a{};}
+              auto closure=[](){A a{};};
+              static_assert(__is_constructible(A),"");
+              static_assert(__reference_constructs_from_temporary(const A&,int),"");
+              A object{};"#
+                .to_vec(),
+        )
+        .unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"initialization-counter").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_semantics(true);
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let scope = analyzer.graph.global;
+        let declarations = analyzer.tree.decl_lists.get(declarations).to_vec();
+        let expected = [0, 1, 1, 1, 2, 3];
+        assert_eq!(declarations.len(), expected.len());
+        for (declaration, expected) in declarations.into_iter().zip(expected) {
+            analyzer.declaration(declaration, scope).unwrap();
+            assert_eq!(analyzer.graph.analysis.potentially_throwing, expected);
+        }
+        let mut graph = analyzer.finish_analysis(false).unwrap();
+        let resumed =
+            Analyzer::with_graph(tree, cursor, StackBudget::default(), Some(&mut graph)).unwrap();
+        assert_eq!(resumed.graph.analysis.potentially_throwing, 3);
+    }
 
     fn return_expression(
         tree: &ast::Tree,

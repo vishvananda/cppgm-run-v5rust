@@ -950,6 +950,7 @@ impl Analyzer<'_> {
         let binding = self.graph.function_origin(function)?;
         self.request_constructor_defaults(binding, 1)?;
         self.demand_constructor_use(constructor)?;
+        self.note_throwing_constructor(constructor);
         Ok(Some(constructor))
     }
     fn copy_use_candidate(

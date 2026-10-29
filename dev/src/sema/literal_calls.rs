@@ -519,6 +519,7 @@ impl Analyzer<'_> {
         self.check_function_not_deleted(entity, location)?;
         self.demand_specialization_body(binding);
         self.demand_function(binding, true)?;
+        self.note_throwing_function(entity);
         let ty = self
             .graph
             .entity(entity)

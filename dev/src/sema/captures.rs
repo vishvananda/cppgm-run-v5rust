@@ -608,6 +608,7 @@ impl Analyzer<'_> {
         }
         let constructor = self.copy_constructor_plan(class, selected, location)?;
         self.demand_constructor_use(constructor)?;
+        self.note_throwing_constructor(constructor);
         Ok(Some(constructor))
     }
 

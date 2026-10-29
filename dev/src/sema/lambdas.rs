@@ -130,6 +130,15 @@ impl Graph {
     }
 }
 impl Analyzer<'_> {
+    fn lambda_body(&mut self, body: DeferredBody) -> Result<(), Error> {
+        let saved_throwing = self.graph.analysis.potentially_throwing;
+        self.without_soft_substitution(|analyzer| {
+            let result = analyzer.function_body(body);
+            analyzer.graph.analysis.potentially_throwing = saved_throwing;
+            result
+        })
+    }
+
     pub(super) fn note_closure_invocation(
         &mut self,
         id: ast::ExprId,
@@ -510,18 +519,16 @@ impl Analyzer<'_> {
         if head.is_some() {
             self.capture_scan = Some(call);
         }
-        let analyzed = self.without_soft_substitution(|analyzer| {
-            analyzer.function_body(DeferredBody {
-                entity: call,
-                name: None,
-                ty,
-                parameters,
-                body,
-                parent,
-                print: class_scope,
-                template_depth: usize::from(head.is_some()),
-                definition_head: head,
-            })
+        let analyzed = self.lambda_body(DeferredBody {
+            entity: call,
+            name: None,
+            ty,
+            parameters,
+            body,
+            parent,
+            print: class_scope,
+            template_depth: usize::from(head.is_some()),
+            definition_head: head,
         });
         self.capture_scan = saved_scan;
         self.unevaluated = saved_unevaluated;

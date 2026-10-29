@@ -361,6 +361,7 @@ impl Analyzer<'_> {
             let constructor = self.default_constructor(class, location)?;
             self.validate_constructor_use(constructor, scope, location)?;
             self.demand_constructor_use(constructor)?;
+            self.note_throwing_constructor(constructor);
             if let Some(id) = list {
                 self.publish_constructor_list(id, target, constructor)?;
             }
@@ -548,6 +549,7 @@ impl Analyzer<'_> {
             self.validate_constructor_use(constructor, scope, location)?;
             self.apply_call_arguments(selected, args, scope, &scratch)?;
             self.demand_constructor_use(constructor)?;
+            self.note_throwing_constructor(constructor);
             Ok(Some((constructor, function)))
         });
         scratch.clear();
