@@ -1065,7 +1065,12 @@ impl<W: Write + ?Sized> Printer<'_, '_, W> {
             .entity(plan.class)
             .ty
             .ok_or_else(|| io::Error::other("constructor class without type"))?;
-        self.function_type_with_object(plan.callable_type, object, Cv::default())
+        self.function_type_with_object(
+            plan.callable_type
+                .ok_or_else(|| io::Error::other("anonymous action is not callable"))?,
+            object,
+            Cv::default(),
+        )
     }
     fn string_initializer(
         &mut self,

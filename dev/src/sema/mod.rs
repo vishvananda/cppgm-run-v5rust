@@ -63,6 +63,8 @@ mod declaration_access;
 mod declarations;
 mod declarators;
 mod default_arguments;
+mod default_construction;
+mod default_constructor_facts;
 mod deferred_constants;
 mod dependence;
 mod dependent_members;

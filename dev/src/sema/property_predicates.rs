@@ -182,7 +182,8 @@ impl Analyzer<'_> {
         if !nothrow {
             return Ok(false);
         }
-        Ok(facts.nothrow)
+        self.function_may_throw(facts.function)
+            .map(|throwing| !throwing)
     }
 
     fn property_destructible(

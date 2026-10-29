@@ -759,7 +759,22 @@ impl Analyzer<'_> {
         if check_access {
             let owner = self.graph.binding(primary).entity;
             self.with_substitution_soft(Some(owner), |analyzer| {
-                analyzer.complete_signature_with_head(primary, head, arguments, check_access)
+                let result =
+                    analyzer.complete_signature_with_head(primary, head, arguments, check_access);
+                // Source deduced_specialization tests its own Soft failure
+                // before that lifetime consumes/restores the ambient failure.
+                if analyzer
+                    .graph
+                    .analysis
+                    .substitution
+                    .current()
+                    .failure
+                    .is_some()
+                {
+                    result.map(|_| None)
+                } else {
+                    result
+                }
             })
         } else {
             self.complete_signature_with_head(primary, head, arguments, check_access)

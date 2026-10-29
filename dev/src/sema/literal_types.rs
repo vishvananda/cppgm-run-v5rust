@@ -351,9 +351,10 @@ impl Analyzer<'_> {
             return Ok(true);
         }
         for index in 0..self.graph.constructors.get(id).bases.len() {
-            if let Some(base) = self.graph.constructors.get(id).bases[index].constructor
-                && !self.constant_constructor_eligible_at(base, known, depth + 1)?
-            {
+            let Some(base) = self.graph.constructors.get(id).bases[index].constructor else {
+                return Ok(false);
+            };
+            if !self.constant_constructor_eligible_at(base, known, depth + 1)? {
                 return Ok(false);
             }
         }
@@ -405,12 +406,13 @@ impl Analyzer<'_> {
             while let TypeKind::Array { element, .. } = self.graph.types.get(ty).kind {
                 ty = element;
             }
-            let Some(class) = self.graph.class_of(ty) else {
+            if self.graph.class_of(ty).is_none() {
                 return Ok(false);
-            };
-            let child = match child {
-                Some(child) => child,
-                None => self.default_constructor(class, SourceOffset(0))?,
+            }
+            // Source constexpr_default_subobject observes the published null
+            // constructor. Qualification must not select or plan that entry.
+            let Some(child) = child else {
+                return Ok(false);
             };
             if !self.constant_constructor_eligible_at(child, known, depth + 1)? {
                 return Ok(false);

@@ -567,9 +567,13 @@ impl Graph {
     }
     pub(crate) fn lower_constructor_type(&self, id: ConstructorId) -> Result<TypeId, Error> {
         let plan = self.constructors.get(id);
-        plan.declaration.map_or(Ok(plan.callable_type), |entity| {
-            self.lower_entity_type(entity)
-        })
+        plan.declaration.map_or_else(
+            || {
+                plan.callable_type
+                    .ok_or(Error::Invariant("anonymous action is not callable"))
+            },
+            |entity| self.lower_entity_type(entity),
+        )
     }
     // An argument's odr-use schedules definitions only. A declaration is emitted
     // when generated code actually refers to the function (C++ demand_entry).
@@ -635,7 +639,9 @@ impl Graph {
             home: class
                 .scope
                 .ok_or(Error::Invariant("constructor without class scope"))?,
-            ty: plan.callable_type,
+            ty: plan
+                .callable_type
+                .ok_or(Error::Invariant("anonymous action is not callable"))?,
             scope: None,
             internal: (if object_mode {
                 self.lower_object_type_unit_local(self.lower_entity_type(plan.class)?)?
@@ -1470,7 +1476,8 @@ impl Graph {
         &self,
         class: EntityId,
     ) -> Result<ConstructorId, Error> {
-        let super::construction::ConstructorState::Ready(id) =
+        let (super::construction::ConstructorState::Ready(id)
+        | super::construction::ConstructorState::Published(id)) =
             self.entity(class).default_construction
         else {
             return Err(Error::Invariant(
@@ -1481,7 +1488,8 @@ impl Graph {
     }
     pub(crate) fn lower_ready_default_constructor(&self, class: EntityId) -> Option<ConstructorId> {
         match self.entity(class).default_construction {
-            super::construction::ConstructorState::Ready(id) => Some(id),
+            super::construction::ConstructorState::Ready(id)
+            | super::construction::ConstructorState::Published(id) => Some(id),
             _ => None,
         }
     }

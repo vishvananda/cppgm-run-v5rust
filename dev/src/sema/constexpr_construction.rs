@@ -772,7 +772,7 @@ impl Analyzer<'_> {
                         let parameter = self
                             .graph
                             .types
-                            .function_parameter(self.graph.constructors.get(id).callable_type, 0)?;
+                            .function_parameter(self.graph.lower_constructor_type(id)?, 0)?;
                         let from = ConstantArguments::Written(values)
                             .first_place(self, parameter, scope)?;
                         self.copy_constant_object(target, from, location)
@@ -790,7 +790,7 @@ impl Analyzer<'_> {
             let parameter = self
                 .graph
                 .types
-                .function_parameter(self.graph.constructors.get(id).callable_type, 0)?;
+                .function_parameter(self.graph.lower_constructor_type(id)?, 0)?;
             let source = values.first_place(self, parameter, scope)?;
             return self.copy_constant_subobjects(id, target, source, location);
         }

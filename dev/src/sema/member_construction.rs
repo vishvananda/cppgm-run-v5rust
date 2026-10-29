@@ -254,8 +254,6 @@ impl Analyzer<'_> {
             subobjects,
             deferred,
         } = self.member_actions(class, written, scope, location, known, deferred)?;
-        let nothrow = self.planned_members_nothrow(&members, &written_members, &subobjects)?;
-        let callable_type = self.constructor_signature(None)?;
         let constructor = self.publish_constructor(Constructor {
             facts: super::construction::ConstructorFacts::Complete,
             copy: None,
@@ -264,8 +262,8 @@ impl Analyzer<'_> {
             binding: None,
             declaration: None,
             object_pointer: None,
-            callable_type,
-            nothrow,
+            callable_type: None,
+            nothrow: false,
             deleted: false,
             members,
             written_members,

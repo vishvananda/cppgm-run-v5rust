@@ -47,7 +47,9 @@ pub(crate) struct ConstructorId(u32);
 pub(super) enum ConstructorState {
     #[default]
     NotStarted,
+    // Copy-body planning retains its independent in-progress state.
     InProgress,
+    Published(ConstructorId),
     Ready(ConstructorId),
 }
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -59,6 +61,7 @@ pub(super) enum Triviality {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum ConstructorFacts {
     Declaration,
+    PlanPublished,
     Complete,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -84,7 +87,7 @@ pub(super) struct Constructor {
     pub binding: Option<BindingId>,
     pub declaration: Option<EntityId>,
     pub object_pointer: Option<TypeId>,
-    pub callable_type: TypeId,
+    pub callable_type: Option<TypeId>,
     pub nothrow: bool,
     pub(super) deleted: bool,
     pub members: Vec<(EntityId, Option<ast::Initializer>)>,
@@ -138,12 +141,6 @@ pub(super) struct DefaultFunction {
     pub function: EntityId,
     pub declared: Option<BindingId>,
 }
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum DefaultDemand {
-    Callable,
-    Facts,
-    MemberActions,
-}
 impl Constructors {
     pub(super) fn default_function(&self, class: EntityId) -> Option<DefaultFunction> {
         self.default_functions.get(&class).copied()
@@ -179,8 +176,89 @@ impl Constructors {
     pub(super) fn set_nothrow(&mut self, id: ConstructorId, nothrow: bool) {
         self.records[id.0 as usize].nothrow = nothrow;
     }
-    fn record_declaration(&mut self, id: ConstructorId, declaration: EntityId) {
-        self.records[id.0 as usize].declaration = Some(declaration);
+    pub(super) fn retain_default_function(&mut self, class: EntityId, slot: DefaultFunction) {
+        self.default_functions.insert(class, slot);
+    }
+    pub(super) fn install_default_entries(
+        &mut self,
+        id: ConstructorId,
+        members: Vec<(EntityId, Option<ast::Initializer>)>,
+        bases: Vec<BaseInitialization>,
+        indirect_bases: Vec<BaseInitialization>,
+    ) {
+        let record = &mut self.records[id.0 as usize];
+        record.written_members = vec![false; members.len()];
+        record.subobjects = vec![None; members.len()];
+        record.members = members;
+        record.bases = bases;
+        record.indirect_bases = indirect_bases;
+    }
+    pub(super) fn publish_default_entries(&mut self, id: ConstructorId) {
+        self.records[id.0 as usize].facts = ConstructorFacts::PlanPublished;
+    }
+    pub(super) fn set_default_member(
+        &mut self,
+        id: ConstructorId,
+        index: usize,
+        initializer: Option<ast::Initializer>,
+        action: Option<MemberConstruction>,
+    ) -> Result<(), Error> {
+        let record = &mut self.records[id.0 as usize];
+        if action.is_some_and(|action| action.member != record.members[index].0) {
+            return Err(Error::Invariant("default member entry identity"));
+        }
+        record.members[index].1 = initializer;
+        record.subobjects[index] = action;
+        Ok(())
+    }
+    pub(super) fn set_default_base(
+        &mut self,
+        id: ConstructorId,
+        index: usize,
+        indirect: bool,
+        constructor: Option<ConstructorId>,
+    ) {
+        let record = &mut self.records[id.0 as usize];
+        let entries = if indirect {
+            &mut record.indirect_bases
+        } else {
+            &mut record.bases
+        };
+        entries[index].constructor = constructor;
+    }
+    pub(super) fn mark_default_deleted(&mut self, id: ConstructorId) {
+        self.records[id.0 as usize].deleted = true;
+    }
+    pub(super) fn set_default_triviality(&mut self, id: ConstructorId, trivial: bool) {
+        self.records[id.0 as usize].triviality = if trivial {
+            Triviality::Trivial
+        } else {
+            Triviality::Nontrivial
+        };
+    }
+    pub(super) fn set_default_transfer(&mut self, id: ConstructorId, storage: bool) {
+        self.records[id.0 as usize].copy_transfer = if storage {
+            CopyTransfer::Storage
+        } else {
+            CopyTransfer::Call
+        };
+    }
+    pub(super) fn finish_default_facts(
+        &mut self,
+        id: ConstructorId,
+        trivial: bool,
+        nothrow: bool,
+        deleted: bool,
+    ) {
+        let record = &mut self.records[id.0 as usize];
+        record.triviality = if trivial {
+            Triviality::Trivial
+        } else {
+            Triviality::Nontrivial
+        };
+        record.nothrow = nothrow;
+        record.deleted |= deleted;
+        record.facts = ConstructorFacts::Complete;
     }
     pub(super) fn patch_default_member(&mut self, id: ConstructorId, action: MemberConstruction) {
         let record = &mut self.records[id.0 as usize];
@@ -330,113 +408,33 @@ impl Analyzer<'_> {
         class: EntityId,
         location: SourceOffset,
     ) -> Result<ConstructorId, Error> {
-        self.default_constructor_plan(class, location, DefaultDemand::Callable)
+        let Some(slot) = self.implicit_constructor_function(class)? else {
+            return self.reject_substitution(
+                location,
+                "no default constructor for the class",
+                false,
+            );
+        };
+        let id = self
+            .graph
+            .entity(slot.function)
+            .constructor
+            .ok_or(Error::Invariant(
+                "default function without constructor record",
+            ))?;
+        // Omitted runtime arguments are requested by the actual initialization
+        // owner. The function-only source operation never enters this hook.
+        if let Some(binding) = slot.declared {
+            self.request_constructor_defaults(binding, 0)?;
+        }
+        Ok(id)
     }
     pub(super) fn default_member_constructor(
         &mut self,
         class: EntityId,
         location: SourceOffset,
     ) -> Result<ConstructorId, Error> {
-        if self.graph.anonymous_member_storage(class).is_none() {
-            return self.default_constructor(class, location);
-        }
-        self.default_constructor_plan(class, location, DefaultDemand::MemberActions)
-    }
-    fn default_constructor_plan(
-        &mut self,
-        class: EntityId,
-        location: SourceOffset,
-        demand: DefaultDemand,
-    ) -> Result<ConstructorId, Error> {
-        // Ordinary nonvirtual bases are completed bottom-up on demand. A deep
-        // hierarchy must not consume one native Rust frame per base.
-        let mut work = vec![(class, 0usize, None)];
-        let mut active = std::collections::HashSet::from([class]);
-        while let Some((current, next, selected)) = work.last_mut() {
-            let plan_location = if *current == class {
-                location
-            } else {
-                SourceOffset(0)
-            };
-            if matches!(
-                self.graph.entity(*current).default_construction,
-                ConstructorState::Ready(_)
-            ) {
-                if *current == class
-                    && demand == DefaultDemand::Callable
-                    && let ConstructorState::Ready(id) =
-                        self.graph.entity(*current).default_construction
-                    && self.graph.constructors.get(id).declaration.is_none()
-                {
-                    // A direct query may follow an anonymous-member expansion.
-                    self.implicit_default_declaration(*current)?;
-                }
-                active.remove(current);
-                work.pop();
-            } else if *next == 0 {
-                *selected = self.declared_default_constructor(*current)?;
-                if selected.is_none() && self.graph.entity(*current).user_constructor.is_some() {
-                    return Err(Error::at(
-                        plan_location,
-                        "no default constructor for the class",
-                    ));
-                }
-                if selected.is_none()
-                    && self.graph.entity(*current).complete
-                    && (self.graph.anonymous_member_storage(*current).is_none()
-                        || *current == class && demand == DefaultDemand::Callable)
-                {
-                    self.implicit_default_declaration(*current)?;
-                }
-                *next = 1;
-                if selected.is_some_and(|binding| {
-                    !matches!(
-                        self.graph
-                            .entity(self.graph.binding(binding).entity)
-                            .special_definition,
-                        Some(SpecialDefinition::Defaulted { .. })
-                    )
-                }) {
-                    // The query may select a base template directly. Its own
-                    // plan, rather than a derived forwarding plan, owns demand.
-                    self.select_default_constructor(*current, *selected, plan_location)?;
-                    active.remove(current);
-                    work.pop();
-                }
-            } else if let Some(edge) = self.graph.entity(*current).bases.get(*next - 1) {
-                *next += 1;
-                active.insert(edge.class);
-                work.push((edge.class, 0, None));
-            } else if *next - 1
-                < self.graph.entity(*current).bases.len()
-                    + self.graph.entity(*current).members.len()
-            {
-                let index = *next - 1 - self.graph.entity(*current).bases.len();
-                *next += 1;
-                let member = self.graph.entity(*current).members[index];
-                if let Some(child) = self.default_member_dependency(member)? {
-                    if !active.insert(child) {
-                        return Err(Error::at(location, "class contains itself"));
-                    }
-                    work.push((child, 0, None));
-                }
-            } else {
-                self.select_default_constructor(*current, *selected, plan_location)?;
-                active.remove(current);
-                work.pop();
-            }
-        }
-        let ConstructorState::Ready(id) = self.graph.entity(class).default_construction else {
-            return Err(Error::Invariant("uncompleted default constructor"));
-        };
-        // A cached plan is shared; its omitted arguments belong to this use's
-        // emitting owner, even when an unused inline body first built the plan.
-        if demand == DefaultDemand::Callable
-            && let Some(binding) = self.graph.constructors.get(id).binding
-        {
-            self.request_constructor_defaults(binding, 0)?;
-        }
-        Ok(id)
+        self.default_constructor(class, location)
     }
 
     pub(super) fn default_member_dependency(
@@ -463,66 +461,6 @@ impl Analyzer<'_> {
         )
     }
 
-    fn select_default_constructor(
-        &mut self,
-        class: EntityId,
-        selected: Option<BindingId>,
-        location: SourceOffset,
-    ) -> Result<ConstructorId, Error> {
-        match self.graph.entity(class).default_construction {
-            ConstructorState::Ready(id) => return Ok(id),
-            ConstructorState::InProgress => {
-                return Err(Error::Invariant("recursive scalar constructor demand"));
-            }
-            ConstructorState::NotStarted => (),
-        }
-        if let Some(binding) = selected {
-            // implicit_constructor defines a selected defaulted constructor.
-            // A declaration-only plan may already exist from an inherited
-            // constructor's signature/exception query; replace it in place.
-            let function = self.graph.binding(binding).entity;
-            let id = if matches!(
-                self.graph.entity(function).special_definition,
-                Some(SpecialDefinition::Defaulted { .. })
-            ) {
-                self.scalar_constructor_facts(class, Some(binding))?
-            } else {
-                self.selected_constructor_plan(binding, location)?
-            };
-            self.graph.entity_mut(class).default_construction = ConstructorState::Ready(id);
-            return Ok(id);
-        }
-        if !self.complete_class(class)? {
-            return Err(Error::Invariant("constructor of an incomplete class"));
-        }
-        if self.graph.entity(class).template_head.is_some() {
-            return Err(Error::Missing("class template default construction"));
-        }
-        self.graph.entity_mut(class).default_construction = ConstructorState::InProgress;
-        let result = self.scalar_constructor_facts(class, None);
-        self.graph.entity_mut(class).default_construction =
-            result.as_ref().map_or(ConstructorState::NotStarted, |&id| {
-                ConstructorState::Ready(id)
-            });
-        result
-    }
-
-    pub(super) fn implicit_constructor_function(
-        &mut self,
-        class: EntityId,
-    ) -> Result<Option<DefaultFunction>, Error> {
-        if let Some(slot) = self.graph.constructors.default_function(class) {
-            return Ok(Some(slot));
-        }
-        if self.declared_default_constructor(class)?.is_none()
-            && self.graph.entity(class).user_constructor.is_some()
-        {
-            return Ok(None);
-        }
-        self.default_constructor_plan(class, SourceOffset(0), DefaultDemand::Facts)?;
-        Ok(self.graph.constructors.default_function(class))
-    }
-
     pub(super) fn default_constructor_binding(
         &mut self,
         class: EntityId,
@@ -536,78 +474,94 @@ impl Analyzer<'_> {
         &mut self,
         class: EntityId,
     ) -> Result<Option<BindingId>, Error> {
-        if let Some(function) = self.graph.constructors.default_function(class) {
-            return Ok(function.declared);
-        }
-        let selected = self.find_default_constructor(class)?;
-        if let Some(binding) = selected {
-            self.graph.constructors.default_functions.insert(
-                class,
-                DefaultFunction {
-                    function: self.graph.binding(binding).entity,
-                    declared: Some(binding),
-                },
-            );
-        }
-        Ok(selected)
+        Ok(self
+            .implicit_constructor_function(class)?
+            .and_then(|slot| slot.declared))
     }
 
-    fn find_default_constructor(&mut self, class: EntityId) -> Result<Option<BindingId>, Error> {
+    pub(super) fn find_default_constructor(
+        &mut self,
+        class: EntityId,
+    ) -> Result<super::default_construction::Lookup, Error> {
         let mut selected = None;
         for index in 0..self.graph.entity(class).declared_constructors.len() {
             let binding = self.graph.entity(class).declared_constructors[index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if entity.template_head.is_some() {
-                continue;
-            }
             let count = self.graph.types.function_parameter_count(
                 entity
                     .ty
                     .ok_or(Error::Invariant("constructor without type"))?,
             )?;
-            if (0..count).any(|index| entity.defaults.get(index).is_none_or(Option::is_none)) {
+            if (0..count).any(|index| entity.defaults.get(index).is_none_or(Option::is_none))
+                || entity.template_head.is_some()
+            {
                 continue;
             }
             if selected.replace(binding).is_some() {
-                return Err(Error::at(SourceOffset(0), "ambiguous default constructor"));
+                self.emit_substitution_failure(
+                    SourceOffset(0),
+                    "ambiguous default constructor",
+                    false,
+                )?;
+                return Ok(super::default_construction::Lookup::Ambiguous);
             }
         }
         if let Some(binding) = selected {
-            return Ok(Some(binding));
+            return Ok(super::default_construction::Lookup::Selected(binding));
         }
         // The frozen default-constructor query tries templates only after all
         // ordinary candidates. Empty calls do not partially order templates.
         for index in 0..self.graph.entity(class).declared_constructors.len() {
             let binding = self.graph.entity(class).declared_constructors[index];
             let entity = self.graph.entity(self.graph.binding(binding).entity);
-            if entity.template_head.is_none() {
+            let Some(head) = entity.template_head else {
+                continue;
+            };
+            let ty = entity
+                .ty
+                .ok_or(Error::Invariant("constructor template without type"))?;
+            let count = self.graph.types.function_parameter_count(ty)?;
+            let mut matches = true;
+            for index in 0..count {
+                let default = entity.defaults.get(index).is_some_and(Option::is_some);
+                let expansion = index + 1 == count
+                    && matches!(
+                        self.graph
+                            .types
+                            .get(self.graph.types.function_parameter(ty, index)?)
+                            .kind,
+                        TypeKind::Expansion(_)
+                    );
+                if !(default || expansion) {
+                    matches = false;
+                    break;
+                }
+            }
+            if !matches {
                 continue;
             }
-            let Some(binding) = self.deduce_function_call(binding, &[], false, None)? else {
+            // Source deduced_specialization receives fresh undeduced slots;
+            // this is signature completion, not deduction for a supplied call.
+            let mut arguments = vec![None; self.graph.templates.parameters(head).len()];
+            let Some(binding) = self.complete_signature(binding, &mut arguments)? else {
                 continue;
             };
             if selected.replace(binding).is_some() {
-                return Err(Error::at(SourceOffset(0), "ambiguous default constructor"));
+                self.emit_substitution_failure(
+                    SourceOffset(0),
+                    "ambiguous default constructor",
+                    false,
+                )?;
+                return Ok(super::default_construction::Lookup::Ambiguous);
             }
         }
         // analyzer_initialization.cpp::implicit_constructor stores the selected
         // base specialization itself. Only select_constructor creates an
         // inherited forwarding specialization for a call with supplied args.
-        Ok(selected)
-    }
-
-    fn prepare_defaulted_subobjects(&mut self, class: EntityId) -> Result<(), Error> {
-        for index in 0..self.graph.entity(class).bases.len() {
-            let child = self.graph.entity(class).bases[index].class;
-            self.default_constructor(child, SourceOffset(0))?;
-        }
-        for index in 0..self.graph.entity(class).members.len() {
-            let member = self.graph.entity(class).members[index];
-            if let Some(child) = self.default_member_dependency(member)? {
-                self.default_member_constructor(child, SourceOffset(0))?;
-            }
-        }
-        Ok(())
+        Ok(selected.map_or(
+            super::default_construction::Lookup::Absent,
+            super::default_construction::Lookup::Selected,
+        ))
     }
 
     pub(super) fn scalar_constructor_facts(
@@ -729,7 +683,7 @@ impl Analyzer<'_> {
             binding,
             declaration,
             object_pointer: None,
-            callable_type,
+            callable_type: Some(callable_type),
             nothrow,
             deleted,
             written_members: vec![false; plans.len()],
@@ -822,7 +776,7 @@ impl Analyzer<'_> {
         })
     }
 
-    fn indirect_constructor_bases(&self, class: EntityId) -> Vec<EntityId> {
+    pub(super) fn indirect_constructor_bases(&self, class: EntityId) -> Vec<EntityId> {
         if !self.graph.lower_dynamic_class(class) {
             return Vec::new();
         }
@@ -948,10 +902,13 @@ impl Analyzer<'_> {
             // A trivial subobject still contributes its declared specification.
             return self.function_may_throw(function).map(|throws| !throws);
         }
-        Ok(child.nothrow)
+        self.inner_default_nothrow(id)
     }
 
-    fn implicit_default_declaration(&mut self, class: EntityId) -> Result<EntityId, Error> {
+    pub(super) fn implicit_default_declaration(
+        &mut self,
+        class: EntityId,
+    ) -> Result<EntityId, Error> {
         let function = if let Some(slot) = self.graph.constructors.default_function(class) {
             slot.function
         } else {
@@ -968,24 +925,6 @@ impl Analyzer<'_> {
             );
             function
         };
-        if let ConstructorState::Ready(id) = self.graph.entity(class).default_construction
-            && self.graph.constructors.get(id).declaration.is_none()
-        {
-            let plan = self.graph.constructors.get(id);
-            let nothrow = plan.nothrow;
-            let deleted = plan.deleted;
-            self.graph.constructors.record_declaration(id, function);
-            let entity = self.graph.entity_mut(function);
-            entity.constructor = Some(id);
-            entity.exceptions = super::exceptions::ExceptionState::Value(if nothrow {
-                super::exceptions::ExceptionSet::None
-            } else {
-                super::exceptions::ExceptionSet::All
-            });
-            if deleted {
-                entity.availability = super::graph::FunctionAvailability::Deleted;
-            }
-        }
         Ok(function)
     }
     pub(super) fn constructor_signature(
@@ -1121,7 +1060,7 @@ impl Analyzer<'_> {
             binding: Some(binding),
             declaration: Some(entity),
             object_pointer: None,
-            callable_type: signature,
+            callable_type: Some(signature),
             nothrow: false,
             deleted: self.graph.entity(entity).availability
                 == super::graph::FunctionAvailability::Deleted,
@@ -1184,14 +1123,18 @@ impl Analyzer<'_> {
             self.declared_copy_plan(class, binding)?;
             return Ok(());
         }
-        let binding = self.graph.function_origin(function)?;
-        self.prepare_defaulted_subobjects(class)?;
-        let id = self.scalar_constructor_facts(class, Some(binding))?;
+        let id = self.implicit_default_plan(function, class)?;
         if self.graph.constructors.get(id).deleted {
             return Err(Error::at(
                 location,
                 "an explicitly defaulted function is defined as deleted",
             ));
+        }
+        if matches!(
+            self.graph.entity(function).special_definition,
+            Some(SpecialDefinition::Defaulted { first: false, .. })
+        ) {
+            self.graph.constructors.set_default_triviality(id, false);
         }
         Ok(())
     }
@@ -1215,12 +1158,11 @@ impl Analyzer<'_> {
             return self.declared_constructor_plan(binding);
         }
         if let Some(id) = entity.constructor
-            && self.graph.constructors.get(id).facts == ConstructorFacts::Complete
+            && self.graph.constructors.get(id).facts != ConstructorFacts::Declaration
         {
             return Ok(id);
         }
-        self.prepare_defaulted_subobjects(class)?;
-        self.scalar_constructor_facts(class, Some(binding))
+        self.implicit_default_plan(function, class)
     }
 
     pub(super) fn variable_destruction(
@@ -1893,7 +1835,7 @@ mod tests {
         for _ in 0..2 {
             assert!(matches!(
                 analyzer.declared_default_constructor(class),
-                Err(super::Error::Diagnostic {
+                Err(super::Error::UnconditionalDiagnostic {
                     message: "ambiguous default constructor",
                     ..
                 })
@@ -2014,7 +1956,7 @@ mod tests {
     }
 
     #[test]
-    fn anonymous_member_expansion_and_direct_query_share_one_plan() {
+    fn anonymous_member_expansion_and_direct_query_have_separate_owners() {
         let source =
             SourceBuffer::new(b"struct Holder{union{int n;};};void f(){Holder h;}".to_vec())
                 .unwrap();
@@ -2038,21 +1980,33 @@ mod tests {
             .graph
             .class_of(analyzer.graph.lower_entity_type(member).unwrap())
             .unwrap();
-        let super::ConstructorState::Ready(plan) =
-            analyzer.graph.entity(child).default_construction
+        let super::ConstructorState::Ready(outer) =
+            analyzer.graph.entity(class).default_construction
         else {
-            panic!("anonymous member plan was required");
+            panic!("enclosing constructor was required");
         };
+        let plan = analyzer.graph.constructors.get(outer).subobjects[0]
+            .unwrap()
+            .constructor;
+        assert!(matches!(
+            analyzer.graph.entity(child).default_construction,
+            super::ConstructorState::NotStarted
+        ));
         assert!(analyzer.graph.lower_constructor_entity(plan).is_none());
         let demands = analyzer.graph.root_demands.as_slice().len();
+        let direct = analyzer
+            .default_constructor(child, SourceOffset(0))
+            .unwrap();
+        assert_ne!(direct, plan);
         assert_eq!(
             analyzer
                 .default_constructor(child, SourceOffset(0))
                 .unwrap(),
-            plan
+            direct
         );
-        let declaration = analyzer.graph.lower_constructor_entity(plan).unwrap();
-        assert_eq!(analyzer.graph.entity(declaration).constructor, Some(plan));
+        assert!(analyzer.graph.lower_constructor_entity(plan).is_none());
+        let declaration = analyzer.graph.lower_constructor_entity(direct).unwrap();
+        assert_eq!(analyzer.graph.entity(declaration).constructor, Some(direct));
         assert!(analyzer.graph.function_origin(declaration).is_err());
         assert_eq!(analyzer.graph.root_demands.as_slice().len(), demands);
     }

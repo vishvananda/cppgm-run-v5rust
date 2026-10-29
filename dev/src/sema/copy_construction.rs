@@ -322,7 +322,7 @@ impl Analyzer<'_> {
             binding: Some(binding),
             declaration: Some(self.graph.binding(binding).entity),
             object_pointer: None,
-            callable_type,
+            callable_type: Some(callable_type),
             nothrow: facts.nothrow,
             deleted: facts.deleted,
             members: Vec::new(),

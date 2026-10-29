@@ -437,7 +437,7 @@ mod tests {
     }
 
     #[test]
-    fn ranking_lists_preserves_original_facts_and_does_not_publish_construction() {
+    fn ranking_lists_retains_original_facts_and_demands_only_default_function() {
         let source = SourceBuffer::new(
             b"struct A{int a[2];};struct C{C(int);C(long);};struct D{int n=5;};int x={3};int y={};"
                 .to_vec(),
@@ -571,7 +571,7 @@ mod tests {
         }
         assert!(matches!(
             analyzer.graph.entity(implicit).default_construction,
-            ConstructorState::NotStarted
+            ConstructorState::Ready(_)
         ));
         let reference = analyzer
             .graph
