@@ -53,6 +53,7 @@ impl Function<'_, '_, '_, '_> {
             && plan
                 .subobjects
                 .iter()
+                .flatten()
                 .all(|child| self.graph.lower_constructor_trivial(child.constructor)))
     }
     pub(super) fn construct_allocated_elements(

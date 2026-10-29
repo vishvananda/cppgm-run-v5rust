@@ -91,7 +91,7 @@ pub(super) struct Constructor {
     pub written_members: Vec<bool>,
     pub bases: Vec<BaseInitialization>,
     pub indirect_bases: Vec<BaseInitialization>,
-    pub subobjects: Vec<MemberConstruction>,
+    pub subobjects: Vec<Option<MemberConstruction>>,
     pub delegation: Option<Delegation>,
     pub copy: Option<Vec<super::copy_construction::SubobjectCopy>>,
     pub(super) copy_transfer: CopyTransfer,
@@ -194,29 +194,32 @@ impl Constructors {
         if record.written_members.get(index) == Some(&true) {
             return;
         }
-        if let Some(old) = record
-            .subobjects
-            .iter_mut()
-            .find(|old| old.member == action.member)
-        {
-            *old = action;
-            return;
-        }
-        // Both slices follow member declaration order. Merge their prefix so
-        // late typing does not reorder already planned member operations.
-        let mut position = 0;
-        for &(member, _) in &record.members[..index] {
-            if record
-                .subobjects
-                .get(position)
-                .is_some_and(|old| old.member == member)
-            {
-                position += 1;
-            }
-        }
-        record.subobjects.insert(position, action);
+        record.subobjects[index] = Some(action);
     }
 }
+/// Translate completed source-ordered actions into their member entry slots.
+/// Missing actions remain null entries; no member shifts when a late action is set.
+pub(super) fn aligned_member_actions(
+    members: &[(EntityId, Option<ast::Initializer>)],
+    actions: Vec<MemberConstruction>,
+) -> Result<Vec<Option<MemberConstruction>>, Error> {
+    let mut actions = actions.into_iter().peekable();
+    let mut slots = Vec::with_capacity(members.len());
+    for &(member, _) in members {
+        slots.push(
+            if actions.peek().is_some_and(|action| action.member == member) {
+                actions.next()
+            } else {
+                None
+            },
+        );
+    }
+    if actions.next().is_some() {
+        return Err(Error::Invariant("member construction order"));
+    }
+    Ok(slots)
+}
+
 impl Analyzer<'_> {
     pub(super) fn default_initialize_declaration(
         &mut self,
@@ -710,6 +713,7 @@ impl Analyzer<'_> {
             let entity = self.graph.entity(self.graph.binding(binding).entity);
             deleted |= entity.availability == super::graph::FunctionAvailability::Deleted;
         }
+        let subobjects = aligned_member_actions(&plans, subobjects)?;
         let mut nothrow = true;
         for &base in &bases {
             nothrow = nothrow && self.planned_base_nothrow(base, binding)?;
@@ -1020,7 +1024,13 @@ impl Analyzer<'_> {
                 .iter()
                 .chain(&record.indirect_bases)
                 .filter_map(|base| base.constructor)
-                .chain(record.subobjects.iter().map(|child| child.constructor))
+                .chain(
+                    record
+                        .subobjects
+                        .iter()
+                        .flatten()
+                        .map(|child| child.constructor),
+                )
                 .any(|id| self.graph.constructors.get(id).nontrivial())
         {
             Triviality::Nontrivial
@@ -1683,6 +1693,37 @@ mod tests {
         assert_eq!(syntax, (tree.expressions.mark(), tree.declarations.mark()));
     }
     #[test]
+    fn constructor_member_slots_keep_scalar_holes_and_original_member_ids() {
+        let source = SourceBuffer::new(b"struct Leaf{Leaf();};struct Holder{int n=1;Leaf first;int other;Leaf initialized{};Leaf last;};void f(){Holder h;}".to_vec()).unwrap();
+        let mut unit =
+            SyntaxUnit::new(Preprocessor::with_name(&source, b"constructor-member-slots").unwrap());
+        unit.parse().unwrap();
+        let (tree, cursor, declarations) = unit.semantic_inputs().unwrap();
+        let name = cursor.intern_name(b"Holder").unwrap();
+        let mut analyzer = Analyzer::new(tree, cursor, StackBudget::default()).unwrap();
+        analyzer.set_lowering();
+        let marker = 0u8;
+        analyzer.stack_base = std::ptr::from_ref(&marker).addr();
+        let graph = analyzer.analyze(declarations).unwrap();
+        let class = graph
+            .binding(graph.own(graph.global, name, Filter::Prefix).unwrap())
+            .entity;
+        let super::ConstructorState::Ready(id) = graph.entity(class).default_construction else {
+            panic!("holder plan");
+        };
+        let plan = graph.constructors.get(id);
+        assert_eq!(plan.members.len(), 5);
+        assert_eq!(plan.subobjects.len(), plan.members.len());
+        for (index, slot) in plan.subobjects.iter().enumerate() {
+            assert_eq!(slot.is_some(), matches!(index, 1 | 3 | 4));
+            if let Some(action) = slot {
+                assert_eq!(action.member, plan.members[index].0);
+                assert_eq!(action.member, graph.entity(class).members[index]);
+            }
+        }
+    }
+
+    #[test]
     fn recursive_construction_keeps_child_selection_and_original_arguments() {
         use crate::sema::{
             construction::ConstructorState, constructor_initialization::ConstructorArguments,
@@ -1715,12 +1756,12 @@ mod tests {
         let outer_plan = graph.constructors.get(outer_id);
         assert!(outer_plan.nontrivial());
         assert_eq!(outer_plan.subobjects.len(), 1);
-        let child = outer_plan.subobjects[0];
+        let child = outer_plan.subobjects[0].unwrap();
         assert_eq!(child.member, graph.entity(outer).members[0]);
         assert_eq!(child.constructor, mid_id);
         assert!(child.arguments.is_none());
         let mid_plan = graph.constructors.get(mid_id);
-        let child = mid_plan.subobjects[0];
+        let child = mid_plan.subobjects[0].unwrap();
         assert_eq!(child.member, graph.entity(mid).members[0]);
         assert_eq!(
             Some(child.constructor),

@@ -15,7 +15,7 @@ type Designations<'a> = HashMap<EntityId, Option<&'a ast::MemInitializer>>;
 pub(super) struct MemberActions {
     pub members: Vec<(EntityId, Option<ast::Initializer>)>,
     pub written_members: Vec<bool>,
-    pub subobjects: Vec<MemberConstruction>,
+    pub subobjects: Vec<Option<MemberConstruction>>,
     pub deferred: bool,
 }
 
@@ -208,6 +208,7 @@ impl Analyzer<'_> {
             }
             plans.push((member, source));
         }
+        let subobjects = super::construction::aligned_member_actions(&plans, subobjects)?;
         Ok(MemberActions {
             deferred,
             written_members: plans
@@ -224,18 +225,14 @@ impl Analyzer<'_> {
         &mut self,
         members: &[(EntityId, Option<ast::Initializer>)],
         written: &[bool],
-        subobjects: &[super::construction::MemberConstruction],
+        subobjects: &[Option<super::construction::MemberConstruction>],
     ) -> Result<bool, Error> {
         let mut nothrow = true;
-        let mut children = subobjects.iter().peekable();
         for (index, &(member, initializer)) in members.iter().enumerate() {
             if initializer.is_some() && written.get(index) != Some(&true) {
                 nothrow &= !self.graph.member_initializers.throwing(member);
             }
-            if children.peek().is_some_and(|child| child.member == member) {
-                let child = children
-                    .next()
-                    .ok_or(Error::Invariant("member plan child"))?;
+            if let Some(child) = subobjects[index] {
                 nothrow = nothrow && self.subobject_constructor_nothrow(child.constructor)?;
             }
         }

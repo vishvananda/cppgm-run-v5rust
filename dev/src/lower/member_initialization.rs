@@ -89,7 +89,6 @@ impl Function<'_, '_, '_, '_> {
         let union = self.graph.lower_union_class(within);
         let nested = class != within;
         let mut wrote = false;
-        let mut children = subobjects.iter().peekable();
         for (index, &(member, initializer)) in members.iter().enumerate() {
             let site = (!written_members[index]).then_some(location);
             self.with_member_initialization_site(member, site, |lowering| {
@@ -107,11 +106,7 @@ impl Function<'_, '_, '_, '_> {
                 }
                 let local_offset = lowering.graph.lower_member_offset(member)?;
                 let offset = lowering.member_initialization_offset(member, pointer)?;
-                let child = if children.peek().is_some_and(|child| child.member == member) {
-                    children.next()
-                } else {
-                    None
-                };
+                let child = subobjects[index].as_ref();
                 if let Some(child) = child.filter(|child| {
                     lowering
                         .graph

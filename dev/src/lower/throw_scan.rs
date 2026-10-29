@@ -496,7 +496,9 @@ impl Function<'_, '_, '_, '_> {
             }
         }
         for child_index in 0..self.graph.lower_constructor(id).subobjects.len() {
-            let child = self.graph.lower_constructor(id).subobjects[child_index];
+            let Some(child) = self.graph.lower_constructor(id).subobjects[child_index] else {
+                continue;
+            };
             let constructor = child.constructor;
             if self.graph.lower_anonymous_constructor(constructor) {
                 if self.constructor_plan_throws(constructor)? {

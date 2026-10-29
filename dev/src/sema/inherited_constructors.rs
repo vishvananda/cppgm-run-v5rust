@@ -123,7 +123,7 @@ impl Analyzer<'_> {
             })
             .collect();
         while let Some(id) = work.pop() {
-            for child in &self.graph.constructors.get(id).subobjects {
+            for child in self.graph.constructors.get(id).subobjects.iter().flatten() {
                 if self
                     .graph
                     .entity(child.member)

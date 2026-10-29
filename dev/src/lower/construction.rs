@@ -643,7 +643,9 @@ impl Function<'_, '_, '_, '_> {
             .transpose()?
             .unwrap_or(false);
         for child_index in 0..self.graph.lower_constructor(id).subobjects.len() {
-            let child = self.graph.lower_constructor(id).subobjects[child_index];
+            let Some(child) = self.graph.lower_constructor(id).subobjects[child_index] else {
+                continue;
+            };
             let ty = self.graph.lower_entity_type(child.member)?;
             if matches!(self.graph.lower_type(ty)?, TypeView::Array { .. })
                 && !self.graph.lower_constructor_trivial(child.constructor)

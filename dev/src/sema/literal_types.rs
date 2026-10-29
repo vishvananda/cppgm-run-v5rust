@@ -359,18 +359,15 @@ impl Analyzer<'_> {
         }
         let union = self.graph.entity(class).key == Keyword::Union;
         let mut selected_count = 0;
-        let mut next_subobject = 0;
         for index in 0..self.graph.constructors.get(id).members.len() {
             let owner = self.graph.constructors.get(id);
             let (member, initializer) = owner.members[index];
             let child = owner
                 .subobjects
-                .get(next_subobject)
+                .get(index)
+                .and_then(Option::as_ref)
                 .filter(|plan| plan.member == member)
                 .map(|plan| plan.constructor);
-            if child.is_some() {
-                next_subobject += 1;
-            }
             if self.graph.unnamed_bit_field(member) {
                 continue;
             }
@@ -452,6 +449,7 @@ impl Analyzer<'_> {
             work.extend(
                 plan.subobjects
                     .iter()
+                    .flatten()
                     .filter(|child| {
                         self.graph
                             .entity(child.member)
@@ -473,7 +471,10 @@ impl Analyzer<'_> {
         depth: u32,
     ) -> Result<bool, Error> {
         for index in 0..self.graph.constructors.get(id).subobjects.len() {
-            let child = self.graph.constructors.get(id).subobjects[index].constructor;
+            let Some(child) = self.graph.constructors.get(id).subobjects[index] else {
+                continue;
+            };
+            let child = child.constructor;
             if self.graph.constructors.get(child).nontrivial()
                 && !self.constant_constructor_eligible_at(child, known, depth + 1)?
             {
@@ -699,18 +700,15 @@ impl Analyzer<'_> {
         let class = self.graph.constructors.get(id).class;
         let union = self.graph.entity(class).key == Keyword::Union;
         let mut selected_count = 0;
-        let mut next_subobject = 0;
         for index in 0..self.graph.constructors.get(id).members.len() {
             let owner = self.graph.constructors.get(id);
             let (member, initializer) = owner.members[index];
             let child = owner
                 .subobjects
-                .get(next_subobject)
+                .get(index)
+                .and_then(Option::as_ref)
                 .filter(|plan| plan.member == member)
                 .map(|plan| plan.constructor);
-            if child.is_some() {
-                next_subobject += 1;
-            }
             let anonymous = self
                 .graph
                 .entity(member)

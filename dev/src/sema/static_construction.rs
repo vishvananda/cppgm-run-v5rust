@@ -428,7 +428,6 @@ impl Analyzer<'_> {
         let first = out.placements.len();
         let mut cursor = 0;
         let mut tables = false;
-        let mut next_subobject = 0;
         for index in 0..self.graph.constructors.get(constructor).bases.len() {
             let base = self.graph.constructors.get(constructor).bases[index];
             let offset = self.graph.entity(class).bases[index]
@@ -458,10 +457,10 @@ impl Analyzer<'_> {
                 .constructors
                 .get(constructor)
                 .subobjects
-                .get(next_subobject)
+                .get(index)
+                .and_then(Option::as_ref)
                 .filter(|sub| sub.member == member)
                 .copied();
-            next_subobject += usize::from(sub.is_some());
             let ty = self.graph.lower_entity_type(member)?;
             if self.graph.entity(member).bit_field.is_some()
                 || matches!(self.graph.types.get(ty).kind, TypeKind::Class(child)

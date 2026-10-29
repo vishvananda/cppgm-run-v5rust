@@ -217,7 +217,12 @@ impl Analyzer<'_> {
                 .chain(&plan.indirect_bases)
                 .filter_map(|base| base.constructor),
         );
-        constructors.extend(plan.subobjects.iter().map(|child| child.constructor));
+        constructors.extend(
+            plan.subobjects
+                .iter()
+                .flatten()
+                .map(|child| child.constructor),
+        );
         constructors.extend(
             plan.copy
                 .iter()

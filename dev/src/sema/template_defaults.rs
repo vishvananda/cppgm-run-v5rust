@@ -46,7 +46,9 @@ impl Analyzer<'_> {
             }
         }
         for index in 0..self.graph.constructors.get(id).subobjects.len() {
-            let member = self.graph.constructors.get(id).subobjects[index];
+            let Some(member) = self.graph.constructors.get(id).subobjects[index] else {
+                continue;
+            };
             self.request_planned_constructor_defaults(member.constructor, member.arguments)?;
         }
         if let Some(delegation) = self.graph.constructors.get(id).delegation {

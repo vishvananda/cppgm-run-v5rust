@@ -76,7 +76,7 @@ pub(crate) struct ConstructorView<'a> {
     pub bases: &'a [super::construction::BaseInitialization],
     pub indirect_bases: &'a [super::construction::BaseInitialization],
     pub class: EntityId,
-    pub subobjects: &'a [super::construction::MemberConstruction],
+    pub subobjects: &'a [Option<super::construction::MemberConstruction>],
     pub delegation: Option<super::construction::Delegation>,
     pub copy: Option<&'a [SubobjectCopy]>,
 }
