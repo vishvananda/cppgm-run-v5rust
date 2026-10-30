@@ -356,6 +356,64 @@ mod tests {
     use super::*;
     use crate::native::{mir::Op, value_selection};
     #[test]
+    fn folded_shift_count_reuses_the_dying_load_address() -> Result<(), Error> {
+        let program = crate::lowir::test_program(
+            b"
+            function @test(%p : ptr, %mask : u32) -> i32 {
+              block ^entry:
+                %v = load u8 %p
+                %wide = convert zext u32 u8 %v
+                %shift = binary shl u32 1, %wide
+                %bits = binary and u32 %mask, %shift
+                branch %bits, ^yes, ^no
+              block ^yes:
+                return i32 1
+              block ^no:
+                return i32 0
+            }",
+        )?;
+        let function = &program.functions()[0];
+        let body = function.body.as_ref().ok_or(Error::Limit)?;
+        let flow = super::super::control_flow::Flow::analyze(body)?;
+        let slots = super::super::slot_analysis::analyze(body, &flow)?;
+        let mut facts = Facts::analyze(body, &slots, flow, 3)?;
+        let addresses = Addresses::analyze(
+            &program,
+            body,
+            &mut facts,
+            super::super::object_compile::ObjectModel::Course,
+        )?;
+        fold(body, &mut facts, &addresses);
+        facts.refresh_clobbers(body)?;
+        let shift = facts
+            .flow
+            .instructions
+            .iter()
+            .position(|&id| matches!(body.instruction(id).kind, I::Binary(Binary::Shl, ..)))
+            .ok_or(Error::Limit)?;
+        assert!(!facts.active[shift]);
+        assert_eq!(
+            facts.clobbers[shift],
+            (1 << R::RCX.code(), 1 << R::RCX.code())
+        );
+        let symbol = program.find_symbol(function.name).ok_or(Error::Limit)?;
+        let selected = value_selection::select(&program, symbol, function, 3)?;
+        assert!(selected.instructions.iter().any(|instruction| matches!(
+            instruction.op,
+            Op::Scalar(ScalarOp::Load(R::RDI, Type::U8, Operand::Memory(memory)))
+                if memory.base == super::super::memory::Base::Register(R::RDI)
+        )));
+        assert!(selected.instructions.iter().any(|instruction| matches!(
+            instruction.op,
+            Op::Scalar(ScalarOp::Condition(FlagOp::BitTest(
+                _,
+                R::RSI,
+                Operand::Register(R::RDI)
+            )))
+        )));
+        Ok(())
+    }
+    #[test]
     fn byte_call_arguments_keep_definition_facts_after_body_release() -> Result<(), Error> {
         let source = b"
             function @accept(%x : u8) -> i64 [binding=internal] {

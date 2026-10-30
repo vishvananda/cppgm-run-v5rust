@@ -108,6 +108,9 @@ impl Analyzer<'_> {
         self.prepare_type_information(ty)?;
         if self.lowering() && self.unevaluated == 0 {
             self.request_object_layout(ty, location);
+            // The exception object owns its lifetime independently of the
+            // throw operand's category and of any elided copy constructor.
+            self.request_temporary_destruction(ty)?;
         }
         self.graph.source_exceptions.thrown.insert(operand, ty);
         Ok(ty)

@@ -64,7 +64,12 @@ impl Analyzer<'_> {
         let element = self
             .object_pointer(ty)
             .ok_or(Error::Invariant("nonobject pointer"))?;
-        self.complete_pointee(element, self.tree.expressions.get(id).location)
+        let location = self.tree.expressions.get(id).location;
+        self.complete_pointee(element, location)?;
+        if self.lowering() && self.unevaluated == 0 {
+            self.request_object_layout(element, location);
+        }
+        Ok(())
     }
     pub(super) fn complete_pointee(
         &mut self,
@@ -361,6 +366,12 @@ impl Analyzer<'_> {
                 }
                 self.convert_operand_scalar(left, a, false)?;
                 self.convert_operand_scalar(right, b, false)?;
+                // Lowering scales the byte difference by the pointee's size.
+                // Record its object_layout query without making this semantic
+                // branch require completeness earlier than the source does.
+                if self.lowering() && self.unevaluated == 0 {
+                    self.request_object_layout(ea, self.tree.expressions.get(id).location);
+                }
                 let ty = self.graph.types.scalar(Scalar::Basic(F::LongInt))?;
                 return self.new_expression_facts(ty, V::Prvalue);
             }

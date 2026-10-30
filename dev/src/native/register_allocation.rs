@@ -452,7 +452,7 @@ pub(super) fn analyze(
     let mut late = vec![0; ranges.total + 1];
     let mut early = late.clone();
     for (p, &(after, before)) in facts.clobbers.iter().enumerate() {
-        if facts.active[p] {
+        if after | before != 0 {
             let b = facts.flow.blocks[p];
             let read = ranges.bases[b.index()] + 2 + 2 * (p - facts.flow.ranges[b.index()].start);
             late[read + 1] |= after;

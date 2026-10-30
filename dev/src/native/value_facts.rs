@@ -677,13 +677,15 @@ impl Facts {
         body: &Body,
         calls: Option<&super::call_facts::Calls>,
     ) -> Result<(), Error> {
-        // Folding can retire instructions since the previous pass. Their old
-        // clobbers must not constrain retained parameters or global allocation.
-        // compute_clobbers in C++ rebuilds both maps from zero each time.
+        // Rebuild the reference's live-instruction clobbers independently of
+        // emission folds: a tested shift still contributes its RCX boundary.
         self.clobbers.fill((0, 0));
         let ids = self.flow.instructions.clone();
         for interval in &mut self.intervals {
             interval.forbid = 0;
+            // Hints belong to the retained instructions, just like clobbers.
+            // A folded shift no longer needs its count in rcx.
+            interval.hint = None;
         }
         let mut late = [None; 32];
         let mut early = [None; 32];
@@ -705,10 +707,10 @@ impl Facts {
                 late = [None; 32];
                 early = [None; 32];
             }
-            if !self.active[pos] {
+            let inst = body.instruction(id);
+            if !self.active[pos] && !inst.result.is_some_and(|t| self.tested[t.index()]) {
                 continue;
             }
-            let inst = body.instruction(id);
             if let Some(result) = inst.result {
                 let interval = &self.intervals[result.index()];
                 let mut forbid = mask(interval, &late, &early);

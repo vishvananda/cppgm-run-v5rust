@@ -767,6 +767,15 @@ impl Function<'_, '_, '_, '_> {
         temporaries: bool,
     ) -> Result<bool, Error> {
         let expression = self.lifetime.full_expression;
+        let listed = initializer.is_some_and(|initializer| match initializer.kind {
+            ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id) => {
+                matches!(
+                    self.tree.expressions.get(id).kind,
+                    ast::ExprKind::Braced { .. }
+                )
+            }
+            _ => false,
+        });
         let began = if !expression
             && self.constructor_expression(entity, initializer, temporaries)?
         {
@@ -777,7 +786,7 @@ impl Function<'_, '_, '_, '_> {
             self.ensure_insertion()?;
             self.lifetime.expression_start = Some(self.builder.position()?);
             true
-        } else if object && !temporaries {
+        } else if object && !temporaries && !listed {
             false
         } else if let Some(ast::Initializer {
             kind: ast::InitializerKind::Assign(id) | ast::InitializerKind::Braced(id),

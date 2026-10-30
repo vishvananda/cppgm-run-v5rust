@@ -2862,6 +2862,12 @@ impl Graph {
     pub(crate) fn lower_destructor_entity(&self, class: EntityId) -> Option<EntityId> {
         self.destructor_binding(class)
             .map(|binding| self.binding(binding).entity)
+            .or_else(|| {
+                self.entity(class)
+                    .special()
+                    .destruction
+                    .map(|facts| facts.declaration)
+            })
     }
     pub(crate) fn lower_implicit_destructor(&self, entity: EntityId) -> bool {
         self.entity(entity)
@@ -2869,11 +2875,12 @@ impl Graph {
             .member_function
             .is_some_and(|key| {
                 key.kind == super::graph::MemberKind::Destructor
+                    && self.entity(key.class).class().declared_destructor.is_none()
                     && self
                         .entity(key.class)
-                        .class()
-                        .implicit_destructor
-                        .is_some_and(|binding| self.binding(binding).entity == entity)
+                        .special()
+                        .destruction
+                        .is_some_and(|facts| facts.declaration == entity)
             })
     }
 }

@@ -433,6 +433,32 @@ impl Function<'_, '_, '_, '_> {
                         ),
                         self.tree.expressions.get(id).location,
                     )?;
+                } else if facts.is_place
+                    && matches!(own, Some(crate::sema::lowering::CopyAction::Storage { .. }))
+                {
+                    // A trivial copy still represents the selected constructor
+                    // in C++ initialize_result. Bind its whole selected operand
+                    // once; a nested glvalue choice selects an address first.
+                    if let Some(projection) = projection {
+                        self.materialize_projected_copy(
+                            operand,
+                            result,
+                            object,
+                            own.ok_or(crate::sema::Error::Invariant("missing result copy"))?,
+                            projection,
+                        )?;
+                    } else if !self.materialize_copy(
+                        operand,
+                        result,
+                        object,
+                        own,
+                        super::construction::CopyCall::Expression,
+                        self.tree.expressions.get(id).location,
+                    )? {
+                        return Err(
+                            crate::sema::Error::Invariant("missing storage result copy").into()
+                        );
+                    }
                 } else {
                     self.initialize_class_result(operand, result, object, own, projection)?;
                 }
