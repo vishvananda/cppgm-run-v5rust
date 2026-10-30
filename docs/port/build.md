@@ -87,3 +87,77 @@ checks. `main-validation-summary.json` records the stage counts.
 
 The worker and its goal remain paused. This packaging change does not close
 pending C++ source responsibilities or claim final PA34 source-audit acceptance.
+
+## Next throughput work
+
+Analysis at `9f902c9e`, without compiler changes, is recorded under
+`/home/vishvananda/work/maintenance/v5rust-next-perf-20261030/`.
+`summary.json` indexes the findings; `callgrind-analysis.json` retains exact
+call counts and instruction costs. O0/O3 output objects stayed byte-identical
+for every profiling and build-option experiment. The worker remains paused.
+
+The within-10% wall-time targets from the warm reference samples are 1.32 s
+at O0 and 2.8875 s at O3. Reaching those from 3.52/7.13 s requires about
+62.5%/59.5% less elapsed time. Small inlining changes alone cannot do that.
+An isolated ThinLTO build reduced hardware instructions by only 1.21%/1.57%;
+no production build setting was changed. The timing experiment's first
+samples overlapped instrumentation and are excluded in
+`lto-warm-summary.json`; instruction counts were stable across all samples.
+
+| Measured responsibility | Rust | C++ |
+| --- | ---: | ---: |
+| O0 malloc calls | 4,731,745 | 392,848 |
+| O3 malloc calls | 14,280,114 | 2,071,949 |
+| O3 whole optimizer, Callgrind instructions | 12.761 B | 4.193 B |
+| O3 operand-substitution calls | 1,534,346 | 1,534,346 |
+| Instructions inside those substitutions, including callees | 779.651 M | 124.469 M |
+| LowIR instruction record | 112 bytes | 64 bytes |
+
+These are diagnostic Callgrind measurements, distinct from native hardware
+counter totals. Inclusive costs overlap: substitution is inside simplification
+and the optimizer. They must not be added. C++ O0 instrumentation reuses the
+identical frozen binary/input/options from the preceding study; O3 and both
+Rust profiles are fresh. Native Rust stack unwinding was incomplete, so
+call attribution uses instrumented call edges and source inspection.
+
+The next coherent changes should preserve execution order and replace the
+extra ownership work:
+
+1. **Restore front-end query lifetimes and common paths.** In
+   `sema/dependence.rs:527`, each dependence query starts a Vec and HashSet.
+   C++ `sema/class_templates.cpp:1506` memoizes stable compound-type answers
+   and walks simple chains without hash allocation. Preserve its class/leaf
+   validity rules rather than caching mutable class facts indiscriminately.
+   Probe canonical type keys before cloning parameter vectors. Split cached
+   parser lookahead and ordinary lexer character advancement from fallible
+   refill/decoding paths so their frequent success cases can inline. O0
+   parsing currently consumes 2.569 B instrumented instructions versus
+   1.211 B in C++; initial analysis plus deferred semantic demands also remain
+   expensive. The earlier builtin registry and identity hash fixes are present.
+2. **Restore direct LowIR editing and compact records.** In
+   `opt/value_reuse.rs:179`, substitution clones the instruction, allocates an
+   operand vector, then rewrites the original. C++ edits operands directly.
+   Split borrowed instruction/operand/fact stores to permit safe in-place
+   edits. Move variable operands and cold call ABI metadata into owned pools,
+   bringing the record toward the reference's 64 bytes. Keep function-owned
+   instruction links instead of rebuilding five LinkEditor arrays and copying
+   block lists for each editing pass. The latter constructor runs 50,927 times
+   at O3 and costs 777.671 M inclusive instructions.
+3. **Retain scratch and invalidate analyses precisely.** C++ keeps capacity
+   for optimizer contexts, CFGs, value simplification, constant propagation,
+   slot promotion and memory forwarding. Rust constructs fresh containers.
+   Match those lifetimes with an explicit optimizer-owned scratch workspace;
+   logical state must still reset between functions. Investigate the extra
+   full use-count scans: Rust's Body count runs 75,417 times at O3 versus
+   14,230 calls to C++ optimizer count_uses. Several Rust passes recount
+   unconditionally. Remove a scan only after proving the next consumer's
+   counts remain valid. Dense optional TempId/BlockId entries also occupy
+   eight bytes versus the reference's four-byte sentinel IDs; safe compact
+   encodings can reduce that traffic without changing absence semantics.
+
+Validate each coherent batch with frozen O0/O3 complete object equality and
+alternating warm hardware-counter/wall samples. Keep pass choices, ordering,
+diagnostics, reference files and gate limits fixed. Run affected differential
+and debug lanes during iteration, then full course, quality and 227-object /
+nine-tool bootstrap checks at a stable milestone. The 10% target is an
+acceptance objective, not a speedup established by this analysis.
