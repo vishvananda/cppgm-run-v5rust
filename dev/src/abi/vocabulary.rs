@@ -115,6 +115,7 @@ impl Builtin {
         }
     }
     #[must_use]
+    #[inline]
     pub fn substitutable(self) -> bool {
         matches!(
             self,
@@ -461,7 +462,9 @@ impl Operation {
         };
         (operation.entry().1 == shape).then_some(operation)
     }
-    pub(crate) fn code(self) -> &'static [u8] {
+    #[must_use]
+    #[inline]
+    pub fn code(self) -> &'static [u8] {
         self.entry().0
     }
     fn entry(self) -> (&'static [u8], ExpressionShape) {

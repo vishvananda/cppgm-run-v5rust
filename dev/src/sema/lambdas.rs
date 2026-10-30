@@ -15,7 +15,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy)]
-pub(crate) enum ClosureContext {
+pub enum ClosureContext {
     None,
     MemberSpecification(EntityId),
     StaticMemberInitializer(EntityId),
@@ -23,12 +23,12 @@ pub(crate) enum ClosureContext {
 /// Itanium object naming keeps each member initializer and default parameter
 /// separate. Course `LowIR` retains its historical class-wide numbering.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum ClosureNamingContext {
+pub enum ClosureNamingContext {
     DataMember(EntityId),
     DefaultArgument { function: EntityId, index: u32 },
 }
 #[derive(Clone, Copy)]
-pub(crate) struct Closure {
+pub struct Closure {
     pub call: EntityId,
     pub invoker: Option<EntityId>,
     pub conversion: Option<EntityId>,
@@ -46,7 +46,7 @@ pub(crate) struct Closure {
     pub template: Option<ast::LambdaId>,
 }
 #[derive(Clone, Copy)]
-pub(crate) struct Capture {
+pub struct Capture {
     pub entity: EntityId,
     pub member: EntityId,
     pub constructor: Option<super::construction::ConstructorId>,
@@ -66,13 +66,15 @@ impl Graph {
                 if self.class_templates.instance(owner).is_none())
         })
     }
-    pub(crate) fn lower_closure_captures(&self, class: EntityId) -> &[Capture] {
+    #[inline]
+    pub fn lower_closure_captures(&self, class: EntityId) -> &[Capture] {
         self.closures
             .captures
             .get(&class)
             .map_or(&[], Vec::as_slice)
     }
-    pub(crate) fn lower_call_closure(&self, function: EntityId) -> Option<EntityId> {
+    #[must_use]
+    pub fn lower_call_closure(&self, function: EntityId) -> Option<EntityId> {
         let class = self
             .entity(function)
             .home
@@ -83,20 +85,24 @@ impl Graph {
             .map_or(function, |binding| self.binding(binding).entity);
         (self.closure_call(class) == Some(primary)).then_some(class)
     }
-    pub(crate) fn lower_closure_invocation(&self, id: ast::ExprId) -> Option<EntityId> {
+    #[inline]
+    #[must_use]
+    pub fn lower_closure_invocation(&self, id: ast::ExprId) -> Option<EntityId> {
         self.closures
             .invocations
             .get(&self.expression_facts.root(id))
             .copied()
     }
-    pub(crate) fn lower_is_closure_invoker(&self, function: EntityId) -> bool {
+    #[must_use]
+    pub fn lower_is_closure_invoker(&self, function: EntityId) -> bool {
         self.entity(function)
             .home
             .and_then(|home| self.scope(home).owner)
             .and_then(|class| self.lower_closure(class))
             .is_some_and(|facts| facts.invoker == Some(function))
     }
-    pub(crate) fn lower_closure_converter(&self, function: EntityId) -> Option<EntityId> {
+    #[must_use]
+    pub fn lower_closure_converter(&self, function: EntityId) -> Option<EntityId> {
         let facts = self
             .entity(function)
             .home
@@ -107,7 +113,8 @@ impl Graph {
             .flatten()
     }
     /// The invoker executes the operator's syntax in its original lexical scope.
-    pub(crate) fn lower_closure_body_owner(&self, function: EntityId) -> EntityId {
+    #[must_use]
+    pub fn lower_closure_body_owner(&self, function: EntityId) -> EntityId {
         self.entity(function)
             .home
             .and_then(|home| self.scope(home).owner)
@@ -115,7 +122,9 @@ impl Graph {
             .filter(|facts| facts.invoker == Some(function))
             .map_or(function, |facts| facts.call)
     }
-    pub(crate) fn lower_closure(&self, class: EntityId) -> Option<Closure> {
+    #[inline]
+    #[must_use]
+    pub fn lower_closure(&self, class: EntityId) -> Option<Closure> {
         self.closures.records.get(&class).copied()
     }
     pub(super) fn closure_deduces_result(&self, call: EntityId) -> bool {

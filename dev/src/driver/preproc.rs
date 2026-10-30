@@ -164,6 +164,35 @@ impl<W: Write> Write for HostedOutput<W> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lex::PostTokenInput;
+    #[test]
+    fn skipped_sections_render_conditional_diagnostics() {
+        for (text, expected) in [
+            (
+                "#if 0\n#if bad\n#else ignored\n#elif ignored\n#endif\n#endif",
+                "4:2: #elif or #else after #else",
+            ),
+            (
+                "#if 0\n#if bad\n#else ignored",
+                "1:2: unterminated conditional directive",
+            ),
+            ("#if 1\n", "1:2: unterminated conditional directive"),
+            ("#else", "1:2: #elif, #else or #endif without #if"),
+            (
+                "#if 0\n#else extra",
+                "2:2: extra tokens at the end of the directive",
+            ),
+            (
+                "#if defined(3) \"\\q\"",
+                "1:5: `defined` requires an identifier",
+            ),
+        ] {
+            let source = SourceBuffer::new(text.as_bytes().to_vec()).unwrap();
+            let mut input = Preprocessor::new(&source).unwrap();
+            let error = input.next_non_whitespace_kind().unwrap_err();
+            assert_eq!(crate::driver::preproc::describe(&source, &error), expected);
+        }
+    }
     struct FailingWriter;
     impl Write for FailingWriter {
         fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {

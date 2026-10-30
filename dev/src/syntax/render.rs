@@ -857,7 +857,8 @@ impl<'a, 'source> Renderer<'a, 'source> {
         Ok(())
     }
 }
-pub(crate) fn operator_spelling(op: Operator) -> &'static str {
+#[must_use]
+pub fn operator_spelling(op: Operator) -> &'static str {
     if op.alternative {
         match op.token.as_punctuator() {
             Some(P::LogicalAnd) => "and",

@@ -15,7 +15,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum AnalysisMode {
+pub enum AnalysisMode {
     Types,
     Semantics,
     Lowering,
@@ -45,7 +45,7 @@ pub(super) struct UnitState {
     pub pending_throws: Vec<super::exceptions::SpecificationId>,
 }
 
-pub(crate) struct Analyzer<'tree> {
+pub struct Analyzer<'tree> {
     pub(super) predefined_names: [crate::lex::identifiers::NameId; 3],
     pub(super) int128_name: crate::lex::identifiers::NameId,
     pub(super) decltype_name: crate::lex::identifiers::NameId,
@@ -161,7 +161,8 @@ impl<'tree> Analyzer<'tree> {
         self.specialization_mode == SpecializationMode::Explicit
     }
 
-    pub(crate) fn new(
+    #[inline]
+    pub fn new(
         tree: &'tree mut Tree,
         cursor: &'tree mut Cursor<'_>,
         stack_budget: StackBudget,
@@ -373,7 +374,7 @@ impl<'tree> Analyzer<'tree> {
         }
         Ok(analyzer)
     }
-    pub(crate) fn set_semantics(&mut self, enabled: bool) {
+    pub fn set_semantics(&mut self, enabled: bool) {
         self.mode = if enabled {
             AnalysisMode::Semantics
         } else {
@@ -392,7 +393,8 @@ impl<'tree> Analyzer<'tree> {
         self.mode = saved;
         result
     }
-    pub(crate) fn set_lowering(&mut self) {
+    #[inline]
+    pub fn set_lowering(&mut self) {
         self.mode = AnalysisMode::Lowering;
     }
     pub(super) fn lowering(&self) -> bool {
@@ -407,7 +409,8 @@ impl<'tree> Analyzer<'tree> {
     pub(super) fn semantic(&self) -> bool {
         self.mode != AnalysisMode::Types
     }
-    pub(crate) fn analyze(self, declarations: List<ast::DeclId>) -> Result<Graph, Error> {
+    #[inline]
+    pub fn analyze(self, declarations: List<ast::DeclId>) -> Result<Graph, Error> {
         self.analyze_declarations(declarations, true)
     }
     pub(super) fn analyze_declarations(

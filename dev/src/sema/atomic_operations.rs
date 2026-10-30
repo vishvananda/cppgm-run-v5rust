@@ -4,7 +4,7 @@ use super::Error;
 use crate::{lex::identifiers::NameId, syntax::cursor::Cursor};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum AtomicArithmetic {
+pub enum AtomicArithmetic {
     Add,
     Sub,
     And,
@@ -13,7 +13,7 @@ pub(crate) enum AtomicArithmetic {
     Nand,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum AtomicOperation {
+pub enum AtomicOperation {
     Load(bool),
     Store(bool),
     Exchange(bool),
@@ -45,14 +45,14 @@ impl AtomicOperation {
     }
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum AtomicOrder {
+pub enum AtomicOrder {
     Relaxed,
     Acquire,
     Release,
     SequentiallyConsistent,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct AtomicIntrinsic {
+pub struct AtomicIntrinsic {
     pub operation: AtomicOperation,
     pub implied: Option<AtomicOrder>,
     pub c11: bool,
@@ -85,7 +85,7 @@ pub(super) struct AtomicForm {
 // These IDs address immutable compiler vocabulary, so entity facts may retain
 // them after the analyzer's unit-specific NameId index has been released.
 #[derive(Clone, Copy)]
-pub(crate) struct AtomicBuiltinId(u8);
+pub struct AtomicBuiltinId(u8);
 #[derive(Clone)]
 pub(super) struct AtomicBuiltins(Vec<(NameId, AtomicBuiltinId)>);
 impl AtomicBuiltins {

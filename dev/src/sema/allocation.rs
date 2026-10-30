@@ -42,7 +42,7 @@ pub(super) struct Allocation {
 /// The first dimension stays a checked expression; only its listed prefix
 /// has a fixed array type. Neither the tree nor a runtime-sized type is copied.
 #[derive(Clone, Copy)]
-pub(crate) struct ArrayAllocation {
+pub struct ArrayAllocation {
     pub count: ast::ExprId,
     pub constant: Option<u64>,
     pub prefix: Option<TypeId>,
@@ -57,7 +57,7 @@ pub(super) struct Deletion {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) enum AllocationBuiltin {
+pub enum AllocationBuiltin {
     New,
     Delete,
 }

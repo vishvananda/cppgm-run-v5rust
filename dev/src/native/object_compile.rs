@@ -19,7 +19,7 @@ use crate::{
 };
 /// Exception runtime and object ABI chosen by the output dialect.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ObjectModel {
+pub enum ObjectModel {
     Course,
     Host,
 }
@@ -70,7 +70,7 @@ struct Cell {
     offset: u64,
     symbol: Option<object::SymbolId>,
 }
-pub(crate) struct ObjectBuilder {
+pub struct ObjectBuilder {
     level: u8,
     observation_options: super::ObservationOptions,
     observations: super::Observations,
@@ -136,10 +136,10 @@ fn resize(bytes: &mut Vec<u8>, length: u64, fill: u8) -> Result<(), Error> {
     bytes.resize(length, fill);
     Ok(())
 }
-pub(crate) fn compile(program: &mut Program, path: Vec<u8>, level: u8) -> Result<Object, Error> {
+pub fn compile(program: &mut Program, path: Vec<u8>, level: u8) -> Result<Object, Error> {
     compile_observed(program, path, level).map(|(object, _)| object)
 }
-pub(crate) fn compile_observed(
+pub fn compile_observed(
     program: &mut Program,
     path: Vec<u8>,
     level: u8,
@@ -194,13 +194,13 @@ pub(crate) fn compile_observed(
     Ok((compiler.out, compiler.observations))
 }
 impl ObjectBuilder {
-    pub(crate) fn new(level: u8) -> Result<Self, Error> {
+    pub fn new(level: u8) -> Result<Self, Error> {
         Self::with_model(level, ObjectModel::Course)
     }
-    pub(crate) fn with_model(level: u8, model: ObjectModel) -> Result<Self, Error> {
+    pub fn with_model(level: u8, model: ObjectModel) -> Result<Self, Error> {
         Self::with_census(level, model, false)
     }
-    pub(crate) fn with_census(level: u8, model: ObjectModel, census: bool) -> Result<Self, Error> {
+    pub fn with_census(level: u8, model: ObjectModel, census: bool) -> Result<Self, Error> {
         Self::with_observations(
             level,
             model,
@@ -210,7 +210,7 @@ impl ObjectBuilder {
             },
         )
     }
-    pub(crate) fn with_observations(
+    pub fn with_observations(
         level: u8,
         model: ObjectModel,
         observation_options: super::ObservationOptions,

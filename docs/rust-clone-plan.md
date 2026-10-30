@@ -1,3 +1,5 @@
+> Current crate layout and release-build measurements: [build notes](port/build.md).
+
 > Current acceptance policy: apply CLONE_CONTRACT.md's protected stack
 > qualification to native resource exhaustion. Match exact successful results
 > at a shared larger stack; do not imitate C++ physical exhaustion cutoffs.

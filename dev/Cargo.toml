@@ -1,20 +1,55 @@
 [workspace]
-members = ["."]
+members = [".", "components/*"]
 resolver = "3"
 
-[package]
-name = "cppgm-rust"
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.98"
 publish = false
 
+[workspace.dependencies]
+cppgm-core = { path = "components/core", default-features = false }
+cppgm-ir = { path = "components/ir", default-features = false }
+cppgm-syntax = { path = "components/syntax", default-features = false }
+cppgm-sema = { path = "components/sema", default-features = false }
+cppgm-lower = { path = "components/lower", default-features = false }
+cppgm-opt = { path = "components/opt", default-features = false }
+cppgm-native = { path = "components/native", default-features = false }
+
+[package]
+name = "cppgm-rust"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
 [features]
 default = ["telemetry"]
-telemetry = []
+telemetry = [
+    "cppgm-core/telemetry",
+    "cppgm-ir/telemetry",
+    "cppgm-syntax/telemetry",
+    "cppgm-sema/telemetry",
+    "cppgm-lower/telemetry",
+    "cppgm-opt/telemetry",
+    "cppgm-native/telemetry",
+]
 
 [dependencies]
+cppgm-syntax = { workspace = true }
+cppgm-sema = { workspace = true }
+cppgm-core = { workspace = true }
+cppgm-ir = { workspace = true }
+cppgm-lower = { workspace = true }
+cppgm-opt = { workspace = true }
+cppgm-native = { workspace = true }
 nix = { version = "=0.31.3", default-features = false }
+
+[dev-dependencies]
+cppgm-lower = { workspace = true, features = ["test-support"] }
+cppgm-native = { workspace = true, features = ["test-support"] }
+cppgm-ir = { workspace = true, features = ["test-support"] }
 
 [lib]
 path = "src/lib.rs"
@@ -78,3 +113,7 @@ path = "bin/lowiropt.rs"
 [[bin]]
 name = "lowir2native"
 path = "bin/lowir2native.rs"
+
+[profile.release.package.cppgm-sema]
+# The semantic crate dominates release code generation; distribute it further.
+codegen-units = 64

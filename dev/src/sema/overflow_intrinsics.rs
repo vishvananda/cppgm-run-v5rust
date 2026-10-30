@@ -13,7 +13,7 @@ use super::{
 use crate::syntax::ast;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum OverflowOperation {
+pub enum OverflowOperation {
     Add,
     Subtract,
     Multiply,

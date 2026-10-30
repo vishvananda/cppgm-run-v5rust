@@ -79,7 +79,7 @@ impl Analyzer<'_> {
 }
 
 impl super::graph::Graph {
-    pub(crate) fn statement_expression_value(
+    pub fn statement_expression_value(
         &self,
         tree: &ast::Tree,
         body: ast::StmtId,

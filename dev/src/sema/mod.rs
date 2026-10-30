@@ -1,9 +1,9 @@
 //! Typed declaration analysis on the single PA5 syntax tree. See NOTICE.
 mod abi_tags;
 mod work;
-pub(crate) use work::Work;
+pub use work::Work;
 mod observations;
-pub(crate) use observations::Statistics;
+pub use observations::Statistics;
 mod address_arguments;
 mod aggregate_initialization;
 mod alias_templates;
@@ -126,7 +126,7 @@ mod local_constants;
 mod local_names;
 mod locality;
 mod lookup;
-pub(crate) mod lowering;
+pub mod lowering;
 mod member_construction;
 mod member_expressions;
 mod member_initializers;
@@ -191,11 +191,11 @@ mod vector_constants;
 mod vector_operations;
 mod vector_types;
 mod wide_integers;
-pub(crate) use analyzer::AnalysisMode;
-pub(crate) use template_bodies::AnalysisOptions;
-#[cfg(test)]
-pub(crate) use template_bodies::analyze_unit;
-pub(crate) use template_bodies::analyze_unit_with_mode;
+pub use analyzer::AnalysisMode;
+pub use template_bodies::AnalysisOptions;
+#[cfg(any(test, feature = "test-support"))]
+pub use template_bodies::analyze_unit;
+pub use template_bodies::analyze_unit_with_mode;
 mod named_templates;
 mod override_search;
 mod partial_classes;
@@ -217,12 +217,12 @@ mod virtual_members;
 mod vtable_groups;
 use crate::support::source::SourceOffset;
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum ConstantFailure {
+pub enum ConstantFailure {
     Reported,
     Unreported,
 }
 #[derive(Clone, Debug)]
-pub(crate) enum Error {
+pub enum Error {
     Diagnostic {
         location: SourceOffset,
         message: &'static str,
@@ -303,12 +303,14 @@ impl Error {
     pub(super) fn hard(location: SourceOffset, message: &'static str) -> Self {
         Self::UnconditionalDiagnostic { location, message }
     }
-    pub(super) fn at(location: SourceOffset, message: &'static str) -> Self {
+    #[inline]
+    #[must_use]
+    pub fn at(location: SourceOffset, message: &'static str) -> Self {
         Self::Diagnostic { location, message }
     }
 }
-pub(crate) use analyzer::Analyzer;
-pub(crate) use graph::Graph;
+pub use analyzer::Analyzer;
+pub use graph::Graph;
 
 fn record<T: Copy>(facts: &mut Vec<Option<T>>, index: usize, fact: T) {
     if index >= facts.len() {

@@ -525,7 +525,9 @@ impl Analyzer<'_> {
 }
 
 impl Graph {
-    pub(crate) fn lower_initializer_array(&self, id: ast::ExprId) -> Option<TypeId> {
+    #[inline]
+    #[must_use]
+    pub fn lower_initializer_array(&self, id: ast::ExprId) -> Option<TypeId> {
         self.expression_facts.initializer_array(id)
     }
 }

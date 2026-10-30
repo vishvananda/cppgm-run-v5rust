@@ -17,7 +17,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum SourceLocation {
+pub enum SourceLocation {
     File,
     Line,
     Function,

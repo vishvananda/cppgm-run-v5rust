@@ -3,11 +3,12 @@
 use super::vocabulary::Keyword;
 
 #[derive(Clone, Copy)]
-pub(crate) enum SyntaxKeyword {
+pub enum SyntaxKeyword {
     Keyword(Keyword),
     Ignored,
 }
-pub(crate) fn syntax_keyword(spelling: &[u8]) -> Option<SyntaxKeyword> {
+#[must_use]
+pub fn syntax_keyword(spelling: &[u8]) -> Option<SyntaxKeyword> {
     Some(match spelling {
         b"__inline" | b"__inline__" => SyntaxKeyword::Keyword(Keyword::Inline),
         b"__const" | b"__const__" => SyntaxKeyword::Keyword(Keyword::Const),

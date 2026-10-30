@@ -13,7 +13,7 @@ use crate::support::hash::HashMap;
 use crate::{support::source::SourceOffset, syntax::ast};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct TemporaryId(u32);
+pub struct TemporaryId(u32);
 
 pub(super) struct Temporary {
     pub ty: TypeId,
@@ -597,7 +597,7 @@ impl super::graph::Graph {
         self.aggregate_constants.temporary(id).image.as_ref()?;
         Some(super::static_initialization::Value::Temporary(id, offset))
     }
-    pub(crate) fn lower_constant_temporary(
+    pub fn lower_constant_temporary(
         &self,
         id: TemporaryId,
     ) -> Result<(TypeId, &[super::static_arrays::Item]), Error> {

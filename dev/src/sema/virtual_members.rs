@@ -75,30 +75,33 @@ impl Polymorphism {
 }
 /// The ABI slot identity survives overrides without copying inherited tables.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct SlotId(u32);
+pub struct SlotId(u32);
 impl SlotId {
-    pub(crate) fn deleting(self) -> Result<Self, Error> {
+    pub fn deleting(self) -> Result<Self, Error> {
         Ok(Self(
             self.0
                 .checked_add(1)
                 .ok_or(Error::Limit("virtual slot limit"))?,
         ))
     }
-    pub(crate) fn byte_offset(self) -> u64 {
+    #[inline]
+    #[must_use]
+    pub fn byte_offset(self) -> u64 {
         u64::from(self.0) * 8
     }
-    pub(crate) fn index(self) -> Result<usize, Error> {
+    #[inline]
+    pub fn index(self) -> Result<usize, Error> {
         usize::try_from(self.0).map_err(|_| Error::Limit("virtual slot limit"))
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum SlotKind {
+pub enum SlotKind {
     Function,
     CompleteDestructor,
     DeletingDestructor,
 }
 #[derive(Clone, Copy)]
-pub(crate) struct VirtualEntry {
+pub struct VirtualEntry {
     pub slot: SlotId,
     pub function: EntityId,
     pub kind: SlotKind,
@@ -107,7 +110,7 @@ pub(crate) struct VirtualEntry {
 }
 /// Class completion records only its changes. Lowering builds a demanded table
 /// from this primary-chain recipe, never all the tables of an unused hierarchy.
-pub(crate) struct ClassVirtuals {
+pub struct ClassVirtuals {
     pub primary: Option<EntityId>,
     pub has_virtual_bases: bool,
     pub has_virtual_primary: bool,
@@ -1261,7 +1264,7 @@ impl super::graph::Graph {
             .filter(|(from, to)| from != to)
             .map(|(from, to)| (from, to, reference)))
     }
-    pub(crate) fn lower_covariant_result(
+    pub fn lower_covariant_result(
         &self,
         function: EntityId,
         adjusted: EntityId,
@@ -1304,7 +1307,7 @@ impl super::graph::Graph {
             .copied())
     }
 
-    pub(crate) fn lower_emits_vtable(&self, class: EntityId) -> Result<bool, Error> {
+    pub fn lower_emits_vtable(&self, class: EntityId) -> Result<bool, Error> {
         Ok(self
             .lower_virtual_class(class)?
             .key
@@ -1414,10 +1417,7 @@ impl super::graph::Graph {
         }
         Ok(())
     }
-    pub(crate) fn lower_virtual_slots(
-        &self,
-        class: EntityId,
-    ) -> Result<&[Option<VirtualEntry>], Error> {
+    pub fn lower_virtual_slots(&self, class: EntityId) -> Result<&[Option<VirtualEntry>], Error> {
         self.virtuals
             .layouts
             .get(&class)
@@ -1466,7 +1466,8 @@ impl super::graph::Graph {
             .and_then(|functions| functions.get(index - declared - 1))
             .copied())
     }
-    pub(crate) fn lower_virtual_deallocator(&self, class: EntityId) -> Result<EntityId, Error> {
+    #[inline]
+    pub fn lower_virtual_deallocator(&self, class: EntityId) -> Result<EntityId, Error> {
         self.virtual_deallocator(class).ok_or(Error::Invariant(
             "virtual destructor without deallocation fact",
         ))
@@ -1474,10 +1475,13 @@ impl super::graph::Graph {
     pub(super) fn virtual_deallocator(&self, class: EntityId) -> Option<EntityId> {
         self.virtuals.deallocators.get(&class).copied()
     }
-    pub(crate) fn lower_polymorphic(&self, class: EntityId) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn lower_polymorphic(&self, class: EntityId) -> bool {
         self.entity(class).class().polymorphism.is_dynamic()
     }
-    pub(crate) fn lower_dynamic_class(&self, class: EntityId) -> bool {
+    #[must_use]
+    pub fn lower_dynamic_class(&self, class: EntityId) -> bool {
         self.lower_polymorphic(class)
             || self
                 .virtuals
@@ -1485,27 +1489,32 @@ impl super::graph::Graph {
                 .get(&class)
                 .is_some_and(|facts| facts.has_virtual_bases)
     }
-    pub(crate) fn lower_virtual_class(&self, class: EntityId) -> Result<&ClassVirtuals, Error> {
+    #[inline]
+    pub fn lower_virtual_class(&self, class: EntityId) -> Result<&ClassVirtuals, Error> {
         self.virtuals
             .classes
             .get(&class)
             .ok_or(Error::Invariant("missing completed virtual class facts"))
     }
-    pub(crate) fn lower_virtual_slot(&self, function: EntityId) -> Option<SlotId> {
+    #[inline]
+    #[must_use]
+    pub fn lower_virtual_slot(&self, function: EntityId) -> Option<SlotId> {
         self.virtuals.slots.get(&function).copied()
     }
-    pub(crate) fn lower_virtual_pure(&self, function: EntityId) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn lower_virtual_pure(&self, function: EntityId) -> bool {
         self.virtuals.function(function).pure
             || self.entity(function).availability == super::graph::FunctionAvailability::Deleted
     }
-    pub(crate) fn lower_virtual_dispatch(&self, expression: ast::ExprId) -> Result<bool, Error> {
+    pub fn lower_virtual_dispatch(&self, expression: ast::ExprId) -> Result<bool, Error> {
         Ok(self
             .expression_facts
             .get(expression)?
             .dispatch()
             .is_virtual())
     }
-    pub(crate) fn lower_virtual_class_identity(
+    pub fn lower_virtual_class_identity(
         &self,
         class: EntityId,
     ) -> Result<(bool, bool, Keyword, ScopeId), Error> {
@@ -1518,7 +1527,7 @@ impl super::graph::Graph {
             entity.context().scope.unwrap_or(home),
         ))
     }
-    pub(crate) fn lower_rtti_bases(
+    pub fn lower_rtti_bases(
         &self,
         class: EntityId,
     ) -> impl Iterator<Item = Result<(EntityId, bool, bool, u64), Error>> + '_ {
@@ -1532,7 +1541,8 @@ impl super::graph::Graph {
             ))
         })
     }
-    pub(crate) fn lower_inheritance_edge(
+    #[must_use]
+    pub fn lower_inheritance_edge(
         &self,
         class: EntityId,
         index: usize,
@@ -1543,7 +1553,7 @@ impl super::graph::Graph {
             .get(index)
             .map(|edge| (edge.class, edge.is_virtual, edge.offset))
     }
-    pub(crate) fn lower_inheritance_edges(
+    pub fn lower_inheritance_edges(
         &self,
         class: EntityId,
     ) -> impl Iterator<Item = (EntityId, bool)> + '_ {
@@ -1553,7 +1563,9 @@ impl super::graph::Graph {
             .iter()
             .map(|base| (base.class, base.is_virtual))
     }
-    pub(crate) fn lower_virtual_key_owner(&self, function: EntityId) -> Option<EntityId> {
+    #[inline]
+    #[must_use]
+    pub fn lower_virtual_key_owner(&self, function: EntityId) -> Option<EntityId> {
         let home = self.entity(function).home?;
         let class = self.scope(home).owner?;
         (self.virtuals.classes.get(&class)?.key == Some(function)).then_some(class)

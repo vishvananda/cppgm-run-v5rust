@@ -11,7 +11,7 @@ use super::{
 use crate::{support::source::SourceOffset, syntax::ast};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Reduction {
+pub enum Reduction {
     And,
     Or,
     Xor,
@@ -22,14 +22,14 @@ pub(crate) enum Reduction {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum LaneSelector {
+pub enum LaneSelector {
     Constant(u8),
     Runtime,
 }
 
 /// Compact published fact; 255 is outside every supported lane bound.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct LaneBuiltin {
+pub struct LaneBuiltin {
     operation: crate::lex::vector_lanes::OperationId,
     selector: u8,
 }
@@ -46,10 +46,11 @@ impl LaneBuiltin {
             },
         }
     }
-    pub(crate) fn operation(self) -> crate::lex::vector_lanes::Operation {
+    #[inline]
+    pub fn operation(self) -> crate::lex::vector_lanes::Operation {
         self.operation.operation()
     }
-    pub(crate) fn selector(self) -> LaneSelector {
+    pub fn selector(self) -> LaneSelector {
         if self.selector == u8::MAX {
             LaneSelector::Runtime
         } else {

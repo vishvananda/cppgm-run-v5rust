@@ -14,7 +14,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum StackIntrinsic {
+pub enum StackIntrinsic {
     Alloca,
     VaStart,
     VaEnd,

@@ -7,29 +7,43 @@ use std::rc::Rc;
 pub struct NameId(u32);
 
 impl NameId {
-    pub(crate) fn index(self) -> usize {
+    #[inline]
+    #[must_use]
+    pub fn index(self) -> usize {
         self.0 as usize
     }
-    pub(crate) fn bits(self) -> u32 {
+    #[inline]
+    #[must_use]
+    pub fn bits(self) -> u32 {
         self.0
     }
 }
 
 #[derive(Default)]
-pub(crate) struct Identifiers {
+pub struct Identifiers {
     index: HashMap<Rc<[u8]>, NameId>,
     spellings: Vec<Rc<[u8]>>,
 }
 
 impl Identifiers {
-    pub(crate) fn find(&self, text: &[u8]) -> Option<NameId> {
+    #[inline]
+    #[must_use]
+    pub fn find(&self, text: &[u8]) -> Option<NameId> {
         self.index.get(text).copied()
     }
     #[cfg(feature = "telemetry")]
-    pub(crate) fn len(&self) -> usize {
+    #[inline]
+    #[must_use]
+    pub fn len(&self) -> usize {
         self.spellings.len()
     }
-    pub(crate) fn intern(&mut self, text: &[u8]) -> Result<NameId, &'static str> {
+    #[must_use]
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn intern(&mut self, text: &[u8]) -> Result<NameId, &'static str> {
         if let Some(&id) = self.index.get(text) {
             return Ok(id);
         }
@@ -44,10 +58,14 @@ impl Identifiers {
         self.spellings.push(spelling);
         Ok(id)
     }
-    pub(crate) fn spelling(&self, id: NameId) -> Rc<[u8]> {
+    #[inline]
+    #[must_use]
+    pub fn spelling(&self, id: NameId) -> Rc<[u8]> {
         self.spellings[id.index()].clone()
     }
-    pub(crate) fn bytes(&self, id: NameId) -> &[u8] {
+    #[inline]
+    #[must_use]
+    pub fn bytes(&self, id: NameId) -> &[u8] {
         &self.spellings[id.index()]
     }
 }

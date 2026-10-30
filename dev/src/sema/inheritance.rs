@@ -51,7 +51,7 @@ impl BaseQuery {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct BasePathId(u32);
+pub struct BasePathId(u32);
 
 #[derive(Default)]
 pub(super) struct BasePaths {

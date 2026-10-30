@@ -17,7 +17,8 @@ pub struct ScalarBytes {
 }
 
 impl ScalarBytes {
-    pub(crate) fn integer(ty: FundamentalType, value: u64) -> Self {
+    #[must_use]
+    pub fn integer(ty: FundamentalType, value: u64) -> Self {
         let mut bytes = [0; 16];
         bytes[..8].copy_from_slice(&value.to_le_bytes());
         Self {
@@ -27,6 +28,7 @@ impl ScalarBytes {
     }
 
     #[must_use]
+    #[inline]
     pub fn as_slice(&self) -> &[u8] {
         &self.bytes[..self.size]
     }
@@ -217,7 +219,7 @@ pub struct FloatingScanner {
 
 impl FloatingScanner {
     /// Round an exact binary rational to a target format, retaining capacity.
-    pub(crate) fn binary(
+    pub fn binary(
         &mut self,
         significand: u128,
         exponent: i64,
@@ -241,7 +243,7 @@ impl FloatingScanner {
 
     /// Hexadecimal mantissa scanning for explicit `LowIR` input. The grammar
     /// owner checks syntax before this bounded rational conversion.
-    pub(crate) fn hexadecimal(
+    pub fn hexadecimal(
         &mut self,
         digits: &[u8],
         exponent: i64,
@@ -304,7 +306,7 @@ impl FloatingScanner {
     }
 
     /// Exact terminating decimal digits and decimal scale of a binary value.
-    pub(crate) fn decimal_binary(
+    pub fn decimal_binary(
         &mut self,
         significand: u128,
         exponent: i64,

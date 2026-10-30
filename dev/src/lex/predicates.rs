@@ -1,7 +1,7 @@
 // Translated from lex/gnu_builtins.{h,cpp}. See NOTICE.
 //! Typed predicates distinguish shape queries from class-completion queries.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum TypePredicate {
+pub enum TypePredicate {
     IsClass,
     IsEnum,
     IsUnion,
@@ -157,32 +157,43 @@ impl TypePredicate {
         (Self::IsNothrowInvocable, "__is_nothrow_invocable"),
     ];
 
-    pub(crate) fn find(spelling: &[u8]) -> Option<Self> {
+    #[inline]
+    #[must_use]
+    pub fn find(spelling: &[u8]) -> Option<Self> {
         Self::SPELLINGS
             .iter()
             .find_map(|&(kind, name)| (name.as_bytes() == spelling).then_some(kind))
     }
 
-    pub(crate) fn spelling(self) -> &'static str {
+    #[inline]
+    #[must_use]
+    pub fn spelling(self) -> &'static str {
         Self::SPELLINGS[self as usize].1
     }
 
-    pub(crate) fn is_property(self) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn is_property(self) -> bool {
         self as usize >= Self::IsTrivial as usize && !self.is_expression()
     }
 
-    pub(crate) fn is_expression(self) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn is_expression(self) -> bool {
         self as usize >= Self::IsAssignable as usize
     }
 
-    pub(crate) fn is_assignment(self) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn is_assignment(self) -> bool {
         matches!(
             self,
             Self::IsAssignable | Self::IsNothrowAssignable | Self::IsTriviallyAssignable
         )
     }
 
-    pub(crate) fn arity(self) -> usize {
+    #[must_use]
+    pub fn arity(self) -> usize {
         if self.is_construction() || self.is_invocation() {
             0
         } else if matches!(self, Self::IsSame | Self::IsBaseOf) || self.is_expression() {
@@ -192,18 +203,23 @@ impl TypePredicate {
         }
     }
 
-    pub(crate) fn is_invocation(self) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn is_invocation(self) -> bool {
         matches!(self, Self::IsInvocable | Self::IsNothrowInvocable)
     }
 
-    pub(crate) fn is_construction(self) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn is_construction(self) -> bool {
         matches!(
             self,
             Self::IsConstructible | Self::IsNothrowConstructible | Self::IsTriviallyConstructible
         )
     }
 
-    pub(crate) fn is_temporary_binding(self) -> bool {
+    #[must_use]
+    pub fn is_temporary_binding(self) -> bool {
         matches!(
             self,
             Self::ReferenceBindsToTemporary

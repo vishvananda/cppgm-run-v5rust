@@ -17,7 +17,7 @@ use crate::{
 use std::cmp::Ordering::{Equal, Greater, Less};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum FloatingIntrinsic {
+pub enum FloatingIntrinsic {
     Constant,
     SignalingConstant,
     IsFinite,
@@ -36,7 +36,8 @@ pub(crate) enum FloatingIntrinsic {
     IsUnordered,
 }
 impl FloatingIntrinsic {
-    pub(crate) fn comparison(self) -> bool {
+    #[must_use]
+    pub fn comparison(self) -> bool {
         matches!(
             self,
             Self::IsGreater
@@ -49,7 +50,7 @@ impl FloatingIntrinsic {
     }
 }
 #[derive(Clone, Copy)]
-pub(crate) enum FloatingOperation {
+pub enum FloatingOperation {
     Classification(FloatingIntrinsic),
     Constant(ConstantKind, F),
 }
@@ -357,7 +358,7 @@ impl FloatingOperand {
 // Floating constants and literal payload rules from analyzer_builtins.cpp
 // and string_literals.cpp. Operands retain their original syntax and conversions.
 #[derive(Clone, Copy)]
-pub(crate) enum ConstantKind {
+pub enum ConstantKind {
     QuietNan,
     SignalingNan,
     Infinity,

@@ -2,21 +2,22 @@
 use super::{SourceBuffer, SourceError, SourceOffset};
 use crate::support::unicode::{Utf8Error, decode_utf8};
 
-pub(crate) const END_OF_SOURCE: u32 = u32::MAX;
+pub const END_OF_SOURCE: u32 = u32::MAX;
 
 #[derive(Clone, Copy)]
-pub(crate) struct SourceChar {
+pub struct SourceChar {
     pub code: u32,
     pub begin: SourceOffset,
     pub end: SourceOffset,
 }
 
-pub(crate) struct TranslationReader<'a> {
+pub struct TranslationReader<'a> {
     bytes: &'a [u8],
     translate: bool,
 }
 
 impl<'a> TranslationReader<'a> {
+    #[inline]
     pub fn new(source: &'a SourceBuffer, translate: bool) -> Self {
         Self {
             bytes: source.bytes(),

@@ -10,10 +10,10 @@ use std::cell::OnceCell;
 use std::cell::RefCell;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct NumberId(u32);
+pub struct NumberId(u32);
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum CookedFloating {
+pub enum CookedFloating {
     Value(u128),
     OutsideRange,
     ScanLimit,

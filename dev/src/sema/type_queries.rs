@@ -15,7 +15,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy)]
-pub(crate) struct TypeQuery {
+pub struct TypeQuery {
     pub target: TypeId,
     pub dynamic: bool,
 }
@@ -39,19 +39,26 @@ pub(super) struct QueryContext {
     requests: crate::support::hash::HashSet<(Option<EntityId>, TypeId)>,
 }
 impl Graph {
-    pub(crate) fn lower_class_complete(&self, class: EntityId) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn lower_class_complete(&self, class: EntityId) -> bool {
         self.entity(class).complete
     }
-    pub(crate) fn lower_rtti_type(&self, ty: TypeId) -> Result<TypeId, Error> {
+    #[inline]
+    pub fn lower_rtti_type(&self, ty: TypeId) -> Result<TypeId, Error> {
         self.rtti_types
             .get(&ty)
             .copied()
             .ok_or(Error::Invariant("RTTI type without prepared identity"))
     }
-    pub(crate) fn lower_type_query(&self, id: ast::ExprId) -> Option<TypeQuery> {
+    #[inline]
+    #[must_use]
+    pub fn lower_type_query(&self, id: ast::ExprId) -> Option<TypeQuery> {
         self.expression_facts.type_query(id)
     }
-    pub(crate) fn lower_type_identity(&self, id: ast::ExprId) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn lower_type_identity(&self, id: ast::ExprId) -> bool {
         self.expression_facts.type_identity(id)
     }
 }

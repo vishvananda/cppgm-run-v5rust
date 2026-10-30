@@ -592,7 +592,8 @@ impl Analyzer<'_> {
 }
 
 impl super::graph::Graph {
-    pub(crate) fn lower_class_instantiated_elsewhere(&self, mut class: EntityId) -> bool {
+    #[must_use]
+    pub fn lower_class_instantiated_elsewhere(&self, mut class: EntityId) -> bool {
         // vtable_lowering.cpp::instantiated_elsewhere walks only the lexical
         // class owners carrying template facts. A nearer explicit definition
         // wins over an enclosing extern declaration.

@@ -16,9 +16,9 @@ use super::{
 use crate::support::stack::StackBudget;
 mod expansions;
 use expansions::Expansion;
-pub(crate) use expansions::{CopyState, NameUses, PackExpander};
+pub use expansions::{CopyState, NameUses, PackExpander};
 
-pub(crate) struct Cloner<'a> {
+pub struct Cloner<'a> {
     tree: &'a mut Tree,
     budget: StackBudget,
     base: usize,
@@ -26,7 +26,7 @@ pub(crate) struct Cloner<'a> {
     expansion: Option<Expansion<'a>>,
 }
 impl<'a> Cloner<'a> {
-    pub(crate) fn new(tree: &'a mut Tree, budget: StackBudget, base: usize) -> Self {
+    pub fn new(tree: &'a mut Tree, budget: StackBudget, base: usize) -> Self {
         Self {
             tree,
             budget,
@@ -35,14 +35,20 @@ impl<'a> Cloner<'a> {
             expansion: None,
         }
     }
-    pub(crate) fn syntax(&self) -> &Tree {
+    #[inline]
+    #[must_use]
+    pub fn syntax(&self) -> &Tree {
         self.tree
     }
-    pub(crate) fn with_expander(mut self, expander: &'a mut dyn PackExpander) -> Self {
+    #[inline]
+    #[must_use]
+    pub fn with_expander(mut self, expander: &'a mut dyn PackExpander) -> Self {
         self.expansion = Some(Expansion::new(expander));
         self
     }
-    pub(crate) fn with_expander_state(
+    #[inline]
+    #[must_use]
+    pub fn with_expander_state(
         mut self,
         expander: &'a mut dyn PackExpander,
         state: &'a mut CopyState,
@@ -50,7 +56,8 @@ impl<'a> Cloner<'a> {
         self.expansion = Some(Expansion::borrowing(expander, state));
         self
     }
-    pub(crate) fn class_definition(&mut self, id: ClassId) -> Result<ClassId, ParseError> {
+    #[inline]
+    pub fn class_definition(&mut self, id: ClassId) -> Result<ClassId, ParseError> {
         self.retain_bodies = true;
         self.class(id)
     }
@@ -129,10 +136,7 @@ impl<'a> Cloner<'a> {
         }
         Ok(node)
     }
-    pub(crate) fn argument(
-        &mut self,
-        mut node: TemplateArgument,
-    ) -> Result<TemplateArgument, ParseError> {
+    pub fn argument(&mut self, mut node: TemplateArgument) -> Result<TemplateArgument, ParseError> {
         node.kind = match node.kind {
             TemplateArgumentKind::Type(id) => TemplateArgumentKind::Type(self.ty(id)?),
             TemplateArgumentKind::Expression(id) => {
@@ -183,7 +187,7 @@ impl<'a> Cloner<'a> {
     fn specifiers(&mut self, list: List<Specifier>) -> Result<List<Specifier>, ParseError> {
         self.list(list, |tree| &mut tree.specs, Self::specifier)
     }
-    pub(crate) fn ty(&mut self, id: TypeId) -> Result<TypeId, ParseError> {
+    pub fn ty(&mut self, id: TypeId) -> Result<TypeId, ParseError> {
         self.check_stack()?;
         let mut node = *self.tree.types.get(id);
         (node.specifiers, node.declarator) =
@@ -192,7 +196,7 @@ impl<'a> Cloner<'a> {
     }
     // Retained template heads share syntax; each parameter formation owns
     // the type expressions whose semantic facts depend on its scope.
-    pub(crate) fn parameter_type(
+    pub fn parameter_type(
         &mut self,
         specifiers: List<Specifier>,
         declarator: Option<DeclaratorId>,
@@ -243,10 +247,7 @@ impl<'a> Cloner<'a> {
         };
         Ok(node)
     }
-    pub(crate) fn parameters(
-        &mut self,
-        mut node: ParameterClause,
-    ) -> Result<ParameterClause, ParseError> {
+    pub fn parameters(&mut self, mut node: ParameterClause) -> Result<ParameterClause, ParseError> {
         if self.expanding() {
             node.parameters = self.expanded_parameters(node.parameters)?;
             return Ok(node);
@@ -264,7 +265,7 @@ impl<'a> Cloner<'a> {
         node.default = self.optional(node.default, Self::initializer)?;
         Ok(node)
     }
-    pub(crate) fn initializer(&mut self, mut node: Initializer) -> Result<Initializer, ParseError> {
+    pub fn initializer(&mut self, mut node: Initializer) -> Result<Initializer, ParseError> {
         node.kind = match node.kind {
             InitializerKind::Assign(id) => InitializerKind::Assign(self.expression(id)?),
             InitializerKind::Braced(id) => InitializerKind::Braced(self.expression(id)?),
@@ -275,7 +276,7 @@ impl<'a> Cloner<'a> {
         };
         Ok(node)
     }
-    pub(crate) fn body(&mut self, id: BodyId) -> Result<BodyId, ParseError> {
+    pub fn body(&mut self, id: BodyId) -> Result<BodyId, ParseError> {
         if self.retain_bodies {
             return Ok(id);
         }
@@ -311,7 +312,7 @@ impl<'a> Cloner<'a> {
         self.restore_shadows(mark);
         Ok(node)
     }
-    pub(crate) fn expression(&mut self, id: ExprId) -> Result<ExprId, ParseError> {
+    pub fn expression(&mut self, id: ExprId) -> Result<ExprId, ParseError> {
         self.check_stack()?;
         let mut node = *self.tree.expressions.get(id);
         self.collect_expression_use(node.kind);
@@ -709,7 +710,8 @@ impl<'a> Cloner<'a> {
         node.value = self.optional(node.value, Self::expression)?;
         Ok(node)
     }
-    pub(crate) fn enum_values(
+    #[inline]
+    pub fn enum_values(
         &mut self,
         values: List<Enumerator>,
     ) -> Result<List<Enumerator>, ParseError> {

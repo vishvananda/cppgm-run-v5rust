@@ -10,12 +10,12 @@ use super::{
 use crate::{lex::pp_lexer::Punctuator as P, syntax::ast};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum ObjectExtent {
+pub enum ObjectExtent {
     Complete,
     Base,
 }
 #[derive(Clone, Copy)]
-pub(crate) struct NullSubobject {
+pub struct NullSubobject {
     pub ty: super::types::TypeId,
     pub offset: u64,
     pub extent: ObjectExtent,
@@ -318,7 +318,7 @@ impl Analyzer<'_> {
 }
 
 impl super::graph::Graph {
-    pub(crate) fn lower_holds_data_member_pointer(
+    pub fn lower_holds_data_member_pointer(
         &self,
         mut ty: super::types::TypeId,
     ) -> Result<bool, Error> {
@@ -340,7 +340,7 @@ impl super::graph::Graph {
         })
     }
     /// Only the subobjects whose zero image contains the data-member null sentinel.
-    pub(crate) fn lower_null_subobjects(
+    pub fn lower_null_subobjects(
         &self,
         class: super::graph::EntityId,
         extent: ObjectExtent,
@@ -414,7 +414,7 @@ impl super::graph::Graph {
         bases.chain(members).chain(shared)
     }
 
-    pub(crate) fn lower_bound_member_pointer(&self, id: ast::ExprId) -> Result<bool, Error> {
+    pub fn lower_bound_member_pointer(&self, id: ast::ExprId) -> Result<bool, Error> {
         let facts = self.expression_facts.get(id)?;
         Ok(facts.object(&self.expression_facts).is_some()
             && facts.function(&self.expression_facts).is_none()
@@ -423,7 +423,7 @@ impl super::graph::Graph {
             && matches!(self.types.get(facts.ty).kind, TypeKind::Function { .. }))
     }
 
-    pub(crate) fn lower_member_function_address(
+    pub fn lower_member_function_address(
         &self,
         id: ast::ExprId,
     ) -> Result<Option<super::graph::EntityId>, Error> {
@@ -436,7 +436,7 @@ impl super::graph::Graph {
             None
         })
     }
-    pub(crate) fn lower_member_pointer_conversion(
+    pub fn lower_member_pointer_conversion(
         &self,
         id: ast::ExprId,
     ) -> Result<Option<super::base_projections::BaseProjection>, Error> {
@@ -453,7 +453,7 @@ impl super::graph::Graph {
         self.lower_path_projection(path).map(Some)
     }
 
-    pub(crate) fn lower_member_pointer_cast(
+    pub fn lower_member_pointer_cast(
         &self,
         id: ast::ExprId,
     ) -> Result<Option<super::base_projections::BaseProjection>, Error> {
@@ -466,7 +466,7 @@ impl super::graph::Graph {
             .map(|cast| self.lower_path_projection(cast.path)?.negated())
             .transpose()
     }
-    pub(crate) fn lower_data_member_address(&self, id: ast::ExprId) -> Result<Option<u64>, Error> {
+    pub fn lower_data_member_address(&self, id: ast::ExprId) -> Result<Option<u64>, Error> {
         let facts = self.expression_facts.get(id)?;
         // Only the prvalue address formation carries an address constant.
         // An implicit member read can itself have member-pointer type and
@@ -488,7 +488,7 @@ impl super::graph::Graph {
             .transpose()
     }
 
-    pub(crate) fn lower_member_pointer_projection(
+    pub fn lower_member_pointer_projection(
         &self,
         id: ast::ExprId,
     ) -> Result<Option<super::base_projections::BaseProjection>, Error> {
@@ -499,11 +499,8 @@ impl super::graph::Graph {
             .transpose()
     }
 
-    pub(crate) fn lower_member_pointer_union(
-        &self,
-        object: super::types::TypeId,
-        arrow: bool,
-    ) -> bool {
+    #[must_use]
+    pub fn lower_member_pointer_union(&self, object: super::types::TypeId, arrow: bool) -> bool {
         let object = if arrow {
             if let TypeKind::Pointer(element) = self.types.get(object).kind {
                 element

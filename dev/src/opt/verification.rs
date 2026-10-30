@@ -7,9 +7,9 @@ use crate::lowir::{
 use std::{io::Write, path::Path};
 
 #[derive(Clone, Copy, Default)]
-pub(crate) struct Verification<'a> {
-    pub(crate) enabled: bool,
-    pub(crate) dump: Option<&'a Path>,
+pub struct Verification<'a> {
+    pub enabled: bool,
+    pub dump: Option<&'a Path>,
 }
 
 impl Context<'_> {

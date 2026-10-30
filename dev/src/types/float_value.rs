@@ -4,7 +4,7 @@ use super::FundamentalType;
 use std::cmp::Ordering;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Format {
+pub enum Format {
     Half,
     BFloat,
     Single,
@@ -12,7 +12,8 @@ pub(crate) enum Format {
     Extended,
 }
 impl Format {
-    pub(crate) fn of(ty: FundamentalType) -> Option<Self> {
+    #[must_use]
+    pub fn of(ty: FundamentalType) -> Option<Self> {
         match ty.floating_representation() {
             FundamentalType::Float16 => Some(Self::Half),
             FundamentalType::BFloat16 => Some(Self::BFloat),
@@ -41,7 +42,7 @@ impl Format {
     }
 }
 #[derive(Clone, Copy)]
-pub(crate) enum Operation {
+pub enum Operation {
     Add,
     Subtract,
     Multiply,
@@ -51,31 +52,44 @@ pub(crate) enum Operation {
 /// An initialized x87 encoding, including signed zero and non-finite values.
 /// Narrower values are held exactly; no host floating operation is used.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct BinaryFloat(u128);
+pub struct BinaryFloat(u128);
 const SIGN: u128 = 1 << 79;
 const INFINITY: u128 = (0x7fff << 64) | (1 << 63);
 
 impl BinaryFloat {
-    pub(crate) fn zero() -> Self {
+    #[must_use]
+    #[inline]
+    pub fn zero() -> Self {
         Self(0)
     }
-    pub(crate) fn negative(self) -> bool {
+    #[must_use]
+    #[inline]
+    pub fn negative(self) -> bool {
         self.0 & SIGN != 0
     }
-    pub(crate) fn negate(self) -> Self {
+    #[must_use]
+    #[inline]
+    pub fn negate(self) -> Self {
         Self(self.0 ^ SIGN)
     }
-    pub(crate) fn is_nan(self) -> bool {
+    #[must_use]
+    #[inline]
+    pub fn is_nan(self) -> bool {
         self.0 & !SIGN > INFINITY
     }
-    pub(crate) fn is_infinite(self) -> bool {
+    #[must_use]
+    #[inline]
+    pub fn is_infinite(self) -> bool {
         self.0 & !SIGN == INFINITY
     }
     /// The initialized x87 representation; used at typed scalar-bit boundaries.
-    pub(crate) fn extended_bits(self) -> u128 {
+    #[must_use]
+    #[inline]
+    pub fn extended_bits(self) -> u128 {
         self.0
     }
-    pub(crate) fn quiet(self) -> Self {
+    #[must_use]
+    pub fn quiet(self) -> Self {
         if self.is_nan() {
             Self(self.0 | (1 << 62))
         } else {
@@ -83,7 +97,8 @@ impl BinaryFloat {
         }
     }
     /// Arithmetic interpretation of x87 pseudo-denormals and unsupported encodings.
-    pub(crate) fn canonical(self) -> Self {
+    #[must_use]
+    pub fn canonical(self) -> Self {
         let exponent = (self.0 >> 64) & 0x7fff;
         if self.unsupported() {
             return Self(SIGN | INFINITY | (1 << 62));
@@ -97,11 +112,14 @@ impl BinaryFloat {
     fn unsupported(self) -> bool {
         self.0 & (0x7fff << 64) != 0 && self.0 & (1 << 63) == 0
     }
-    pub(crate) fn truth(self) -> bool {
+    #[must_use]
+    #[inline]
+    pub fn truth(self) -> bool {
         self.0 & !SIGN != 0
     }
 
-    pub(crate) fn from_bits(format: Format, bits: u128) -> Option<Self> {
+    #[must_use]
+    pub fn from_bits(format: Format, bits: u128) -> Option<Self> {
         if format == Format::Extended {
             return Some(Self(bits & ((1 << 80) - 1)));
         }
@@ -125,7 +143,8 @@ impl BinaryFloat {
             exponent.max(1) - maximum - (precision - 1),
         ))
     }
-    pub(crate) fn integer(bits: u64, signed: bool) -> Self {
+    #[must_use]
+    pub fn integer(bits: u64, signed: bool) -> Self {
         let negative = signed && bits & (1 << 63) != 0;
         Self::pack(
             negative,
@@ -182,7 +201,8 @@ impl BinaryFloat {
         }
         Some(Self::pack(negative, rounded, quantum))
     }
-    pub(crate) fn rounded(self, format: Format) -> Option<Self> {
+    #[must_use]
+    pub fn rounded(self, format: Format) -> Option<Self> {
         if self.is_nan() || self.is_infinite() {
             return Some(self);
         }
@@ -192,7 +212,8 @@ impl BinaryFloat {
     /// A constant scalar conversion uses the oracle's hardware precision
     /// change. Narrow destinations quiet a signaling NaN and keep the top
     /// payload bits, while an x87 destination retains its representation.
-    pub(crate) fn converted(self, format: Format) -> Option<Self> {
+    #[must_use]
+    pub fn converted(self, format: Format) -> Option<Self> {
         if self.is_nan() && format != Format::Extended {
             let quiet = format.specification().0 - 2;
             return Self::from_bits(format, self.bits(format)? | (1 << quiet));
@@ -201,7 +222,8 @@ impl BinaryFloat {
     }
     /// Runtime folding permits nonfinite results that constant expressions reject.
     /// The caller selects SSE single precision or x87 extended evaluation.
-    pub(crate) fn evaluated(self, op: Operation, right: Self, format: Format) -> Self {
+    #[must_use]
+    pub fn evaluated(self, op: Operation, right: Self, format: Format) -> Self {
         let invalid = Self(SIGN | INFINITY | (1 << 62));
         if self.unsupported() || right.unsupported() {
             return invalid;
@@ -278,12 +300,15 @@ impl BinaryFloat {
             }),
         }
     }
-    pub(crate) fn stored(self, format: Format) -> Self {
+    #[must_use]
+    #[inline]
+    pub fn stored(self, format: Format) -> Self {
         self.canonical()
             .converted(format)
             .unwrap_or(Self(INFINITY | (self.0 & SIGN)))
     }
-    pub(crate) fn bits(self, format: Format) -> Option<u128> {
+    #[must_use]
+    pub fn bits(self, format: Format) -> Option<u128> {
         let value = self.rounded(format)?;
         if format == Format::Extended {
             return Some(value.0);
@@ -317,7 +342,8 @@ impl BinaryFloat {
                 | (sig & ((1 << (precision - 1)) - 1)),
         )
     }
-    pub(crate) fn wide_integer(bits: u128, signed: bool, format: Format) -> Option<Self> {
+    #[must_use]
+    pub fn wide_integer(bits: u128, signed: bool, format: Format) -> Option<Self> {
         let negative = signed && bits >> 127 != 0;
         Self::round(
             negative,
@@ -326,11 +352,14 @@ impl BinaryFloat {
             format,
         )
     }
-    pub(crate) fn integral(self, width: u32, signed: bool) -> Option<u64> {
+    #[must_use]
+    #[inline]
+    pub fn integral(self, width: u32, signed: bool) -> Option<u64> {
         let bits = self.integral_wide(width.min(64), signed)?;
         u64::try_from(bits & u128::from(u64::MAX)).ok()
     }
-    pub(crate) fn integral_wide(self, width: u32, signed: bool) -> Option<u128> {
+    #[must_use]
+    pub fn integral_wide(self, width: u32, signed: bool) -> Option<u128> {
         if width == 0 || width > 128 || self.is_nan() || self.is_infinite() {
             return None;
         }
@@ -367,7 +396,8 @@ impl BinaryFloat {
             None
         }
     }
-    pub(crate) fn compare(self, other: Self) -> Option<Ordering> {
+    #[must_use]
+    pub fn compare(self, other: Self) -> Option<Ordering> {
         if self.is_nan() || other.is_nan() {
             return None;
         }
@@ -382,7 +412,8 @@ impl BinaryFloat {
             self.0.cmp(&other.0)
         })
     }
-    pub(crate) fn operation(self, op: Operation, right: Self, format: Format) -> Option<Self> {
+    #[must_use]
+    pub fn operation(self, op: Operation, right: Self, format: Format) -> Option<Self> {
         if self.is_nan() || right.is_nan() {
             return None;
         }

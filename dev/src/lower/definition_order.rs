@@ -22,7 +22,7 @@ struct Definition {
     form: Option<(FamilyId, u8)>,
 }
 #[derive(Default)]
-pub(crate) struct Definitions {
+pub struct Definitions {
     retained: bool,
     bytes: crate::lowir::text_storage::DefinitionBytes,
     spans: Vec<Definition>,
@@ -31,7 +31,7 @@ pub(crate) struct Definitions {
     next_family: u32,
 }
 impl Definitions {
-    pub(crate) fn set_spill_factory(&mut self, factory: fn() -> io::Result<std::fs::File>) {
+    pub fn set_spill_factory(&mut self, factory: fn() -> io::Result<std::fs::File>) {
         self.bytes.set_spill_factory(factory);
     }
     pub(super) fn retain(&mut self) {
@@ -56,7 +56,7 @@ impl Definitions {
             program.order_retained_definitions(&completed);
         }
     }
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.bytes.is_empty()
     }
     pub(super) fn family(&mut self, object: Option<NameId>) -> Result<FamilyId, Error> {
@@ -157,7 +157,7 @@ impl Definitions {
             .form = Some((family, u8::from(moving)));
         Ok(())
     }
-    pub(crate) fn write(&self, program: &Program, output: &mut impl Write) -> io::Result<()> {
+    pub fn write(&self, program: &Program, output: &mut impl Write) -> io::Result<()> {
         let spans: Vec<_> = self.spans.iter().chain(&self.held).collect();
         let mut order: Vec<_> = (0..spans.len()).collect();
         // Copy before move, then base before complete within each form. A

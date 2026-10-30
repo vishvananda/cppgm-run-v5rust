@@ -133,7 +133,7 @@ fn pad(buffer: &mut Vec<u8>, align: u64, fill: u8) -> Result<u64, Error> {
     buffer.resize(count, fill);
     Ok(offset)
 }
-pub(crate) fn link(
+pub fn link(
     objects: Vec<Object>,
     path: &Path,
     permissions: Option<&std::fs::Permissions>,

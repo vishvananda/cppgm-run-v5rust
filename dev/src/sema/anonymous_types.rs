@@ -33,14 +33,14 @@ impl AnonymousClass {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) enum ClassSpelling {
+pub enum ClassSpelling {
     Closure(u32),
     Name(NameId),
     Local(u32),
     Anonymous(ast::TokenSpan),
 }
 #[derive(Clone, Copy)]
-pub(crate) enum UnnamedNumbering {
+pub enum UnnamedNumbering {
     Members(ScopeId),
     Local(u32),
     Private(Option<EntityId>),
@@ -63,7 +63,8 @@ impl Graph {
             .anonymous_storage
             .filter(|&storage| self.scope(self.binding_scope(storage)).kind != ScopeKind::Class))
     }
-    pub(crate) fn lower_declaration_storage(&self, id: ast::DeclId) -> Option<EntityId> {
+    #[must_use]
+    pub fn lower_declaration_storage(&self, id: ast::DeclId) -> Option<EntityId> {
         self.declaration_storage
             .get(id.index())
             .copied()
@@ -71,10 +72,7 @@ impl Graph {
             .map(|binding| self.binding(binding).entity)
     }
 
-    pub(crate) fn lower_injected_member(
-        &self,
-        id: ast::ExprId,
-    ) -> Result<Option<(EntityId, u64)>, Error> {
+    pub fn lower_injected_member(&self, id: ast::ExprId) -> Result<Option<(EntityId, u64)>, Error> {
         let facts = self.expression_facts.get(id)?;
         let Some(storage) = facts.anonymous_member(&self.expression_facts) else {
             return Ok(None);
@@ -92,10 +90,7 @@ impl Graph {
         Ok(Some((self.binding(storage).entity, offset)))
     }
 
-    pub(crate) fn lower_injected_storage(
-        &self,
-        id: ast::ExprId,
-    ) -> Result<Option<EntityId>, Error> {
+    pub fn lower_injected_storage(&self, id: ast::ExprId) -> Result<Option<EntityId>, Error> {
         Ok(self
             .expression_facts
             .get(id)?
@@ -103,7 +98,7 @@ impl Graph {
             .map(|binding| self.binding(binding).entity))
     }
 
-    pub(crate) fn lower_union_assignment(&self, id: ast::ExprId) -> Result<bool, Error> {
+    pub fn lower_union_assignment(&self, id: ast::ExprId) -> Result<bool, Error> {
         let Some(member) = self
             .expression_facts
             .get(id)?
@@ -131,7 +126,8 @@ impl Graph {
         false
     }
 
-    pub(crate) fn lower_first_named_member(&self, ty: TypeId) -> Option<NameId> {
+    #[must_use]
+    pub fn lower_first_named_member(&self, ty: TypeId) -> Option<NameId> {
         let class = self.class_of(ty)?;
         let mut work = vec![self.entity(class).class().members.iter()];
         while let Some(members) = work.last_mut() {
@@ -152,7 +148,7 @@ impl Graph {
         None
     }
 
-    pub(crate) fn lower_anonymous_scope(
+    pub fn lower_anonymous_scope(
         &self,
         scope: ScopeId,
     ) -> Result<Option<(EntityId, ast::TokenSpan, UnnamedNumbering)>, Error> {
@@ -171,10 +167,7 @@ impl Graph {
         };
         Ok(Some((class, tokens, self.lower_unnamed_numbering(class)?)))
     }
-    pub(crate) fn lower_unnamed_numbering(
-        &self,
-        entity: EntityId,
-    ) -> Result<UnnamedNumbering, Error> {
+    pub fn lower_unnamed_numbering(&self, entity: EntityId) -> Result<UnnamedNumbering, Error> {
         if let Some(home) = self.entity(entity).home {
             if self.scope(home).kind == ScopeKind::Class {
                 // Unnumbered closures use a private unit name even in a
@@ -203,7 +196,7 @@ impl Graph {
         }
         Ok(UnnamedNumbering::Private(None))
     }
-    pub(crate) fn lower_class_spelling(&self, class: EntityId) -> Result<ClassSpelling, Error> {
+    pub fn lower_class_spelling(&self, class: EntityId) -> Result<ClassSpelling, Error> {
         let entity = self.entity(class);
         if let Some(closure) = self.lower_closure(class) {
             return Ok(ClassSpelling::Closure(closure.ordinal));
@@ -221,10 +214,7 @@ impl Graph {
             .map(ClassSpelling::Anonymous)
             .ok_or(Error::Invariant("class without presentation provenance"))
     }
-    pub(crate) fn lower_unnamed_scope_types(
-        &self,
-        scope: ScopeId,
-    ) -> impl Iterator<Item = EntityId> + '_ {
+    pub fn lower_unnamed_scope_types(&self, scope: ScopeId) -> impl Iterator<Item = EntityId> + '_ {
         self.scope(scope).bindings.iter().filter_map(move |&id| {
             let binding = self.binding(id);
             let entity = self.entity(binding.entity);

@@ -21,7 +21,7 @@ use crate::{
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum KeyWord {
+pub enum KeyWord {
     Node(KeyNode),
     Transform(crate::lex::type_transforms::TypeTransform),
     Predicate(crate::lex::predicates::TypePredicate),
@@ -49,7 +49,7 @@ pub(crate) enum KeyWord {
     Absent,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum KeyNode {
+pub enum KeyNode {
     Id,
     Name,
     Arguments,

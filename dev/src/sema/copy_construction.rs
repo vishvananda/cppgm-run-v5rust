@@ -18,13 +18,13 @@ pub(super) enum Origin {
     Implicit,
 }
 #[derive(Clone, Copy)]
-pub(crate) enum CopyTarget {
+pub enum CopyTarget {
     Base(u32),
     Member(EntityId),
     VirtualBase(EntityId),
 }
 #[derive(Clone, Copy)]
-pub(crate) struct SubobjectCopy {
+pub struct SubobjectCopy {
     pub target: CopyTarget,
     pub ty: TypeId,
     pub constructor: Option<ConstructorId>,
@@ -95,7 +95,9 @@ impl super::graph::Graph {
     /// defaulted copy stays nontrivial for ABI passing, but transfers storage
     /// when every selected subobject copy is trivial. Synthesis has already
     /// published these facts; lowering performs no definition demand.
-    pub(crate) fn lower_constructor_copies_storage(&self, id: ConstructorId) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn lower_constructor_copies_storage(&self, id: ConstructorId) -> bool {
         self.constructors.get(id).copy_transfer == super::construction::CopyTransfer::Storage
     }
     // Publish this per-plan fact once with the selected copy actions, rather

@@ -4,7 +4,7 @@ use super::pass_context::Context;
 use crate::lowir::{Error, model::Program};
 
 #[derive(Default)]
-pub(crate) struct Statistics {
+pub struct Statistics {
     pub(super) functions: crate::support::telemetry::Counter<u64>,
     #[cfg(feature = "telemetry")]
     pub(super) instructions_in: crate::support::telemetry::Counter<u64>,
@@ -68,7 +68,7 @@ impl Statistics {
     }
 
     #[cfg(feature = "telemetry")]
-    pub(crate) fn write(&self, out: &mut impl std::io::Write) -> std::io::Result<()> {
+    pub fn write(&self, out: &mut impl std::io::Write) -> std::io::Result<()> {
         write!(
             out,
             "pa32_opt_stats functions={} instructions_in={} instructions_out={} blocks_in={} blocks_out={} folded={} propagated={} reused={} dead={} branches_folded={} blocks_removed={} blocks_merged={} slots_promoted={} phis_inserted={} calls_inlined={} inlined_instructions={} functions_pruned={} loads_reused={} stores_removed={} loops_removed={} loops_unrolled={} specialized={} optimize_ms={}",

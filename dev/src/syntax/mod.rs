@@ -1,28 +1,28 @@
 //! Parse-once source syntax over the shared preprocessing and phase-7 owners.
 mod angles;
 mod assembly;
-pub(crate) mod ast;
+pub mod ast;
 mod attributes;
 mod bindings;
 mod classes;
-pub(crate) mod cloning;
+pub mod cloning;
 mod conflicts;
-pub(crate) mod cursor;
+pub mod cursor;
 mod declarations;
 mod declarators;
 mod expressions;
 mod lambdas;
 mod name_lookup;
 mod names;
-pub(crate) mod observations;
+pub mod observations;
 mod parameter_bases;
 mod parser;
 mod printer;
 mod render;
-pub(crate) use render::operator_spelling;
+pub use render::operator_spelling;
 mod scopes;
 mod statements;
-pub(crate) mod storage;
+pub mod storage;
 mod templates;
 mod type_transforms;
 
@@ -33,7 +33,7 @@ use ast::DeclId;
 use storage::List;
 
 /// A source-facing special-member label, never a semantic lookup key.
-pub(crate) fn write_expression_name(
+pub fn write_expression_name(
     tree: &ast::Tree,
     cursor: &cursor::Cursor<'_>,
     name: ast::Name,
@@ -45,7 +45,7 @@ pub(crate) fn write_expression_name(
 }
 
 /// A source-facing special-member label, never a semantic lookup key.
-pub(crate) fn write_member_label(
+pub fn write_member_label(
     tree: &ast::Tree,
     cursor: &cursor::Cursor<'_>,
     name: ast::Name,
@@ -68,7 +68,7 @@ pub(crate) fn write_member_label(
 }
 
 #[derive(Debug)]
-pub(crate) enum ParseError {
+pub enum ParseError {
     /// The pack expander owns the typed error that stopped this copy.
     CloneAbort,
     Syntax {
@@ -85,13 +85,14 @@ pub(crate) enum ParseError {
 }
 /// The parser and all syntax storage belong to one translation unit. Printing
 /// borrows the tree; later phases will consume the same typed records.
-pub(crate) struct SyntaxUnit<'a> {
+pub struct SyntaxUnit<'a> {
     parser: parser::Parser<'a>,
     declarations: Option<List<DeclId>>,
 }
 impl<'a> SyntaxUnit<'a> {
-    #[cfg(test)]
-    pub(crate) fn new(preprocessor: Preprocessor<'a>) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn new(preprocessor: Preprocessor<'a>) -> Self {
         Self::with_token_origin(
             preprocessor,
             0,
@@ -101,7 +102,8 @@ impl<'a> SyntaxUnit<'a> {
             },
         )
     }
-    pub(crate) fn with_token_origin(
+    #[must_use]
+    pub fn with_token_origin(
         mut preprocessor: Preprocessor<'a>,
         origin: u64,
         numbers: crate::lex::number::NumberOptions,
@@ -118,17 +120,18 @@ impl<'a> SyntaxUnit<'a> {
         unit.set_hosted(hosted);
         unit
     }
-    pub(crate) fn set_hosted(&mut self, hosted: bool) {
+    pub fn set_hosted(&mut self, hosted: bool) {
         self.parser.environment = if hosted {
             parser::Environment::Hosted
         } else {
             parser::Environment::Course
         };
     }
-    pub(crate) fn set_source_origin(&mut self, origin: u64) {
+    #[inline]
+    pub fn set_source_origin(&mut self, origin: u64) {
         self.parser.cursor.set_source_origin(origin);
     }
-    pub(crate) fn parse(&mut self) -> Result<(), ParseError> {
+    pub fn parse(&mut self) -> Result<(), ParseError> {
         if self.declarations.is_some() {
             return Ok(());
         }
@@ -137,13 +140,16 @@ impl<'a> SyntaxUnit<'a> {
         self.declarations = Some(self.parser.declarations(false)?);
         Ok(())
     }
-    pub(crate) fn set_stack_budget(&mut self, budget: crate::support::stack::StackBudget) {
+    #[inline]
+    pub fn set_stack_budget(&mut self, budget: crate::support::stack::StackBudget) {
         self.parser.stack_budget = budget;
     }
-    pub(crate) fn describe(&self, error: &ParseError) -> Result<Vec<u8>, PreprocessError> {
+    #[inline]
+    pub fn describe(&self, error: &ParseError) -> Result<Vec<u8>, PreprocessError> {
         self.parser.cursor.describe(error)
     }
-    pub(crate) fn semantic_inputs(
+    #[inline]
+    pub fn semantic_inputs(
         &mut self,
     ) -> Result<(&mut ast::Tree, &mut cursor::Cursor<'a>, List<DeclId>), ParseError> {
         let declarations = self
@@ -151,10 +157,7 @@ impl<'a> SyntaxUnit<'a> {
             .ok_or(ParseError::Invariant("missing parsed translation unit"))?;
         Ok((&mut self.parser.tree, &mut self.parser.cursor, declarations))
     }
-    pub(crate) fn print(
-        &self,
-        output: &mut (impl std::io::Write + ?Sized),
-    ) -> Result<(), std::io::Error> {
+    pub fn print(&self, output: &mut (impl std::io::Write + ?Sized)) -> Result<(), std::io::Error> {
         let declarations = self
             .declarations
             .ok_or_else(|| std::io::Error::other("missing parsed translation unit"))?;

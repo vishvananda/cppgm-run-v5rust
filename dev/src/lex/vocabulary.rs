@@ -81,7 +81,8 @@ pub enum Keyword {
 }
 
 impl Keyword {
-    pub(crate) fn spelling(self) -> &'static str {
+    #[must_use]
+    pub fn spelling(self) -> &'static str {
         match self {
             Self::Alignas => "alignas",
             Self::Alignof => "alignof",
@@ -329,17 +330,21 @@ enum SimpleIdentity {
 }
 
 impl SimpleToken {
-    pub(crate) fn identifier(text: &[u8]) -> Option<Self> {
+    #[inline]
+    pub fn identifier(text: &[u8]) -> Option<Self> {
         Keyword::find(text)
             .map(Self::keyword)
             .or_else(|| super::pp_lexer::identifier_operator(text).and_then(Self::punctuator))
     }
 
-    pub(crate) fn keyword(word: Keyword) -> Self {
+    #[inline]
+    #[must_use]
+    pub fn keyword(word: Keyword) -> Self {
         Self(SimpleIdentity::Keyword(word))
     }
 
-    pub(crate) fn punctuator(punctuator: Punctuator) -> Option<Self> {
+    #[must_use]
+    pub fn punctuator(punctuator: Punctuator) -> Option<Self> {
         Some(match punctuator {
             Punctuator::Hash | Punctuator::HashHash => return None,
             Punctuator::New => Self::keyword(Keyword::New),
@@ -349,6 +354,7 @@ impl SimpleToken {
     }
 
     #[must_use]
+    #[inline]
     pub fn name(self) -> &'static str {
         match self.0 {
             SimpleIdentity::Keyword(word) => word.name(),
@@ -356,21 +362,27 @@ impl SimpleToken {
         }
     }
 
-    pub(crate) fn spelling(self) -> &'static str {
+    #[inline]
+    #[must_use]
+    pub fn spelling(self) -> &'static str {
         match self.0 {
             SimpleIdentity::Keyword(word) => word.spelling(),
             SimpleIdentity::Punctuator(operator) => operator.spelling(),
         }
     }
 
-    pub(crate) fn as_keyword(self) -> Option<Keyword> {
+    #[inline]
+    #[must_use]
+    pub fn as_keyword(self) -> Option<Keyword> {
         match self.0 {
             SimpleIdentity::Keyword(word) => Some(word),
             SimpleIdentity::Punctuator(_) => None,
         }
     }
 
-    pub(crate) fn as_punctuator(self) -> Option<Punctuator> {
+    #[inline]
+    #[must_use]
+    pub fn as_punctuator(self) -> Option<Punctuator> {
         match self.0 {
             SimpleIdentity::Punctuator(operator) => Some(operator),
             SimpleIdentity::Keyword(_) => None,

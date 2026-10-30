@@ -3,7 +3,7 @@
 use crate::types::FundamentalType as F;
 
 #[derive(Clone, Copy)]
-pub(crate) enum Type {
+pub enum Type {
     Void,
     Scalar(F),
     Floating,
@@ -11,18 +11,18 @@ pub(crate) enum Type {
     VaList,
 }
 #[derive(Clone, Copy)]
-pub(crate) enum Parameter {
+pub enum Parameter {
     Value(Type),
     Pointer(Type),
     ConstPointer(Type),
 }
 #[derive(Clone, Copy)]
-pub(crate) struct Signature {
+pub struct Signature {
     pub result: Parameter,
     pub parameters: &'static [Parameter],
 }
 #[derive(Clone, Copy)]
-pub(crate) struct LibraryBuiltin {
+pub struct LibraryBuiltin {
     pub signature: Signature,
     pub floating: F,
 }
@@ -750,7 +750,8 @@ fn find(table: &[(&[u8], Signature)], name: &[u8]) -> Option<Signature> {
         .ok()
         .map(|index| table[index].1)
 }
-pub(crate) fn lookup(name: &[u8]) -> Option<LibraryBuiltin> {
+#[must_use]
+pub fn lookup(name: &[u8]) -> Option<LibraryBuiltin> {
     let name = name.strip_prefix(b"__builtin_")?;
     if let Some(signature) = find(FIXED, name).or_else(|| find(LIBM, name)) {
         return Some(LibraryBuiltin {

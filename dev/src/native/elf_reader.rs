@@ -352,7 +352,7 @@ impl<'a> Decoder<'a> {
         Ok(())
     }
 }
-pub(crate) fn read(path: &Path) -> Result<Object, Error> {
+pub fn read(path: &Path) -> Result<Object, Error> {
     let image =
         std::fs::read(path).map_err(|_| Error::argument("cannot read ", path.as_os_str()))?;
     decode(&image, path.as_os_str().as_encoded_bytes().to_vec())

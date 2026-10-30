@@ -21,7 +21,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum LiteralCall {
+pub enum LiteralCall {
     Character {
         source: TypeId,
         bits: u64,

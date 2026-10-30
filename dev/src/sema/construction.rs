@@ -12,7 +12,7 @@ use super::{
 use crate::{support::source::SourceOffset, syntax::ast};
 
 #[derive(Clone, Copy)]
-pub(crate) struct BaseInitialization {
+pub struct BaseInitialization {
     pub class: EntityId,
     pub constructor: Option<ConstructorId>,
     pub arguments: Option<ConstructorArguments>,
@@ -42,7 +42,7 @@ pub(super) enum ConstructorExceptionSource {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct ConstructorId(u32);
+pub struct ConstructorId(u32);
 #[derive(Clone, Copy, Default)]
 pub(super) enum ConstructorState {
     #[default]
@@ -70,13 +70,13 @@ pub(super) enum CopyTransfer {
     Storage,
 }
 #[derive(Clone, Copy)]
-pub(crate) struct MemberConstruction {
+pub struct MemberConstruction {
     pub member: EntityId,
     pub constructor: ConstructorId,
     pub arguments: Option<ConstructorArguments>,
 }
 #[derive(Clone, Copy)]
-pub(crate) struct Delegation {
+pub struct Delegation {
     pub constructor: ConstructorId,
     pub arguments: ConstructorArguments,
     pub initializer: ast::Initializer,

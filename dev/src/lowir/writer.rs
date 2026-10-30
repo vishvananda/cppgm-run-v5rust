@@ -10,7 +10,7 @@ use super::{
 };
 use crate::types::floating::FloatingScanner;
 use std::io::{self, Write};
-pub(crate) fn write(program: &Program, mut out: impl Write) -> io::Result<()> {
+pub fn write(program: &Program, mut out: impl Write) -> io::Result<()> {
     let mut floating = FloatingScanner::default();
     let mut written = false;
     for phase in 0..4 {
@@ -48,7 +48,7 @@ pub(crate) fn write(program: &Program, mut out: impl Write) -> io::Result<()> {
     write_aliases(program, &mut out)?;
     out.flush()
 }
-pub(crate) fn write_aliases(program: &Program, out: &mut impl Write) -> io::Result<()> {
+pub fn write_aliases(program: &Program, out: &mut impl Write) -> io::Result<()> {
     for alias in program.aliases() {
         out.write_all(b"alias object ")?;
         out.write_all(c_string(program.names.bytes(alias.object)))?;
@@ -60,7 +60,7 @@ pub(crate) fn write_aliases(program: &Program, out: &mut impl Write) -> io::Resu
     }
     Ok(())
 }
-pub(crate) fn write_globals(
+pub fn write_globals(
     program: &Program,
     out: &mut impl Write,
     definitions_follow: bool,
@@ -170,7 +170,8 @@ fn write_global(
     }
     writeln!(out)
 }
-pub(crate) fn write_definition(
+#[inline]
+pub fn write_definition(
     program: &Program,
     function: &Function,
     output: &mut impl Write,
@@ -187,7 +188,8 @@ fn write_function(
     let Some(body) = &f.body else { return Ok(()) };
     write_function_body(program, body, floating, out)
 }
-pub(crate) fn write_definition_header(
+#[inline]
+pub fn write_definition_header(
     program: &Program,
     f: &Function,
     out: &mut impl Write,
@@ -220,7 +222,7 @@ fn write_function_header(
     write_location(program, f.location, out)?;
     writeln!(out, " {{")
 }
-pub(crate) fn write_definition_body(
+pub fn write_definition_body(
     program: &Program,
     f: &Function,
     out: &mut impl Write,

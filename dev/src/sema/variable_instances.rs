@@ -29,7 +29,7 @@ pub(super) struct Pattern {
     pub qualified: bool,
 }
 #[derive(Clone, Copy)]
-pub(crate) struct Definition {
+pub struct Definition {
     pub initializer: Option<ast::Initializer>,
 }
 #[derive(Clone, Copy)]
@@ -182,7 +182,9 @@ impl Variables {
     }
 }
 impl super::Graph {
-    pub(crate) fn lower_variable_instantiated(&self, entity: EntityId) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn lower_variable_instantiated(&self, entity: EntityId) -> bool {
         self.variable_instances.member_source(entity).is_some()
             || self.variable_instances.templates.primary(entity).is_some()
     }

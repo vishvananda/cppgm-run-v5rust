@@ -1,0 +1,24 @@
+[package]
+name = "cppgm-native"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+path = "../../src/native_crate.rs"
+
+[lints]
+workspace = true
+
+[features]
+default = []
+test-support = ["cppgm-ir/test-support"]
+telemetry = ["cppgm-core/telemetry", "cppgm-ir/telemetry"]
+
+[dependencies]
+cppgm-core = { workspace = true }
+cppgm-ir = { workspace = true }
+
+[dev-dependencies]
+cppgm-ir = { workspace = true, features = ["test-support"] }

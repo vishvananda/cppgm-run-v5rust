@@ -87,10 +87,13 @@ impl Graph {
         self.local_classes.unnamed_member_definitions |=
             self.lower_unnamed_member_owner(function).is_some();
     }
-    pub(crate) fn lower_has_unnamed_member_definitions(&self) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn lower_has_unnamed_member_definitions(&self) -> bool {
         self.local_classes.unnamed_member_definitions
     }
-    pub(crate) fn lower_enclosing_static_owner(&self, function: EntityId) -> Option<EntityId> {
+    #[must_use]
+    pub fn lower_enclosing_static_owner(&self, function: EntityId) -> Option<EntityId> {
         let node = self.entity(function);
         if !node.callable().demands.names_enclosing_statics {
             return None;
@@ -137,7 +140,8 @@ impl Graph {
         }
         Ok(!self.lower_entity_unit_local(class)?)
     }
-    pub(crate) fn lower_private_type_name(&self, ty: super::types::TypeId) -> Result<bool, Error> {
+    #[inline]
+    pub fn lower_private_type_name(&self, ty: super::types::TypeId) -> Result<bool, Error> {
         self.lower_type_entity_locality(ty, super::locality::Mode::Private)
     }
     pub(super) fn lower_private_entity_name(&self, mut class: EntityId) -> Result<bool, Error> {
@@ -390,7 +394,7 @@ impl Graph {
             .map(|local| local.unwrap_or(false))
     }
 
-    pub(crate) fn lower_class_no_linkage(&self, class: EntityId) -> Result<bool, Error> {
+    pub fn lower_class_no_linkage(&self, class: EntityId) -> Result<bool, Error> {
         self.entity(class)
             .ty
             .map(|ty| self.lower_type_entity_locality(ty, super::locality::Mode::NoLinkage))
@@ -420,7 +424,7 @@ impl Graph {
             class = owner;
         }
     }
-    pub(crate) fn lower_function_local_class(
+    pub fn lower_function_local_class(
         &self,
         function: EntityId,
         object_mode: bool,
@@ -440,7 +444,8 @@ impl Graph {
 
     /// Local-static presentation names in shared local classes and closures
     /// use the owning function's ABI bytes, including member-default closures.
-    pub(crate) fn lower_static_owner_uses_abi_name(&self, function: EntityId) -> bool {
+    #[must_use]
+    pub fn lower_static_owner_uses_abi_name(&self, function: EntityId) -> bool {
         let original = self.entity(function).home;
         let mut home = original;
         while let Some(scope) = home {
@@ -458,7 +463,8 @@ impl Graph {
         }
         false
     }
-    pub(crate) fn lower_unnamed_member_owner(&self, function: EntityId) -> Option<ScopeId> {
+    #[must_use]
+    pub fn lower_unnamed_member_owner(&self, function: EntityId) -> Option<ScopeId> {
         let home = self.entity(function).home?;
         if self.scope(home).kind != ScopeKind::Class {
             return None;
@@ -495,7 +501,8 @@ impl Graph {
         }
         function
     }
-    pub(crate) fn lower_local_scope(&self, scope: ScopeId) -> Option<EntityId> {
+    #[must_use]
+    pub fn lower_local_scope(&self, scope: ScopeId) -> Option<EntityId> {
         matches!(
             self.scope(scope).kind,
             ScopeKind::Block | ScopeKind::Function
@@ -503,10 +510,8 @@ impl Graph {
         .then(|| self.lower_scope_function(scope))
         .flatten()
     }
-    pub(crate) fn lower_local_class_scope(
-        &self,
-        scope: ScopeId,
-    ) -> Option<(EntityId, EntityId, u32)> {
+    #[must_use]
+    pub fn lower_local_class_scope(&self, scope: ScopeId) -> Option<(EntityId, EntityId, u32)> {
         let node = self.scope(scope);
         if node.kind != ScopeKind::Class {
             return None;
@@ -526,7 +531,8 @@ impl Graph {
             ),
         ))
     }
-    pub(crate) fn lower_local_type(&self, class: EntityId) -> Option<(EntityId, u32)> {
+    #[must_use]
+    pub fn lower_local_type(&self, class: EntityId) -> Option<(EntityId, u32)> {
         let function = self.lower_local_scope(self.entity(class).home?)?;
         Some((
             function,
@@ -539,11 +545,14 @@ impl Graph {
             ),
         ))
     }
-    pub(crate) fn lower_function_visible_locals(&self, function: EntityId) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn lower_function_visible_locals(&self, function: EntityId) -> bool {
         let outer = self.outermost_function(function);
         self.lower_inline_function(outer) || self.lower_function_instantiated(outer)
     }
-    pub(crate) fn lower_numbered_closure(&self, class: EntityId) -> bool {
+    #[must_use]
+    pub fn lower_numbered_closure(&self, class: EntityId) -> bool {
         if self
             .lower_closure(class)
             .is_some_and(|closure| match closure.context {
@@ -572,13 +581,15 @@ impl Graph {
         }
         false
     }
-    pub(crate) fn lower_deferred_local_classes(&self, function: EntityId) -> &[EntityId] {
+    #[inline]
+    pub fn lower_deferred_local_classes(&self, function: EntityId) -> &[EntityId] {
         self.local_classes
             .by_outer_function
             .get(&function)
             .map_or(&[], Vec::as_slice)
     }
-    pub(crate) fn lower_local_class_definition_scope(&self, class: EntityId) -> Option<ScopeId> {
+    #[must_use]
+    pub fn lower_local_class_definition_scope(&self, class: EntityId) -> Option<ScopeId> {
         let node = self.entity(class);
         let scope = node.context().scope?;
         self.scope(scope)

@@ -15,7 +15,7 @@ pub enum NumberDialect {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct NumberOptions {
+pub struct NumberOptions {
     pub dialect: NumberDialect,
     pub binary_exponents: bool,
 }
@@ -38,13 +38,16 @@ pub enum NumberLiteral {
 }
 
 /// The suffix grammar is Annex E, including UTF-8 continuation characters.
-pub(crate) fn user_defined_suffix(text: &[u8]) -> bool {
+#[inline]
+#[must_use]
+pub fn user_defined_suffix(text: &[u8]) -> bool {
     text.first() == Some(&b'_')
         && std::str::from_utf8(&text[1..])
             .is_ok_and(|suffix| suffix.chars().all(|c| identifier_continue(u32::from(c))))
 }
 
-pub(crate) fn literal_suffix(text: &[u8], dialect: NumberDialect) -> bool {
+#[must_use]
+pub fn literal_suffix(text: &[u8], dialect: NumberDialect) -> bool {
     if dialect != NumberDialect::Gnu {
         return user_defined_suffix(text);
     }
@@ -56,13 +59,15 @@ pub(crate) fn literal_suffix(text: &[u8], dialect: NumberDialect) -> bool {
 
 /// Classify grammar and integer type/value without scanning floating data.
 #[must_use]
+#[inline]
 pub fn classify_number(text: &[u8], dialect: NumberDialect) -> NumberLiteral {
     classify(text, dialect)
 }
 
 /// Decode an already classified ud-integer's digits. Raw literal operators
 /// need no numeric value; only a selected cooked operator demands this check.
-pub(crate) fn user_integer_value(digits: &[u8]) -> Option<u64> {
+#[must_use]
+pub fn user_integer_value(digits: &[u8]) -> Option<u64> {
     let (digits, radix) = if digits.starts_with(b"0x") || digits.starts_with(b"0X") {
         (&digits[2..], 16)
     } else if digits.starts_with(b"0b") || digits.starts_with(b"0B") {

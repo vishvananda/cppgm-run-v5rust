@@ -7,14 +7,14 @@ use super::{
 use crate::lex::{identifiers::NameId, vocabulary::Keyword};
 use crate::support::hash::HashMap;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct ScopeId(u32);
+pub struct ScopeId(u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum FunctionAvailability {
     Callable,
     Deleted,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct EntityId(u32);
+pub struct EntityId(u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) struct BindingId(u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -118,7 +118,7 @@ pub(super) enum FunctionReturn {
 }
 /// Ordered as the frozen callable's strongest declared memory guarantee.
 #[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum FunctionEffect {
+pub enum FunctionEffect {
     #[default]
     Default,
     ReadOnly,
@@ -227,7 +227,7 @@ struct FunctionSignature {
     shape: Option<TypeId>,
 }
 
-pub(crate) struct Graph {
+pub struct Graph {
     pub(super) localities: Box<super::locality::Queries>,
     // Immutable name identities survive every temporary analyzer facade.
     pub(super) builtin_names: Option<std::rc::Rc<super::builtin_calls::BuiltinNames>>,
@@ -370,7 +370,8 @@ impl Graph {
             .ok_or(Error::Invariant("missing auto placeholder"))
     }
     #[cfg(feature = "telemetry")]
-    pub(crate) fn statistics(&self) -> super::Statistics {
+    #[must_use]
+    pub fn statistics(&self) -> super::Statistics {
         let (names, lookups, member_cache) = self.names.observations();
         let (types, type_bytes) = self.types.observations();
         super::Statistics {
@@ -414,7 +415,8 @@ impl Graph {
         }
     }
     #[cfg(not(feature = "telemetry"))]
-    pub(crate) fn statistics(&self) -> super::Statistics {
+    #[inline]
+    pub fn statistics(&self) -> super::Statistics {
         let _ = self;
         super::observations::Statistics::default()
     }
@@ -439,7 +441,9 @@ impl Graph {
         let declaration = self.enum_declaration(binding)?;
         (self.binding(declaration).entity == enumeration).then_some(binding)
     }
-    pub(crate) fn work(&self) -> super::Work {
+    #[inline]
+    #[must_use]
+    pub fn work(&self) -> super::Work {
         self.work.snapshot()
     }
     pub(super) fn note_effects(

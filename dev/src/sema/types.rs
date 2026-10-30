@@ -7,9 +7,9 @@ use crate::types::FundamentalType;
 use std::hash::BuildHasher;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct TypeId(u32);
+pub struct TypeId(u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum Scalar {
+pub enum Scalar {
     Basic(FundamentalType),
     Void,
     Bool,
@@ -20,7 +20,8 @@ pub(crate) enum Scalar {
     Nullptr,
 }
 impl Scalar {
-    pub(crate) fn name(self) -> &'static str {
+    #[must_use]
+    pub fn name(self) -> &'static str {
         match self {
             Self::Basic(ty) => ty.name(),
             Self::Void => "void",

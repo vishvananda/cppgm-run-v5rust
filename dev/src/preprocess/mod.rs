@@ -12,7 +12,7 @@ mod inclusion;
 mod input;
 mod line_control;
 mod locations;
-pub(crate) use locations::SourcePositions;
+pub use locations::SourcePositions;
 mod macros;
 pub mod options;
 mod pragmas;

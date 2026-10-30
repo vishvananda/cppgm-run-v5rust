@@ -16,7 +16,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy)]
-pub(crate) enum Item {
+pub enum Item {
     Table(EntityId, super::vtable_groups::SegmentId),
     Scalar(TypeId, Value),
     Zero(u64),
@@ -855,9 +855,10 @@ fn flush_bits(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl super::graph::Graph {
-    pub(crate) fn lower_array_image_requests(&self) -> impl Iterator<Item = EntityId> + '_ {
+    #[inline]
+    pub fn lower_array_image_requests(&self) -> impl Iterator<Item = EntityId> + '_ {
         self.array_images.requests.keys().copied()
     }
 }

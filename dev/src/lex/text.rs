@@ -15,7 +15,8 @@ pub enum EncodingPrefix {
 }
 
 impl EncodingPrefix {
-    pub(crate) fn width(self) -> usize {
+    #[must_use]
+    pub fn width(self) -> usize {
         match self {
             Self::Utf16 => 2,
             Self::Utf32 | Self::Wide => 4,
@@ -23,7 +24,8 @@ impl EncodingPrefix {
         }
     }
 
-    pub(crate) fn element_type(self) -> FundamentalType {
+    #[must_use]
+    pub fn element_type(self) -> FundamentalType {
         match self {
             Self::Utf16 => FundamentalType::Char16T,
             Self::Utf32 => FundamentalType::Char32T,
@@ -34,7 +36,7 @@ impl EncodingPrefix {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct TextParts {
+pub struct TextParts {
     pub prefix: EncodingPrefix,
     pub raw: bool,
     pub quote: u8,
@@ -43,7 +45,8 @@ pub(crate) struct TextParts {
     pub suffix_begin: u32,
 }
 
-pub(crate) fn split_text(text: &[u8]) -> Option<TextParts> {
+#[must_use]
+pub fn split_text(text: &[u8]) -> Option<TextParts> {
     let (prefix, mut quote) = if text.starts_with(b"u8") {
         (EncodingPrefix::Utf8, 2)
     } else {
@@ -101,7 +104,7 @@ impl LiteralCharacter {
     }
 }
 
-pub(crate) fn decode_character(text: &[u8], pos: &mut usize) -> Option<LiteralCharacter> {
+pub fn decode_character(text: &[u8], pos: &mut usize) -> Option<LiteralCharacter> {
     if *text.get(*pos)? != b'\\' {
         let decoded = decode_utf8(&text[*pos..]).ok()?;
         *pos += usize::from(decoded.length);

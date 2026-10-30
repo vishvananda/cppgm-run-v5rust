@@ -1,5 +1,5 @@
 //! Demand-driven phase 3 lexer. Returned text borrows the source or one reused scratch buffer.
-pub(crate) mod classes;
+pub mod classes;
 mod literals;
 mod punctuators;
 pub use punctuators::Punctuator;
@@ -115,13 +115,15 @@ pub struct PpLexer<'a> {
 }
 
 impl<'a> PpLexer<'a> {
-    pub(crate) fn set_binary_exponents(&mut self, enabled: bool) {
+    #[inline]
+    pub fn set_binary_exponents(&mut self, enabled: bool) {
         self.options.binary_exponents = enabled;
     }
     /// Start at the first source byte after a possible BOM.
     ///
     /// # Errors
     /// Returns a lexical error if the first physical character cannot be decoded.
+    #[inline]
     pub fn new(source: &'a SourceBuffer) -> Result<Self, SourceError> {
         Self::with_options(source, PpLexerOptions::default())
     }
@@ -130,6 +132,7 @@ impl<'a> PpLexer<'a> {
     ///
     /// # Errors
     /// Returns a lexical error if the first physical character cannot be decoded.
+    #[inline]
     pub fn with_options(
         source: &'a SourceBuffer,
         options: PpLexerOptions,
@@ -137,7 +140,7 @@ impl<'a> PpLexer<'a> {
         Self::with_image(SourceImage::Borrowed(source), options)
     }
 
-    pub(crate) fn with_image(
+    pub fn with_image(
         source: SourceImage<'a>,
         options: PpLexerOptions,
     ) -> Result<Self, SourceError> {
@@ -166,6 +169,7 @@ impl<'a> PpLexer<'a> {
     }
 
     /// Permit a header-name as the next non-whitespace token.
+    #[inline]
     pub fn request_header_name(&mut self) {
         self.context = DirectiveContext::AfterInclude;
     }
@@ -174,6 +178,7 @@ impl<'a> PpLexer<'a> {
     ///
     /// # Errors
     /// Returns the first lexical error; the partially scanned token is not emitted.
+    #[inline]
     pub fn next_token(&mut self) -> Result<PpToken<'_>, SourceError> {
         let kind = self.scan_next()?;
         Ok(self.token(kind))
@@ -200,7 +205,8 @@ impl<'a> PpLexer<'a> {
         Ok(kind)
     }
 
-    pub(crate) fn token(&self, kind: PpTokenKind) -> PpToken<'_> {
+    #[must_use]
+    pub fn token(&self, kind: PpTokenKind) -> PpToken<'_> {
         let spelling = if matches!(
             kind,
             PpTokenKind::WhitespaceSequence | PpTokenKind::NewLine | PpTokenKind::EndOfFile

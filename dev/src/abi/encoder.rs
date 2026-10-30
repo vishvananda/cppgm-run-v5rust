@@ -58,6 +58,7 @@ impl<'a> Encoder<'a> {
     ///
     /// # Errors
     /// Returns an encoding diagnostic or a checked storage/stack limit.
+    #[inline]
     pub fn encode(
         graph: &'a Graph,
         target: Target,

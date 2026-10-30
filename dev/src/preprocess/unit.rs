@@ -27,16 +27,14 @@ pub struct Preprocessor<'a> {
     directives: crate::support::telemetry::Counter<u64>,
 }
 impl<'a> Preprocessor<'a> {
-    pub(crate) fn hosted(&self) -> bool {
+    #[must_use]
+    pub fn hosted(&self) -> bool {
         self.source.hosted
     }
-    pub(crate) fn enter_builtin_declarations(
-        &mut self,
-        text: &[u8],
-    ) -> Result<(), PreprocessError> {
+    pub fn enter_builtin_declarations(&mut self, text: &[u8]) -> Result<(), PreprocessError> {
         self.source.enter_builtin_declarations(text)
     }
-    pub(crate) fn set_number_options(&mut self, options: crate::lex::number::NumberOptions) {
+    pub fn set_number_options(&mut self, options: crate::lex::number::NumberOptions) {
         self.source.set_binary_exponents(options.binary_exponents);
         self.expander.set_binary_exponents(options.binary_exponents);
         self.conditionals.set_number_dialect(options.dialect);
@@ -264,27 +262,27 @@ impl<'a> Preprocessor<'a> {
     pub(crate) fn name_spelling(&self, name: NameId) -> &[u8] {
         self.names.bytes(name)
     }
-    pub(crate) fn semantic_context(
+    pub fn semantic_context(
         &mut self,
     ) -> (&mut Identifiers, &dyn super::locations::SourcePositions) {
         (&mut self.names, &self.source)
     }
-    pub(crate) fn source_file(
-        &self,
-        location: crate::support::source::SourceOffset,
-    ) -> std::rc::Rc<[u8]> {
+    #[must_use]
+    pub fn source_file(&self, location: crate::support::source::SourceOffset) -> std::rc::Rc<[u8]> {
         super::locations::SourcePositions::source_file(&self.source, location)
     }
-    pub(crate) fn source_column(&self, location: crate::support::source::SourceOffset) -> u32 {
+    #[must_use]
+    pub fn source_column(&self, location: crate::support::source::SourceOffset) -> u32 {
         super::locations::SourcePositions::source_column(&self.source, location)
     }
-    pub(crate) fn source_line(
+    pub fn source_line(
         &self,
         location: crate::support::source::SourceOffset,
     ) -> Result<i64, PreprocessError> {
         super::locations::SourcePositions::source_line(&self.source, location)
     }
-    pub(crate) fn identifiers(&self) -> &Identifiers {
+    #[must_use]
+    pub fn identifiers(&self) -> &Identifiers {
         &self.names
     }
     pub(crate) fn intern_name(&mut self, spelling: &[u8]) -> Result<NameId, PreprocessError> {
@@ -308,7 +306,7 @@ impl<'a> Preprocessor<'a> {
         let _ = self;
         super::counters::PreprocessorCounters::default()
     }
-    pub(crate) fn describe(&self, error: &PreprocessError) -> Result<Vec<u8>, PreprocessError> {
+    pub fn describe(&self, error: &PreprocessError) -> Result<Vec<u8>, PreprocessError> {
         match error {
             PreprocessError::Read(error) => Ok(error.to_string().into_bytes()),
             PreprocessError::Source(error) => self.source.describe(error),
@@ -573,31 +571,6 @@ chosen
             input.next_non_whitespace_kind().unwrap(),
             PpTokenKind::EndOfFile
         );
-        for (text, expected) in [
-            (
-                "#if 0\n#if bad\n#else ignored\n#elif ignored\n#endif\n#endif",
-                "4:2: #elif or #else after #else",
-            ),
-            (
-                "#if 0\n#if bad\n#else ignored",
-                "1:2: unterminated conditional directive",
-            ),
-            ("#if 1\n", "1:2: unterminated conditional directive"),
-            ("#else", "1:2: #elif, #else or #endif without #if"),
-            (
-                "#if 0\n#else extra",
-                "2:2: extra tokens at the end of the directive",
-            ),
-            (
-                "#if defined(3) \"\\q\"",
-                "1:5: `defined` requires an identifier",
-            ),
-        ] {
-            let source = SourceBuffer::new(text.as_bytes().to_vec()).unwrap();
-            let mut input = Preprocessor::new(&source).unwrap();
-            let error = input.next_non_whitespace_kind().unwrap_err();
-            assert_eq!(crate::driver::preproc::describe(&source, &error), expected);
-        }
     }
 
     #[test]

@@ -16,7 +16,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct MemberPointer {
+pub struct MemberPointer {
     pub ty: TypeId,
     pub member: Option<EntityId>,
     pub adjustment: i64,

@@ -92,7 +92,7 @@ impl Graph {
             .destruction_child(class, index, &[])?
             .map(|(child, _)| child))
     }
-    pub(crate) fn lower_destructor_subobjects_throw(&self, class: EntityId) -> Result<bool, Error> {
+    pub fn lower_destructor_subobjects_throw(&self, class: EntityId) -> Result<bool, Error> {
         let count = self.entity(class).class().bases.len()
             + if self.entity(class).key == Keyword::Union {
                 0

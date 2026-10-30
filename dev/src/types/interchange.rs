@@ -10,13 +10,16 @@ struct Decoded {
     exponent: i64,
     payload: u64,
 }
-pub(crate) fn soft(ty: F) -> bool {
+#[must_use]
+#[inline]
+pub fn soft(ty: F) -> bool {
     matches!(
         ty.floating_representation(),
         F::Float16 | F::BFloat16 | F::Float128
     )
 }
-pub(crate) fn sign(ty: F) -> u128 {
+#[must_use]
+pub fn sign(ty: F) -> u128 {
     1 << match ty.floating_representation() {
         F::Float16 | F::BFloat16 => 15,
         F::Float => 31,
@@ -104,7 +107,7 @@ fn rounded(negative: bool, magnitude: u128, exponent: i64, ty: F) -> Result<u128
     Ok(sign | bits)
 }
 
-pub(crate) fn convert(from: F, bits: u128, to: F) -> Result<u128, FloatError> {
+pub fn convert(from: F, bits: u128, to: F) -> Result<u128, FloatError> {
     if from.floating_representation() == to.floating_representation() {
         return Ok(bits);
     }
@@ -127,7 +130,7 @@ pub(crate) fn convert(from: F, bits: u128, to: F) -> Result<u128, FloatError> {
     }
     rounded(value.negative, value.magnitude, value.exponent, to)
 }
-pub(crate) fn from_integer(bits: u128, signed: bool, to: F) -> Result<u128, FloatError> {
+pub fn from_integer(bits: u128, signed: bool, to: F) -> Result<u128, FloatError> {
     let negative = signed && bits >> 127 != 0;
     rounded(
         negative,
@@ -136,7 +139,8 @@ pub(crate) fn from_integer(bits: u128, signed: bool, to: F) -> Result<u128, Floa
         to,
     )
 }
-pub(crate) fn to_integer(from: F, bits: u128, width: u32, signed: bool) -> Option<u128> {
+#[must_use]
+pub fn to_integer(from: F, bits: u128, width: u32, signed: bool) -> Option<u128> {
     let value = decode(from, bits);
     if width == 1 {
         return Some(u128::from(value.nan || value.magnitude != 0));
@@ -196,7 +200,7 @@ fn product(x: u128, y: u128) -> (u128, i64) {
         i64::from(shift),
     )
 }
-pub(crate) fn arithmetic(
+pub fn arithmetic(
     op: Operation,
     ty: F,
     left: u128,

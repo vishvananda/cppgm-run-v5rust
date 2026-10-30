@@ -289,8 +289,12 @@ impl Symbols<'_, '_> {
     }
 }
 
-#[cfg(test)]
-pub(crate) fn assert_construction_context(
+#[cfg(any(test, feature = "test-support"))]
+#[expect(
+    clippy::unwrap_used,
+    reason = "existing test-only invariant assertions shared across phase crates"
+)]
+pub fn assert_construction_context(
     graph: &crate::sema::Graph,
     tree: &crate::syntax::ast::Tree,
     cursor: &crate::syntax::cursor::Cursor<'_>,

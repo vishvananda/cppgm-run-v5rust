@@ -8,43 +8,43 @@ use crate::lex::{
 };
 use crate::support::source::SourceOffset;
 
-pub(crate) type DeclId = Id<Declaration>;
-pub(crate) type ExprId = Id<Expression>;
-pub(crate) type DeclaratorId = Id<Declarator>;
-pub(crate) type TypeId = Id<TypeSyntax>;
-pub(crate) type Name = Id<QualifiedName>;
-pub(crate) type BodyId = Id<Body>;
-pub(crate) type ClassId = Id<ClassSyntax>;
-pub(crate) type StmtId = Id<Statement>;
-pub(crate) type LambdaId = Id<Lambda>;
+pub type DeclId = Id<Declaration>;
+pub type ExprId = Id<Expression>;
+pub type DeclaratorId = Id<Declarator>;
+pub type TypeId = Id<TypeSyntax>;
+pub type Name = Id<QualifiedName>;
+pub type BodyId = Id<Body>;
+pub type ClassId = Id<ClassSyntax>;
+pub type StmtId = Id<Statement>;
+pub type LambdaId = Id<Lambda>;
 #[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct TokenSpan<T = u64> {
+pub struct TokenSpan<T = u64> {
     pub begin: T,
     pub end: T,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum CaptureKind {
+pub enum CaptureKind {
     This,
     Copy(NameId),
     Reference(NameId),
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct LambdaCapture {
+pub struct LambdaCapture {
     pub kind: CaptureKind,
     pub pack: bool,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum CaptureDefault {
+pub enum CaptureDefault {
     Copy,
     Reference,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum LambdaBody {
+pub enum LambdaBody {
     Deferred,
     Parsed(StmtId),
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Lambda {
+pub struct Lambda {
     pub template_parameters: Option<TemplateParameterClause>,
     pub capture_default: Option<CaptureDefault>,
     pub captures: List<LambdaCapture>,
@@ -60,7 +60,7 @@ pub(crate) struct Lambda {
     pub body: LambdaBody,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum AttributeKind {
+pub enum AttributeKind {
     Alignas,
     NoInline,
     Packed,
@@ -81,19 +81,19 @@ pub(crate) enum AttributeKind {
     NoReturn,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum AttributeForm {
+pub enum AttributeForm {
     Standard,
     Gnu,
     Alignment,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum AttributeSite {
+pub enum AttributeSite {
     Entity,
     Type,
     Class,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Attribute {
+pub struct Attribute {
     pub kind: AttributeKind,
     pub location: SourceOffset,
     pub form: AttributeForm,
@@ -103,12 +103,12 @@ pub(crate) struct Attribute {
     pub ty: Option<TypeId>,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum NameProvenance {
+pub enum NameProvenance {
     Ordinary,
     DependentQualifier,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct QualifiedName {
+pub struct QualifiedName {
     pub location: SourceOffset,
     pub global: bool,
     pub typename_keyword: bool,
@@ -124,21 +124,21 @@ pub(crate) struct QualifiedName {
     pub(super) binding: Option<Binding>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum PrefixState {
+pub enum PrefixState {
     Unqualified,
     Known,
     Unknown,
     Dependent,
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum TemplatePrefix {
+pub enum TemplatePrefix {
     #[default]
     Ordinary,
     Specialization,
     Dependent,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct NameComponent {
+pub struct NameComponent {
     pub location: SourceOffset,
     pub kind: NameKind,
     pub template_keyword: bool,
@@ -146,7 +146,7 @@ pub(crate) struct NameComponent {
     pub arguments: Option<List<TemplateArgument>>,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum NameKind {
+pub enum NameKind {
     Identifier(NameId),
     Operator { op: Operator, array: bool },
     LiteralOperator(NameId),
@@ -156,32 +156,32 @@ pub(crate) enum NameKind {
     Decltype(ExprId),
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum TemplateArgumentKind {
+pub enum TemplateArgumentKind {
     Type(TypeId),
     Expression(ExprId),
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct TemplateArgument {
+pub struct TemplateArgument {
     pub kind: TemplateArgumentKind,
     pub pack: bool,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct TemplateParameter {
+pub struct TemplateParameter {
     pub location: SourceOffset,
     pub pack: bool,
     pub kind: TemplateParameterKind,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct TemplateParameterClause {
+pub struct TemplateParameterClause {
     #[expect(
         dead_code,
         reason = "Template list location is retained for later specialization diagnostics"
     )]
-    pub location: SourceOffset,
+    pub(crate) location: SourceOffset,
     pub parameters: List<TemplateParameter>,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum TemplateParameterKind {
+pub enum TemplateParameterKind {
     Type {
         key: Keyword,
         name: Option<NameId>,
@@ -195,30 +195,40 @@ pub(crate) enum TemplateParameterKind {
     },
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Operator {
+pub struct Operator {
     pub token: SimpleToken,
     pub alternative: bool,
 }
-pub(crate) type Literal = Id<LiteralData>;
+pub type Literal = Id<LiteralData>;
 impl Literal {
-    pub(crate) fn kind(self, store: &super::storage::TextStore) -> PostTokenKind {
+    #[inline]
+    #[must_use]
+    pub fn kind(self, store: &super::storage::TextStore) -> PostTokenKind {
         store.literals.get(self).kind
     }
-    pub(crate) fn spelling(self, store: &super::storage::TextStore) -> Text {
+    #[inline]
+    #[must_use]
+    pub fn spelling(self, store: &super::storage::TextStore) -> Text {
         store.literals.get(self).spelling
     }
-    pub(crate) fn data(self, store: &super::storage::TextStore) -> Text {
+    #[inline]
+    #[must_use]
+    pub fn data(self, store: &super::storage::TextStore) -> Text {
         store.literals.get(self).data
     }
-    pub(crate) fn suffix_name(self, store: &super::storage::TextStore) -> Option<NameId> {
+    #[inline]
+    #[must_use]
+    pub fn suffix_name(self, store: &super::storage::TextStore) -> Option<NameId> {
         store.literals.get(self).suffix_name
     }
-    pub(crate) fn token_form(self, store: &super::storage::TextStore) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn token_form(self, store: &super::storage::TextStore) -> bool {
         store.literals.get(self).token_form
     }
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct LiteralData {
+pub struct LiteralData {
     pub kind: PostTokenKind,
     pub spelling: Text,
     pub token_form: bool,
@@ -226,12 +236,12 @@ pub(crate) struct LiteralData {
     pub suffix_name: Option<NameId>,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Specifier {
+pub struct Specifier {
     pub location: SourceOffset,
     pub kind: SpecifierKind,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum SpecifierKind {
+pub enum SpecifierKind {
     Keyword(Keyword),
     Named(Name),
     Enum(DeclId),
@@ -242,20 +252,20 @@ pub(crate) enum SpecifierKind {
     Vector { extended: bool, operand: ExprId },
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct TypeSyntax {
+pub struct TypeSyntax {
     pub specialization: u8,
     pub location: SourceOffset,
     pub specifiers: List<Specifier>,
     pub declarator: Option<DeclaratorId>,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Pointer {
+pub struct Pointer {
     pub op: Operator,
     pub class_name: Option<Name>,
     pub cv: List<Keyword>,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Declarator {
+pub struct Declarator {
     pub(super) member_scope: Option<ScopeId>,
     pub attributes: List<Attribute>,
     pub location: SourceOffset,
@@ -267,7 +277,7 @@ pub(crate) struct Declarator {
     pub suffixes: List<Suffix>,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum Suffix {
+pub enum Suffix {
     Array(Option<ExprId>),
     Function {
         parameters: ParameterClause,
@@ -275,14 +285,14 @@ pub(crate) enum Suffix {
     },
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct ParameterClause {
+pub struct ParameterClause {
     pub location: SourceOffset,
     pub parameters: List<Parameter>,
     pub ellipsis: bool,
     pub ellipsis_without_comma: bool,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Parameter {
+pub struct Parameter {
     /// This unique parameter was the sole unnamed dependent parameter of a
     /// definition. Its copies remain parameters when substitution gives void.
     pub dependent_sole: bool,
@@ -292,12 +302,12 @@ pub(crate) struct Parameter {
     pub default: Option<Initializer>,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Qualifier {
+pub struct Qualifier {
     pub location: SourceOffset,
     pub kind: QualifierKind,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum QualifierKind {
+pub enum QualifierKind {
     Cv(Keyword),
     Ref(Operator),
     Noexcept(Option<ExprId>),
@@ -306,12 +316,12 @@ pub(crate) enum QualifierKind {
     Virt(NameId),
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Initializer {
+pub struct Initializer {
     pub location: SourceOffset,
     pub kind: InitializerKind,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum InitializerKind {
+pub enum InitializerKind {
     Assign(ExprId),
     Braced(ExprId),
     Parenthesized(List<ExprId>),
@@ -319,29 +329,29 @@ pub(crate) enum InitializerKind {
     Delete,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct InitDeclarator {
+pub struct InitDeclarator {
     pub tokens: TokenSpan<u32>,
     pub declarator: DeclaratorId,
     pub initializer: Option<Initializer>,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Enumerator {
+pub struct Enumerator {
     pub location: SourceOffset,
     pub name: NameId,
     pub value: Option<ExprId>,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum Body {
+pub enum Body {
     Deferred,
     Parsed(FunctionBody),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum BaseDependency {
+pub enum BaseDependency {
     Fixed,
     Dependent,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Base {
+pub struct Base {
     pub location: SourceOffset,
     pub name: Name,
     pub access: Option<Keyword>,
@@ -352,7 +362,7 @@ pub(crate) struct Base {
     pub dependency: BaseDependency,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct ClassSyntax {
+pub struct ClassSyntax {
     pub packing: u32,
     pub tokens: TokenSpan,
     pub has_base_clause: bool,
@@ -366,19 +376,19 @@ pub(crate) struct ClassSyntax {
     pub members: List<DeclId>,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct BitField {
+pub struct BitField {
     pub declarator: Option<DeclaratorId>,
     pub width: ExprId,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct MemInitializer {
+pub struct MemInitializer {
     pub location: SourceOffset,
     pub name: Name,
     pub initializer: Initializer,
     pub pack: bool,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct FunctionBody {
+pub struct FunctionBody {
     pub reserved_call: Option<NameId>,
     pub initializer_location: Option<SourceOffset>,
     pub initializers: List<MemInitializer>,
@@ -386,7 +396,7 @@ pub(crate) struct FunctionBody {
     pub handlers: Option<List<Handler>>,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum ExceptionDeclaration {
+pub enum ExceptionDeclaration {
     Ellipsis,
     Typed {
         specifiers: List<Specifier>,
@@ -394,18 +404,18 @@ pub(crate) enum ExceptionDeclaration {
     },
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Handler {
+pub struct Handler {
     pub exception: ExceptionDeclaration,
     pub body: StmtId,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Declaration {
+pub struct Declaration {
     pub attributes: List<Attribute>,
     pub location: SourceOffset,
     pub kind: DeclKind,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum DeclKind {
+pub enum DeclKind {
     Template {
         parameters: TemplateParameterClause,
         declaration: DeclId,
@@ -476,12 +486,12 @@ pub(crate) enum DeclKind {
     },
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Expression {
+pub struct Expression {
     pub location: SourceOffset,
     pub kind: ExprKind,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum ExprKind {
+pub enum ExprKind {
     Lambda(LambdaId),
     PackExpansion(ExprId),
     Fold {
@@ -601,12 +611,14 @@ pub(crate) enum ExprKind {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum ValueBuiltin {
+pub enum ValueBuiltin {
     ConvertVector,
     BitCast,
 }
 impl ValueBuiltin {
-    pub(crate) fn spelling(self) -> &'static str {
+    #[inline]
+    #[must_use]
+    pub fn spelling(self) -> &'static str {
         match self {
             Self::ConvertVector => "__builtin_convertvector",
             Self::BitCast => "__builtin_bit_cast",
@@ -614,14 +626,14 @@ impl ValueBuiltin {
     }
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Statement {
+pub struct Statement {
     /// Synthetic compound scope enclosing a selection initializer and its statement.
     pub selection_init: bool,
     pub location: SourceOffset,
     pub kind: StmtKind,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum Condition {
+pub enum Condition {
     Expression(ExprId),
     Declaration {
         specifiers: List<Specifier>,
@@ -630,21 +642,21 @@ pub(crate) enum Condition {
     },
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct AsmOperand {
+pub struct AsmOperand {
     pub location: SourceOffset,
     pub name: Option<NameId>,
     pub constraint: Literal,
     pub expression: ExprId,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct AsmStatement {
+pub struct AsmStatement {
     pub text: Literal,
     pub outputs: List<AsmOperand>,
     pub inputs: List<AsmOperand>,
     pub clobbers: List<Literal>,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum StmtKind {
+pub enum StmtKind {
     Asm(Id<AsmStatement>),
     Ambiguous {
         name: Name,
@@ -702,7 +714,7 @@ pub(crate) enum StmtKind {
     },
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ReadingCategory {
+pub enum ReadingCategory {
     Value,
     Type,
     Template,
@@ -719,13 +731,13 @@ impl ReadingCategory {
     }
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct StatementReading {
+pub struct StatementReading {
     pub statement: StmtId,
     pub category: ReadingCategory,
 }
 
 #[derive(Default)]
-pub(crate) struct Tree {
+pub struct Tree {
     pub lambdas: Store<Lambda>,
     pub captures: Lists<LambdaCapture>,
     pub lambda_parameter_packs: Lists<(Option<NameId>, usize)>,
@@ -764,7 +776,7 @@ pub(crate) struct Tree {
     pub attributes: Lists<Attribute>,
 }
 #[derive(Clone, Copy)]
-pub(crate) struct TreeMark {
+pub struct TreeMark {
     lambdas: usize,
     captures: ListMark,
     lambda_parameter_packs: ListMark,
@@ -804,7 +816,7 @@ pub(crate) struct TreeMark {
 }
 impl Tree {
     #[cfg(feature = "telemetry")]
-    pub(crate) fn reserved_bytes(&self) -> usize {
+    pub fn reserved_bytes(&self) -> usize {
         [
             self.lambdas.reserved_bytes(),
             self.captures.reserved_bytes(),
@@ -848,7 +860,7 @@ impl Tree {
     }
 
     /// Semantic equivalents use the same flat syntax storage without parsing text.
-    pub(crate) fn implicit_name(
+    pub fn implicit_name(
         &mut self,
         identifier: NameId,
         location: SourceOffset,
@@ -876,7 +888,7 @@ impl Tree {
             binding: None,
         })
     }
-    pub(crate) fn implicit_declarator(
+    pub fn implicit_declarator(
         &mut self,
         name: Name,
         location: SourceOffset,
@@ -894,7 +906,7 @@ impl Tree {
         })
     }
 
-    pub(crate) fn complete_body(
+    pub fn complete_body(
         &mut self,
         id: BodyId,
         body: FunctionBody,
@@ -906,7 +918,8 @@ impl Tree {
         Ok(())
     }
 
-    pub(crate) fn mark(&self) -> TreeMark {
+    #[must_use]
+    pub fn mark(&self) -> TreeMark {
         TreeMark {
             lambdas: self.lambdas.mark(),
             captures: self.captures.mark(),
@@ -946,7 +959,7 @@ impl Tree {
             attributes: self.attributes.mark(),
         }
     }
-    pub(crate) fn rewind(&mut self, mark: &TreeMark) {
+    pub fn rewind(&mut self, mark: &TreeMark) {
         self.lambdas.rewind(mark.lambdas);
         self.captures.rewind(mark.captures);
         self.lambda_parameter_packs

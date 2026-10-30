@@ -66,8 +66,8 @@ mod wide_fills;
 mod wide_integers;
 use crate::lowir::{Error, model::Program};
 pub use inline_policy::Limits;
-pub(crate) use statistics::Statistics;
-pub(crate) use verification::Verification;
+pub use statistics::Statistics;
+pub use verification::Verification;
 
 pub(super) fn pure(kind: &crate::lowir::model::InstructionKind) -> bool {
     use crate::lowir::model::InstructionKind as I;
@@ -87,12 +87,12 @@ pub(super) fn pure(kind: &crate::lowir::model::InstructionKind) -> bool {
 }
 
 #[cfg(test)]
-pub(crate) fn optimize(program: &mut Program, level: u8) -> Result<(), Error> {
+pub fn optimize(program: &mut Program, level: u8) -> Result<(), Error> {
     optimize_with_limits(program, level, Limits::default(), false)
 }
 
 #[cfg(test)]
-pub(crate) fn optimize_with_limits(
+pub fn optimize_with_limits(
     program: &mut Program,
     level: u8,
     limits: Limits,
@@ -108,7 +108,7 @@ pub(crate) fn optimize_with_limits(
     .map(|_| ())
 }
 
-pub(crate) fn optimize_observed(
+pub fn optimize_observed(
     program: &mut Program,
     level: u8,
     limits: Limits,

@@ -7,7 +7,7 @@ use crate::support::hash::HashSet;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct ScopeId(u32);
+pub struct ScopeId(u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub(super) enum Category {

@@ -4,30 +4,30 @@ use std::cell::Cell;
 use std::io::Write;
 
 #[derive(Clone, Copy, Default)]
-pub(crate) struct Work {
-    pub(crate) expressions: crate::support::telemetry::Counter<usize>,
-    pub(crate) conversions: crate::support::telemetry::Counter<usize>,
-    pub(crate) demands: crate::support::telemetry::Counter<usize>,
-    pub(crate) specializations: crate::support::telemetry::Counter<usize>,
-    pub(crate) instantiated_classes: crate::support::telemetry::Counter<usize>,
-    pub(crate) instantiated_functions: crate::support::telemetry::Counter<usize>,
-    pub(crate) instantiated_variables: crate::support::telemetry::Counter<usize>,
-    pub(crate) constant_evaluations: crate::support::telemetry::Counter<usize>,
-    pub(crate) resolutions: crate::support::telemetry::Counter<usize>,
-    pub(crate) candidates: crate::support::telemetry::Counter<usize>,
-    pub(crate) virtual_slots: crate::support::telemetry::Counter<usize>,
-    pub(crate) override_steps: crate::support::telemetry::Counter<usize>,
-    pub(crate) instantiated_arguments: crate::support::telemetry::Counter<usize>,
-    pub(crate) value_substitutions: crate::support::telemetry::Counter<usize>,
-    pub(crate) partial_candidates: crate::support::telemetry::Counter<usize>,
-    pub(crate) substitution_failures: crate::support::telemetry::Counter<usize>,
-    pub(crate) limited_lookups: crate::support::telemetry::Counter<usize>,
-    pub(crate) constant_steps: crate::support::telemetry::Counter<usize>,
-    pub(crate) constant_call_builds: crate::support::telemetry::Counter<usize>,
-    pub(crate) constant_call_reuses: crate::support::telemetry::Counter<usize>,
-    pub(crate) function_order_builds: crate::support::telemetry::Counter<usize>,
-    pub(crate) function_order_reuses: crate::support::telemetry::Counter<usize>,
-    pub(crate) base_steps: crate::support::telemetry::Counter<usize>,
+pub struct Work {
+    pub expressions: crate::support::telemetry::Counter<usize>,
+    pub conversions: crate::support::telemetry::Counter<usize>,
+    pub demands: crate::support::telemetry::Counter<usize>,
+    pub specializations: crate::support::telemetry::Counter<usize>,
+    pub instantiated_classes: crate::support::telemetry::Counter<usize>,
+    pub instantiated_functions: crate::support::telemetry::Counter<usize>,
+    pub instantiated_variables: crate::support::telemetry::Counter<usize>,
+    pub constant_evaluations: crate::support::telemetry::Counter<usize>,
+    pub resolutions: crate::support::telemetry::Counter<usize>,
+    pub candidates: crate::support::telemetry::Counter<usize>,
+    pub virtual_slots: crate::support::telemetry::Counter<usize>,
+    pub override_steps: crate::support::telemetry::Counter<usize>,
+    pub instantiated_arguments: crate::support::telemetry::Counter<usize>,
+    pub value_substitutions: crate::support::telemetry::Counter<usize>,
+    pub partial_candidates: crate::support::telemetry::Counter<usize>,
+    pub substitution_failures: crate::support::telemetry::Counter<usize>,
+    pub limited_lookups: crate::support::telemetry::Counter<usize>,
+    pub constant_steps: crate::support::telemetry::Counter<usize>,
+    pub constant_call_builds: crate::support::telemetry::Counter<usize>,
+    pub constant_call_reuses: crate::support::telemetry::Counter<usize>,
+    pub function_order_builds: crate::support::telemetry::Counter<usize>,
+    pub function_order_reuses: crate::support::telemetry::Counter<usize>,
+    pub base_steps: crate::support::telemetry::Counter<usize>,
 }
 #[derive(Default)]
 pub(super) struct Observations {
@@ -51,7 +51,7 @@ impl Observations {
     }
 }
 impl Work {
-    pub(crate) fn add(&mut self, other: Self) {
+    pub fn add(&mut self, other: Self) {
         for (counter, increment) in [
             (&mut self.expressions, other.expressions),
             (&mut self.conversions, other.conversions),
@@ -90,7 +90,7 @@ impl Work {
         }
     }
     #[cfg(feature = "telemetry")]
-    pub(crate) fn write(self, out: &mut impl Write) -> std::io::Result<()> {
+    pub fn write(self, out: &mut impl Write) -> std::io::Result<()> {
         write!(
             out,
             " specializations={} instantiated_classes={} instantiated_functions={} instantiated_variables={} constant_evaluations={} resolutions={} candidates={}",

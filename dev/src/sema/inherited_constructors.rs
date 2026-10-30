@@ -542,7 +542,9 @@ impl Analyzer<'_> {
 }
 
 impl super::graph::Graph {
-    pub(crate) fn lower_positional_parameters(&self, function: EntityId) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn lower_positional_parameters(&self, function: EntityId) -> bool {
         self.inherited_constructors.source(function).is_some()
     }
 }

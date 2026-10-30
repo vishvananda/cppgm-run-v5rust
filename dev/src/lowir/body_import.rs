@@ -6,14 +6,15 @@ use super::{
 };
 use crate::lowir::construction_names::SlotName;
 
-pub(crate) struct ImportMap {
-    pub(crate) temps: Vec<Option<Value>>,
-    pub(crate) slots: Vec<Option<Value>>,
-    pub(crate) blocks: Vec<Option<BlockId>>,
+pub struct ImportMap {
+    pub temps: Vec<Option<Value>>,
+    pub slots: Vec<Option<Value>>,
+    pub blocks: Vec<Option<BlockId>>,
     locations: Vec<Option<LocationId>>,
 }
 impl ImportMap {
-    pub(crate) fn new(source: &Body) -> Self {
+    #[must_use]
+    pub fn new(source: &Body) -> Self {
         Self {
             temps: vec![None; source.temps().len()],
             slots: vec![None; source.slots().len()],
@@ -56,7 +57,8 @@ impl Remap for Importer<'_> {
 }
 impl Body {
     /// An intentional owned snapshot for recursive/specialized inlining.
-    pub(crate) fn inline_snapshot(&self) -> Self {
+    #[must_use]
+    pub fn inline_snapshot(&self) -> Self {
         Self {
             literals: self.literals.clone(),
             operands: self.operands.clone(),
@@ -74,13 +76,14 @@ impl Body {
             source: self.source,
         }
     }
-    pub(crate) fn import_temp(&mut self, source: &Body, temp: TempId) -> Result<Value, Error> {
+    #[inline]
+    pub fn import_temp(&mut self, source: &Body, temp: TempId) -> Result<Value, Error> {
         let source = source.temp(temp);
         let id = self.generated_temp(source.ty.ok_or(Error::Limit)?)?;
         self.temps[id.index()].name = source.name;
         Ok(Value::Temp(id))
     }
-    pub(crate) fn import_slot(&mut self, source: &Body, slot: SlotId) -> Result<Value, Error> {
+    pub fn import_slot(&mut self, source: &Body, slot: SlotId) -> Result<Value, Error> {
         if self.slot_names.len() < self.slots.len() {
             self.slot_names
                 .extend(self.slots[self.slot_names.len()..].iter().map(|s| {
@@ -112,7 +115,7 @@ impl Body {
         self.slot_names.push(origin);
         Ok(Value::Slot(id))
     }
-    pub(crate) fn import_block(&mut self, source: &Body, block: BlockId) -> Result<BlockId, Error> {
+    pub fn import_block(&mut self, source: &Body, block: BlockId) -> Result<BlockId, Error> {
         let copied = source.block(block);
         let id = self.generated_block()?;
         self.blocks[id.index()].origin = match copied.origin {
@@ -129,7 +132,7 @@ impl Body {
         };
         Ok(id)
     }
-    pub(crate) fn import_instruction(
+    pub fn import_instruction(
         &mut self,
         source: &Body,
         id: InstId,

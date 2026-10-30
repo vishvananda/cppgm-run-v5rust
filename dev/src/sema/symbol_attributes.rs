@@ -262,7 +262,8 @@ impl Graph {
             .or_default()
             .used = true;
     }
-    pub(crate) fn lower_function_used(&self, entity: EntityId) -> bool {
+    #[must_use]
+    pub fn lower_function_used(&self, entity: EntityId) -> bool {
         // Function-template specialization copies effects/noinline but not
         // `used`; an instantiated class member receives its own declaration.
         self.symbol_attributes
@@ -270,19 +271,24 @@ impl Graph {
             .get(&entity)
             .is_some_and(|own| own.used)
     }
-    pub(crate) fn lower_asm_label(&self, entity: EntityId) -> Option<&[u8]> {
+    #[inline]
+    #[must_use]
+    pub fn lower_asm_label(&self, entity: EntityId) -> Option<&[u8]> {
         self.symbol_attributes
             .values
             .get(&entity)
             .and_then(|own| own.asm_label.as_deref())
     }
-    pub(crate) fn lower_symbol_weak(&self, entity: EntityId) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn lower_symbol_weak(&self, entity: EntityId) -> bool {
         self.symbol_attributes
             .values
             .get(&entity)
             .is_some_and(|own| own.weak)
     }
-    pub(crate) fn lower_variable_section(&self, entity: EntityId) -> Option<&[u8]> {
+    #[must_use]
+    pub fn lower_variable_section(&self, entity: EntityId) -> Option<&[u8]> {
         if self.symbol_attributes.values.is_empty() {
             return None;
         }

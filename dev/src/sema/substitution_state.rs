@@ -5,10 +5,10 @@ use crate::support::source::SourceOffset;
 use std::{cell::Cell, rc::Rc};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Failure {
-    pub(crate) location: SourceOffset,
-    pub(crate) message: &'static str,
-    pub(crate) transient: bool,
+pub struct Failure {
+    pub location: SourceOffset,
+    pub message: &'static str,
+    pub transient: bool,
 }
 #[derive(Clone, Copy, Default)]
 pub(super) struct Ambient {

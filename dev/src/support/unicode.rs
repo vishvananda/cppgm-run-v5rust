@@ -66,6 +66,7 @@ pub fn decode_utf8(bytes: &[u8]) -> Result<Utf8Decoded, Utf8Error> {
 }
 
 /// Append the canonical UTF-8 encoding of a validated scalar.
+#[inline]
 pub fn append_utf8(out: &mut Vec<u8>, scalar: char) {
     let mut bytes = [0; 4];
     out.extend_from_slice(scalar.encode_utf8(&mut bytes).as_bytes());

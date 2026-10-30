@@ -17,7 +17,7 @@ pub(super) struct Work {
     pub(super) source_reference_storage: crate::support::telemetry::Set<SymbolId>,
 }
 #[derive(Default)]
-pub(crate) struct Statistics {
+pub struct Statistics {
     #[cfg(feature = "telemetry")]
     units: crate::support::telemetry::Counter<usize>,
     #[cfg(feature = "telemetry")]
@@ -90,17 +90,17 @@ impl Work {
 }
 impl Statistics {
     #[cfg(feature = "telemetry")]
-    pub(crate) fn update_program(&mut self, program: &Program) {
+    pub fn update_program(&mut self, program: &Program) {
         self.symbols = program.symbols().len();
         self.names = program.names.logical_len();
         self.arena_bytes = program.storage_bytes();
     }
     #[cfg(not(feature = "telemetry"))]
-    pub(crate) fn update_program(&mut self, program: &Program) {
+    pub fn update_program(&mut self, program: &Program) {
         let _ = (self, program);
     }
     #[cfg(feature = "telemetry")]
-    pub(crate) fn write(&self, out: &mut impl Write) -> std::io::Result<()> {
+    pub fn write(&self, out: &mut impl Write) -> std::io::Result<()> {
         let built = self.construction;
         let work = self.semantic;
         write!(

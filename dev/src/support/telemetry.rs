@@ -39,9 +39,9 @@ pub fn observe<T>(read: impl FnOnce() -> T) -> Counter<T> {
 }
 
 #[cfg(feature = "telemetry")]
-pub(crate) type Set<T> = crate::support::hash::HashSet<T>;
+pub type Set<T> = crate::support::hash::HashSet<T>;
 #[cfg(not(feature = "telemetry"))]
-pub(crate) use disabled::Set;
+pub use disabled::Set;
 
 /// A phase clock whose disabled representation retains no clock or storage.
 #[derive(Clone, Copy)]
@@ -51,6 +51,7 @@ pub struct Clock {
 }
 impl Clock {
     #[must_use]
+    #[inline]
     pub fn now() -> Self {
         Self {
             #[cfg(feature = "telemetry")]
@@ -79,14 +80,15 @@ mod disabled {
     /// An observation with no value. It intentionally implements no numeric
     /// conversion, comparison or formatting: such a read is not telemetry.
     pub struct Counter<T>(PhantomData<T>);
-    pub(crate) struct Set<T>(PhantomData<T>);
+    pub struct Set<T>(PhantomData<T>);
     impl<T> Default for Set<T> {
         fn default() -> Self {
             Self(PhantomData)
         }
     }
     impl<T> Set<T> {
-        pub(crate) fn insert(&mut self, _: T) {
+        #[inline]
+        pub fn insert(&mut self, _: T) {
             let _ = self;
         }
     }
@@ -124,14 +126,17 @@ mod disabled {
     }
     impl<T> Counter<T> {
         #[must_use]
+        #[inline]
         pub fn max(self, _: T) -> Self {
             self
         }
         #[must_use]
+        #[inline]
         pub fn wrapping_add(self, _: T) -> Self {
             self
         }
         #[must_use]
+        #[inline]
         pub fn checked_add<U>(self, _: U) -> Option<Self> {
             Some(self)
         }

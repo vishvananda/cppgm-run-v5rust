@@ -377,11 +377,11 @@ impl<'a> Encoder<'a> {
         Ok(out)
     }
 }
-pub(crate) fn write(object: &Object, path: &Path) -> Result<(), Error> {
+pub fn write(object: &Object, path: &Path) -> Result<(), Error> {
     let image = bytes(object)?;
     std::fs::write(path, image).map_err(|_| Error::argument("cannot write ", path.as_os_str()))
 }
-pub(crate) fn bytes(object: &Object) -> Result<Vec<u8>, Error> {
+pub fn bytes(object: &Object) -> Result<Vec<u8>, Error> {
     Encoder::new(object)?.finish()
 }
 

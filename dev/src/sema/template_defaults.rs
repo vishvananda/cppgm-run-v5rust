@@ -32,7 +32,7 @@ impl Defaults {
     }
 }
 impl super::graph::Graph {
-    pub(crate) fn lower_demand_default_argument(
+    pub fn lower_demand_default_argument(
         &mut self,
         tree: &mut ast::Tree,
         cursor: &mut crate::syntax::cursor::Cursor<'_>,

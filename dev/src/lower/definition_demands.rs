@@ -153,7 +153,7 @@ impl<T: Copy> Demands<T> {
             });
         }
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(super) fn len(&self) -> usize {
         self.requests.len()
     }

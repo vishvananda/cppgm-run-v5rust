@@ -14,7 +14,7 @@ use crate::{
     types::FundamentalType as F,
 };
 #[derive(Clone, Copy)]
-pub(crate) enum BuiltinFunction {
+pub enum BuiltinFunction {
     ConstantP,
     IsConstantEvaluated,
     MakeComplex,

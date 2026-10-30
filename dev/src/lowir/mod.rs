@@ -3,32 +3,30 @@ use std::{
     ffi::OsStr,
     path::{Path, PathBuf},
 };
-pub(crate) mod builder;
+pub mod builder;
 mod construction_names;
-pub(crate) use construction_names::LocalNames;
+pub use construction_names::LocalNames;
 mod exercises;
 mod globals;
 mod instructions;
 mod lexer;
-pub(crate) mod literals;
-pub(crate) mod model;
+pub mod literals;
+pub mod model;
 mod reader;
 mod runtime;
 mod statistics;
-pub(crate) mod text_storage;
+pub mod text_storage;
 #[cfg(feature = "telemetry")]
-pub(crate) use statistics::Construction;
+pub use statistics::Construction;
 pub use statistics::Statistics;
-pub(crate) mod validator;
-#[cfg(test)]
-pub(crate) fn test_program(source: &[u8]) -> Result<model::Program, Error> {
+pub mod validator;
+#[cfg(any(test, feature = "test-support"))]
+#[inline]
+pub fn test_program(source: &[u8]) -> Result<model::Program, Error> {
     test_program_dialect(source, false)
 }
-#[cfg(test)]
-pub(crate) fn test_program_dialect(
-    source: &[u8],
-    object_facts: bool,
-) -> Result<model::Program, Error> {
+#[cfg(any(test, feature = "test-support"))]
+pub fn test_program_dialect(source: &[u8], object_facts: bool) -> Result<model::Program, Error> {
     let mut program = model::Program::default();
     let mut parser = reader::Parser::new(&mut program, source, Path::new("optimizer-test"))?;
     parser.object_facts = object_facts;
@@ -39,12 +37,13 @@ pub(crate) fn test_program_dialect(
     validator::validate(&program)?;
     Ok(program)
 }
-#[cfg(test)]
-pub(crate) fn validate_test_program(program: &model::Program) -> Result<(), Error> {
+#[cfg(any(test, feature = "test-support"))]
+#[inline]
+pub fn validate_test_program(program: &model::Program) -> Result<(), Error> {
     validator::validate_constructed(program)
 }
-pub(crate) mod vocabulary;
-pub(crate) mod writer;
+pub mod vocabulary;
+pub mod writer;
 
 /// A `LowIR` failure retained until the command-line boundary renders it.
 #[derive(Debug)]
@@ -58,7 +57,9 @@ pub enum Error {
     Output(std::io::Error),
 }
 impl Error {
-    pub(crate) fn argument(prefix: &str, argument: &OsStr) -> Self {
+    #[inline]
+    #[must_use]
+    pub fn argument(prefix: &str, argument: &OsStr) -> Self {
         let mut message = prefix.as_bytes().to_vec();
         message.extend_from_slice(argument.as_encoded_bytes());
         Self::ByteDiagnostic(message)
@@ -84,7 +85,8 @@ pub fn roundtrip(paths: &[PathBuf], output: &Path, statistics: bool) -> Result<S
 }
 /// The text-tool boundary produces one validated unit, without a text roundtrip
 /// between the reader and its native or serialization consumer.
-pub(crate) fn read_files(
+#[inline]
+pub fn read_files(
     paths: &[PathBuf],
     statistics: bool,
 ) -> Result<(model::Program, Statistics), Error> {
@@ -92,7 +94,8 @@ pub(crate) fn read_files(
 }
 /// The object driver's explicit text adapter accepts host ABI facts; course
 /// tools continue to reject host-only class spellings.
-pub(crate) fn read_object_file(path: &Path) -> Result<model::Program, Error> {
+#[inline]
+pub fn read_object_file(path: &Path) -> Result<model::Program, Error> {
     read_program(&[path.to_path_buf()], false, true).map(|(program, _)| program)
 }
 fn read_program(
@@ -152,7 +155,8 @@ pub fn exercise(name: &str, output: &Path, statistics: bool) -> Result<Statistic
     stats.write_ms = crate::support::telemetry::counter(start.elapsed().as_secs_f64() * 1000.0);
     Ok(stats)
 }
-pub(crate) fn write_file(program: &model::Program, output: &Path) -> Result<(), Error> {
+#[inline]
+pub fn write_file(program: &model::Program, output: &Path) -> Result<(), Error> {
     let file = std::fs::File::create(output)
         .map_err(|_| Error::argument("cannot write ", output.as_os_str()))?;
     writer::write(program, std::io::BufWriter::new(file))

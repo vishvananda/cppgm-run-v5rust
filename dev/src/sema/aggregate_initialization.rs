@@ -46,7 +46,8 @@ impl From<List<ast::ExprId>> for AggregateInitialization {
     }
 }
 impl Graph {
-    pub(crate) fn lower_list_union_member(&self, id: ast::ExprId) -> Option<EntityId> {
+    #[must_use]
+    pub fn lower_list_union_member(&self, id: ast::ExprId) -> Option<EntityId> {
         match self
             .expression_facts
             .get(id)
@@ -60,13 +61,14 @@ impl Graph {
             _ => None,
         }
     }
-    pub(crate) fn lower_aggregate_union_member(
-        &self,
-        elements: List<ast::ExprId>,
-    ) -> Option<EntityId> {
+    #[inline]
+    #[must_use]
+    pub fn lower_aggregate_union_member(&self, elements: List<ast::ExprId>) -> Option<EntityId> {
         self.expression_facts.union_list_member(elements)
     }
-    pub(crate) fn lower_selected_union_member(
+    #[inline]
+    #[must_use]
+    pub fn lower_selected_union_member(
         &self,
         class: EntityId,
         selected: Option<EntityId>,

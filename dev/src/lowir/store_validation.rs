@@ -131,7 +131,7 @@ fn links(program: &Program) -> Result<(), Error> {
     Ok(())
 }
 
-pub(crate) fn validate(program: &Program, spellings: bool) -> Result<(), Error> {
+pub fn validate(program: &Program, spellings: bool) -> Result<(), Error> {
     // Enums, owned parameter/data vectors, typed pairs and private store IDs
     // replace the C++ discriminant and span representation checks.
     links(program)?;

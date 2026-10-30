@@ -1,0 +1,20 @@
+[package]
+name = "cppgm-ir"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+path = "../../src/ir_crate.rs"
+
+[lints]
+workspace = true
+
+[features]
+default = []
+telemetry = ["cppgm-core/telemetry"]
+test-support = ["cppgm-core/test-support"]
+
+[dependencies]
+cppgm-core = { workspace = true }

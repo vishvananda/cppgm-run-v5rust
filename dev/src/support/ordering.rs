@@ -1,7 +1,7 @@
 //! Deterministic tie order of the frozen tool's libstdc++ introsort. See NOTICE.
 // Equal-key order is observable in O0 register plans. Keep median selection,
 // partition swaps, the sixteen-item insertion tail and heap fallback together.
-pub(crate) fn sort_by<T: Copy>(values: &mut [T], less: impl Fn(&T, &T) -> bool) {
+pub fn sort_by<T: Copy>(values: &mut [T], less: impl Fn(&T, &T) -> bool) {
     if values.is_empty() {
         return;
     }

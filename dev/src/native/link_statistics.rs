@@ -2,7 +2,7 @@
 #[cfg(feature = "telemetry")]
 use std::io::Write;
 #[derive(Default)]
-pub(crate) struct Statistics {
+pub struct Statistics {
     pub(super) objects: crate::support::telemetry::Counter<usize>,
     pub(super) sections: crate::support::telemetry::Counter<usize>,
     pub(super) discarded_groups: crate::support::telemetry::Counter<usize>,
@@ -19,7 +19,7 @@ pub(crate) struct Statistics {
 }
 impl Statistics {
     #[cfg(feature = "telemetry")]
-    pub(crate) fn write(&self, out: &mut impl Write, peak_rss: u64) -> std::io::Result<()> {
+    pub fn write(&self, out: &mut impl Write, peak_rss: u64) -> std::io::Result<()> {
         writeln!(
             out,
             "cppgm++ link stats: objects={} sections={} discarded_groups={} symbols={} relocations={} got_slots={} runtime_names={} text_bytes={} rodata_bytes={} data_bytes={} bss_bytes={} runtime_ms={} link_ms={} peak_rss_kb={peak_rss}",

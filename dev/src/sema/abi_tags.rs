@@ -197,34 +197,43 @@ fn tag_name(spelling: &[u8]) -> Option<Vec<u8>> {
 }
 
 impl Graph {
-    pub(crate) fn lower_class_abi_tag_owner(&self, entity: EntityId) -> EntityId {
+    #[must_use]
+    pub fn lower_class_abi_tag_owner(&self, entity: EntityId) -> EntityId {
         self.class_templates
             .instance(entity)
             .map(|instance| instance.primary)
             .or_else(|| self.class_templates.definitions.source(entity))
             .unwrap_or(entity)
     }
-    pub(crate) fn lower_function_abi_tag_owner(&self, entity: EntityId) -> EntityId {
+    #[inline]
+    #[must_use]
+    pub fn lower_function_abi_tag_owner(&self, entity: EntityId) -> EntityId {
         self.function_templates
             .primary(entity)
             .map_or(entity, |binding| self.binding(binding).entity)
     }
-    pub(crate) fn lower_variable_abi_tag_owner(&self, entity: EntityId) -> EntityId {
+    #[inline]
+    #[must_use]
+    pub fn lower_variable_abi_tag_owner(&self, entity: EntityId) -> EntityId {
         self.variable_instances
             .templates
             .primary(entity)
             .unwrap_or(entity)
     }
-    pub(crate) fn lower_has_abi_tags(&self) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn lower_has_abi_tags(&self) -> bool {
         !self.abi_tags.values.is_empty()
     }
-    pub(crate) fn lower_abi_tags(&self, entity: EntityId) -> &[NameId] {
+    #[inline]
+    pub fn lower_abi_tags(&self, entity: EntityId) -> &[NameId] {
         self.abi_tags
             .values
             .get(&Owner::Entity(entity))
             .map_or(&[], AsRef::as_ref)
     }
-    pub(crate) fn lower_namespace_abi_tags(&self, scope: ScopeId) -> &[NameId] {
+    #[inline]
+    pub fn lower_namespace_abi_tags(&self, scope: ScopeId) -> &[NameId] {
         self.abi_tags
             .values
             .get(&Owner::Namespace(scope))

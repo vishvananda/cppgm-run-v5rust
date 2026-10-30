@@ -87,6 +87,7 @@ impl<'a, 'g> CaseReader<'a, 'g> {
             stack_base: 0,
         }
     }
+    #[inline]
     pub fn line_words(&self, line: usize) -> &[&'a [u8]] {
         &self.words[self.lines[line].start..self.lines[line].end]
     }
@@ -100,11 +101,13 @@ impl<'a, 'g> CaseReader<'a, 'g> {
         }
         Ok(())
     }
+    #[inline]
     pub fn error(&self, line: usize, message: impl AsRef<[u8]>) -> Error {
         let mut bytes = format!("ABI fact line {}: ", self.lines[line].number).into_bytes();
         bytes.extend_from_slice(message.as_ref());
         Error::Diagnostic(bytes)
     }
+    #[inline]
     pub fn word_error(&self, line: usize, prefix: &str, word: &[u8], suffix: &str) -> Error {
         let Error::Diagnostic(bytes) = Error::word(prefix, word, suffix) else {
             return Error::StorageLimit;
@@ -174,6 +177,7 @@ impl<'a, 'g> CaseReader<'a, 'g> {
         self.definitions[index].state = Resolution::Complete(id);
         Ok(id)
     }
+    #[inline]
     pub fn defined_as(&self, word: &[u8], kind: DefinitionKind) -> bool {
         self.index
             .get(word)

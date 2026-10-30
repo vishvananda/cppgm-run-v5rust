@@ -104,7 +104,7 @@ struct Printer<'a, 'source, W: Write + ?Sized> {
     work: Vec<(Item, usize)>,
 }
 impl Graph {
-    pub(crate) fn print_semantics(
+    pub fn print_semantics(
         &self,
         tree: &ast::Tree,
         cursor: &Cursor<'_>,

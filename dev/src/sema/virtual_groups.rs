@@ -85,7 +85,9 @@ impl Analyzer<'_> {
     }
 }
 impl Graph {
-    pub(crate) fn lower_dynamic(&self, class: EntityId) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn lower_dynamic(&self, class: EntityId) -> bool {
         self.lower_polymorphic(class) || self.virtuals.classes.contains_key(&class)
     }
     pub(super) fn nonvirtual_table_primary(

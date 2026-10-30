@@ -9,7 +9,7 @@ use crate::support::hash::HashMap;
 use crate::support::hash::HashSet;
 use crate::{lex::identifiers::NameId, support::source::SourceOffset, syntax::ast};
 
-pub(crate) trait PackExpander {
+pub trait PackExpander {
     fn pack_length(&self, name: NameId) -> Option<usize>;
     fn element_name(&mut self, name: NameId, index: usize) -> Result<NameId, ParseError>;
     fn mismatch(&mut self, location: SourceOffset) -> Result<(), ParseError>;
@@ -42,7 +42,7 @@ struct CollectedNames {
     reason = "Independent observations made by the frozen syntax collector"
 )]
 #[derive(Default)]
-pub(crate) struct NameUses {
+pub struct NameUses {
     pub names: Vec<NameId>,
     pub nested_names: Vec<NameId>,
     pub nested_expansion: bool,
@@ -60,7 +60,7 @@ pub(super) struct ExpansionState {
     parameter_packs: Vec<(Option<NameId>, usize)>,
 }
 #[derive(Default)]
-pub(crate) struct CopyState(ExpansionState);
+pub struct CopyState(ExpansionState);
 
 enum ExpansionStore<'a> {
     Owned(Box<ExpansionState>),
@@ -222,7 +222,8 @@ impl Cloner<'_> {
         }
         self.tree.captures.finish(start)
     }
-    pub(crate) fn rename_pack(&mut self, name: NameId, element: NameId) {
+    #[inline]
+    pub fn rename_pack(&mut self, name: NameId, element: NameId) {
         if let Some(state) = self.expansion.as_mut() {
             state.renames.insert(name, element);
         }
@@ -330,16 +331,15 @@ impl Cloner<'_> {
         }
         Ok(())
     }
-    pub(crate) fn expression_pack_partitions(
+    #[inline]
+    pub fn expression_pack_partitions(
         &mut self,
         expression: ExprId,
     ) -> Result<NameUses, ParseError> {
         self.collect_pattern_names_in(Pattern::Expression(expression), true, true)
     }
-    pub(crate) fn expression_name_uses(
-        &mut self,
-        expression: ExprId,
-    ) -> Result<NameUses, ParseError> {
+    #[inline]
+    pub fn expression_name_uses(&mut self, expression: ExprId) -> Result<NameUses, ParseError> {
         self.collect_pattern_names(Pattern::Expression(expression), false)
     }
     pub(super) fn collect_expression_use(&mut self, kind: ExprKind) {
@@ -776,7 +776,9 @@ impl Cloner<'_> {
         }
         Ok(copy)
     }
-    pub(crate) fn parameter_packs(&self) -> &[(Option<NameId>, usize)] {
+    #[inline]
+    #[must_use]
+    pub fn parameter_packs(&self) -> &[(Option<NameId>, usize)] {
         self.expansion
             .as_ref()
             .map_or(&[], |state| &state.parameter_packs)

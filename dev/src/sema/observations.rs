@@ -1,7 +1,7 @@
 // Translated from cppgm++.cpp::report_types_stats. See NOTICE.
 //! Scalar census of existing semantic stores; no syntax or graph is retained.
 #[derive(Clone, Copy, Default)]
-pub(crate) struct Statistics {
+pub struct Statistics {
     #[cfg(feature = "telemetry")]
     pub scopes: crate::support::telemetry::Counter<usize>,
     #[cfg(feature = "telemetry")]

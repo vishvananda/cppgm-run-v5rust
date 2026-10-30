@@ -17,7 +17,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum ConstructorArguments {
+pub enum ConstructorArguments {
     Values(List<ast::ExprId>),
     Single(ast::ExprId),
     Value,

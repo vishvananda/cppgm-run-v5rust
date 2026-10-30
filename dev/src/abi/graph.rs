@@ -13,7 +13,9 @@ use std::ops::Range;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct NodeId(NonZeroU32);
 impl NodeId {
-    pub(crate) fn index(self) -> usize {
+    #[must_use]
+    #[inline]
+    pub fn index(self) -> usize {
         self.0.get() as usize
     }
 }
@@ -27,14 +29,17 @@ impl Qualifiers {
     pub const LVALUE: Self = Self(8);
     pub const RVALUE: Self = Self(16);
     #[must_use]
+    #[inline]
     pub fn union(self, other: Self) -> Self {
         Self(self.0 | other.0)
     }
     #[must_use]
+    #[inline]
     pub fn contains(self, other: Self) -> bool {
         self.0 & other.0 != 0
     }
     #[must_use]
+    #[inline]
     pub fn is_empty(self) -> bool {
         self.0 == 0
     }
@@ -62,7 +67,8 @@ impl Abbreviation {
             _ => return None,
         })
     }
-    pub(crate) fn code(self) -> &'static [u8] {
+    #[must_use]
+    pub fn code(self) -> &'static [u8] {
         match self {
             Self::Allocator => b"Sa",
             Self::BasicString => b"Sb",
@@ -304,38 +310,55 @@ impl Default for Graph {
     }
 }
 impl Graph {
-    pub(crate) fn get(&self, id: NodeId) -> Node {
+    #[must_use]
+    #[inline]
+    pub fn get(&self, id: NodeId) -> Node {
         self.nodes[id.index()].node
     }
-    pub(crate) fn items(&self, id: NodeId) -> &[NodeId] {
+    #[must_use]
+    #[inline]
+    pub fn items(&self, id: NodeId) -> &[NodeId] {
         &self.items[self.nodes[id.index()].items.range()]
     }
-    pub(crate) fn text(&self, id: NodeId) -> &[u8] {
+    #[must_use]
+    #[inline]
+    pub fn text(&self, id: NodeId) -> &[u8] {
         &self.text[self.nodes[id.index()].text.range()]
     }
-    pub(crate) fn len(&self) -> usize {
+    #[must_use]
+    #[inline]
+    pub fn len(&self) -> usize {
         self.nodes.len()
     }
+    #[must_use]
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Reserved payload bytes in graph stores and the intern index. Hash table
     /// control bytes and allocator overhead are outside this storage census.
-    pub(crate) fn bytes_reserved(&self) -> usize {
+    #[must_use]
+    pub fn bytes_reserved(&self) -> usize {
         self.nodes.capacity() * size_of::<StoredNode>()
             + self.items.capacity() * size_of::<NodeId>()
             + self.text.capacity()
             + self.index.capacity() * size_of::<(u64, NodeId)>()
             + self.tags.bytes_reserved()
     }
-    pub(crate) fn reset(&mut self) {
+    pub fn reset(&mut self) {
         self.nodes.truncate(1);
         self.items.clear();
         self.text.clear();
         self.index.clear();
         self.tags = super::tags::Tags::default();
     }
-    pub(crate) fn intern(&mut self, node: Node, items: &[NodeId]) -> Result<NodeId, Error> {
+    #[inline]
+    pub fn intern(&mut self, node: Node, items: &[NodeId]) -> Result<NodeId, Error> {
         self.intern_with(node, items, &[])
     }
-    pub(crate) fn string(&mut self, text: &[u8]) -> Result<NodeId, Error> {
+    #[inline]
+    pub fn string(&mut self, text: &[u8]) -> Result<NodeId, Error> {
         self.intern_with(Node::Text, &[], text)
     }
     fn intern_with(&mut self, node: Node, items: &[NodeId], text: &[u8]) -> Result<NodeId, Error> {
@@ -368,7 +391,7 @@ impl Graph {
         self.index.insert(hash, id);
         Ok(id)
     }
-    pub(crate) fn name(
+    pub fn name(
         &mut self,
         parent: Option<NodeId>,
         terminal: NodeId,
@@ -412,7 +435,7 @@ impl Graph {
     }
     /// Compiler class names use the ABI's standard catalog. Explicit fact
     /// producers keep using `intern(Template(..))` to choose their own form.
-    pub(crate) fn abbreviated_template_id(
+    pub fn abbreviated_template_id(
         &mut self,
         template: NodeId,
         arguments: &[NodeId],
@@ -459,7 +482,7 @@ impl Graph {
             self.intern(Node::Template(abbreviation), arguments)
         }
     }
-    pub(crate) fn tagged(&mut self, id: NodeId, tags: &[NodeId]) -> Result<NodeId, Error> {
+    pub fn tagged(&mut self, id: NodeId, tags: &[NodeId]) -> Result<NodeId, Error> {
         let node = self.get(id);
         if let Node::Template(template) = node {
             let args = self.items(id).to_vec();
@@ -477,7 +500,7 @@ impl Graph {
         merged.dedup();
         self.intern(node, &merged)
     }
-    pub(crate) fn modified(
+    pub fn modified(
         &mut self,
         mut modifier: Modifier,
         mut operand: NodeId,
@@ -513,11 +536,7 @@ impl Graph {
         }
         self.intern(Node::Modified { modifier, operand }, &[])
     }
-    pub(crate) fn member_pointer(
-        &mut self,
-        owner: NodeId,
-        mut member: NodeId,
-    ) -> Result<NodeId, Error> {
+    pub fn member_pointer(&mut self, owner: NodeId, mut member: NodeId) -> Result<NodeId, Error> {
         if let Node::FunctionType {
             result,
             qualifiers,
@@ -538,7 +557,8 @@ impl Graph {
         }
         self.intern(Node::MemberPointer { owner, member }, &[])
     }
-    pub(crate) fn drop_void(&self, params: &mut Vec<NodeId>) {
+    #[inline]
+    pub fn drop_void(&self, params: &mut Vec<NodeId>) {
         if params.len() == 1 && self.get(params[0]) == Node::Builtin(Builtin::Void) {
             params.clear();
         }

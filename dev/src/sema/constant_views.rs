@@ -20,7 +20,8 @@ fn without_parentheses(tree: &ast::Tree, mut id: ast::ExprId) -> ast::ExprId {
 }
 
 impl Graph {
-    pub(crate) fn lower_extended_temporary(
+    #[must_use]
+    pub fn lower_extended_temporary(
         &self,
         entity: super::graph::EntityId,
     ) -> Option<super::constexpr_values::TemporaryId> {
@@ -30,13 +31,12 @@ impl Graph {
             _ => None,
         }
     }
-    pub(crate) fn lower_evaluated_reference_temporary(
-        &self,
-        entity: super::graph::EntityId,
-    ) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn lower_evaluated_reference_temporary(&self, entity: super::graph::EntityId) -> bool {
         self.constant_addresses.reference_evaluated(entity)
     }
-    pub(crate) fn lower_builtin_floating(&self, id: ast::ExprId) -> Result<u128, Error> {
+    pub fn lower_builtin_floating(&self, id: ast::ExprId) -> Result<u128, Error> {
         let value = self.expression_facts.floating_value(id)?;
         let value = self.floating_constants.get(value);
         let super::types::TypeKind::Scalar(super::types::Scalar::Basic(ty)) =
@@ -52,7 +52,8 @@ impl Graph {
             )
             .ok_or(Error::Invariant("floating builtin encoding"))
     }
-    pub(crate) fn lower_member_argument(
+    #[must_use]
+    pub fn lower_member_argument(
         &self,
         tree: &ast::Tree,
         id: ast::ExprId,
@@ -65,7 +66,7 @@ impl Graph {
         self.argument_member_pointer(self.binding(binding).entity)
     }
 
-    pub(crate) fn lower_evaluated_member_pointer(
+    pub fn lower_evaluated_member_pointer(
         &self,
         tree: &ast::Tree,
         id: ast::ExprId,
@@ -103,7 +104,7 @@ impl Graph {
             _ => None,
         })
     }
-    pub(crate) fn lower_evaluated_wide(
+    pub fn lower_evaluated_wide(
         &self,
         tree: &ast::Tree,
         id: ast::ExprId,
@@ -138,7 +139,7 @@ impl Graph {
         };
         Ok((value.high != extended).then_some(value.wide()))
     }
-    pub(crate) fn lower_evaluated_floating(
+    pub fn lower_evaluated_floating(
         &self,
         tree: &ast::Tree,
         id: ast::ExprId,
@@ -179,7 +180,7 @@ impl Graph {
             .map(Some)
             .ok_or(Error::Invariant("completed floating constant encoding"))
     }
-    pub(crate) fn lower_evaluated_reference(
+    pub fn lower_evaluated_reference(
         &self,
         entity: super::graph::EntityId,
     ) -> Result<Option<Value>, Error> {
@@ -214,7 +215,7 @@ impl Graph {
                 _ => None,
             }))
     }
-    pub(crate) fn lower_evaluated_pointer(
+    pub fn lower_evaluated_pointer(
         &self,
         tree: &ast::Tree,
         id: ast::ExprId,
@@ -283,7 +284,7 @@ impl Graph {
 
     /// The frozen course's narrow empty-class conversion rule. This is a view
     /// of an already analyzed conversion body, independent of constexpr calls.
-    pub(crate) fn lower_constant_conversion(
+    pub fn lower_constant_conversion(
         &self,
         tree: &ast::Tree,
         condition: ast::ExprId,
@@ -370,7 +371,7 @@ impl Graph {
 // Shared by branch emission and call-table argument-effect demand. A literal
 // shortcut is narrower than general constant evaluation in the frozen course.
 impl Graph {
-    pub(crate) fn lower_literal_truth(
+    pub fn lower_literal_truth(
         &self,
         literals: &crate::syntax::storage::TextStore,
         tree: &ast::Tree,

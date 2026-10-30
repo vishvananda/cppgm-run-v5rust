@@ -21,10 +21,13 @@ pub enum Error {
     StorageLimit,
 }
 impl Error {
-    pub(crate) fn diagnostic(message: impl AsRef<[u8]>) -> Self {
+    #[inline]
+    pub fn diagnostic(message: impl AsRef<[u8]>) -> Self {
         Self::Diagnostic(message.as_ref().to_vec())
     }
-    pub(crate) fn word(prefix: &str, word: &[u8], suffix: &str) -> Self {
+    #[must_use]
+    #[inline]
+    pub fn word(prefix: &str, word: &[u8], suffix: &str) -> Self {
         let mut message = prefix.as_bytes().to_vec();
         message.extend_from_slice(word);
         message.extend_from_slice(suffix.as_bytes());

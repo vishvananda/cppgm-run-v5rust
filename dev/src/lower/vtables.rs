@@ -95,8 +95,12 @@ fn result_adjustment_for_route(
     })
 }
 
-#[cfg(test)]
-pub(crate) fn assert_covariant_routes(
+#[cfg(any(test, feature = "test-support"))]
+#[expect(
+    clippy::unwrap_used,
+    reason = "existing test-only invariant assertions shared across phase crates"
+)]
+pub fn assert_covariant_routes(
     graph: &crate::sema::Graph,
     tree: &crate::syntax::ast::Tree,
     cursor: &crate::syntax::cursor::Cursor<'_>,
@@ -1146,8 +1150,12 @@ impl Symbols<'_, '_> {
     }
 }
 
-#[cfg(test)]
-pub(crate) fn assert_definition_destructor_targets(
+#[cfg(any(test, feature = "test-support"))]
+#[expect(
+    clippy::unwrap_used,
+    reason = "existing test-only invariant assertions shared across phase crates"
+)]
+pub fn assert_definition_destructor_targets(
     graph: &mut crate::sema::Graph,
     tree: &mut crate::syntax::ast::Tree,
     cursor: &mut crate::syntax::cursor::Cursor<'_>,
@@ -1225,8 +1233,12 @@ pub(crate) fn assert_definition_destructor_targets(
     assert!(program.globals().is_empty());
 }
 
-#[cfg(test)]
-pub(crate) fn assert_table_demand(
+#[cfg(any(test, feature = "test-support"))]
+#[expect(
+    clippy::unwrap_used,
+    reason = "existing test-only invariant assertions shared across phase crates"
+)]
+pub fn assert_table_demand(
     graph: &mut crate::sema::Graph,
     tree: &mut crate::syntax::ast::Tree,
     cursor: &mut crate::syntax::cursor::Cursor<'_>,
@@ -1290,8 +1302,13 @@ pub(crate) fn assert_table_demand(
     assert!(cx.symbols.vtables.pure_virtual.is_some());
 }
 
-#[cfg(test)]
-pub(crate) fn assert_hierarchy_flags(
+#[cfg(any(test, feature = "test-support"))]
+#[expect(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "existing test-only invariant assertions shared across phase crates"
+)]
+pub fn assert_hierarchy_flags(
     graph: &crate::sema::Graph,
     tree: &crate::syntax::ast::Tree,
     cursor: &crate::syntax::cursor::Cursor<'_>,
@@ -1520,8 +1537,8 @@ impl Symbols<'_, '_> {
     }
 }
 
-#[cfg(test)]
-pub(crate) use construction_tables::assert_construction_context;
+#[cfg(any(test, feature = "test-support"))]
+pub use construction_tables::assert_construction_context;
 
 impl crate::lower::unit_frontend::Context<'_, '_, '_> {
     pub(in crate::lower) fn construction_table(

@@ -17,7 +17,7 @@ use crate::{
     },
 };
 #[derive(Clone, Copy)]
-pub(crate) enum Value {
+pub enum Value {
     Integer(u64),
     WideInteger(u128),
     MemberPointer(super::symbolic_members::MemberPointer),
@@ -28,12 +28,12 @@ pub(crate) enum Value {
     Temporary(super::constexpr_values::TemporaryId, i64),
 }
 #[derive(Clone, Copy)]
-pub(crate) struct ReferenceTemporary {
+pub struct ReferenceTemporary {
     pub binding: TypeId,
     pub value: TypeId,
 }
 impl super::graph::Graph {
-    pub(crate) fn lower_demand_array_image(
+    pub fn lower_demand_array_image(
         &mut self,
         tree: &mut ast::Tree,
         cursor: &mut crate::syntax::cursor::Cursor<'_>,
@@ -60,7 +60,7 @@ impl super::graph::Graph {
     }
     /// The shared lowering policy for automatic array images. Class leaves
     /// always retain construction; mutable arrays require scalar elements.
-    pub(crate) fn lower_array_image_eligible(&self, entity: EntityId) -> Result<bool, Error> {
+    pub fn lower_array_image_eligible(&self, entity: EntityId) -> Result<bool, Error> {
         let ty = self.lower_entity_type(entity)?;
         let TypeKind::Array { element, bound, .. } = self.types.get(ty).kind else {
             return Ok(false);

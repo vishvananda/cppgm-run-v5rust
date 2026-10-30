@@ -5,7 +5,7 @@ use super::SyntaxUnit;
 use crate::preprocess::counters::PreprocessorCounters;
 
 #[derive(Clone, Copy, Default)]
-pub(crate) struct Statistics {
+pub struct Statistics {
     #[cfg(feature = "telemetry")]
     pub preprocessor: PreprocessorCounters,
     #[cfg(feature = "telemetry")]
@@ -39,7 +39,8 @@ pub(crate) struct Statistics {
 }
 impl SyntaxUnit<'_> {
     #[cfg(feature = "telemetry")]
-    pub(crate) fn statistics(&self) -> Statistics {
+    #[must_use]
+    pub fn statistics(&self) -> Statistics {
         let parser = &self.parser;
         let cursor = &parser.cursor;
         let (lookups, bindings, kept_searches) = parser.scopes.observations();
@@ -67,7 +68,8 @@ impl SyntaxUnit<'_> {
         }
     }
     #[cfg(not(feature = "telemetry"))]
-    pub(crate) fn statistics(&self) -> Statistics {
+    #[inline]
+    pub fn statistics(&self) -> Statistics {
         let _ = self;
         Statistics::default()
     }

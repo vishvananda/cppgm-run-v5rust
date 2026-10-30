@@ -4,7 +4,7 @@ fn reserved<T>(values: &Vec<T>) -> usize {
     values.capacity() * std::mem::size_of::<T>()
 }
 impl Program {
-    pub(crate) fn storage_bytes(&self) -> usize {
+    pub fn storage_bytes(&self) -> usize {
         self.names.storage_bytes()
             + reserved(&self.names.text)
             + reserved(&self.names.logical)

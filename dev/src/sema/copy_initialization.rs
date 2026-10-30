@@ -25,7 +25,7 @@ pub(super) struct CopySelection {
     pub binding: Conversion,
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum CopyAction {
+pub enum CopyAction {
     Storage {
         reference: TypeId,
         skip_empty: bool,
@@ -115,7 +115,8 @@ impl super::graph::Graph {
                 )),
         }
     }
-    pub(crate) fn lower_parameter_copy(
+    #[must_use]
+    pub fn lower_parameter_copy(
         &self,
         id: ast::ExprId,
         class: EntityId,
@@ -129,7 +130,7 @@ impl super::graph::Graph {
                 .parameter_copy(id)
                 .is_some_and(|copy| copy.class == class)
     }
-    pub(crate) fn lower_parameter_binding(
+    pub fn lower_parameter_binding(
         &self,
         id: ast::ExprId,
     ) -> Result<Option<(TypeId, Option<super::lowering::BaseProjection>)>, Error> {
@@ -145,12 +146,14 @@ impl super::graph::Graph {
             })
             .transpose()
     }
-    pub(crate) fn lower_has_conversion_copy(&self, id: ast::ExprId) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn lower_has_conversion_copy(&self, id: ast::ExprId) -> bool {
         self.expression_facts
             .function_conversion(id)
             .is_some_and(|step| step.copy.is_some())
     }
-    pub(crate) fn lower_internal_copy_function(
+    pub fn lower_internal_copy_function(
         &self,
         id: ast::ExprId,
         result: bool,
@@ -165,7 +168,7 @@ impl super::graph::Graph {
         copy.map(|copy| self.selected_copy_function(copy.class, copy.selection))
             .transpose()
     }
-    pub(crate) fn lower_demand_internal_copy(
+    pub fn lower_demand_internal_copy(
         &mut self,
         tree: &mut ast::Tree,
         cursor: &mut crate::syntax::cursor::Cursor<'_>,
@@ -206,7 +209,7 @@ impl super::graph::Graph {
         }
         Ok(Some(action))
     }
-    pub(crate) fn lower_copy_form(
+    pub fn lower_copy_form(
         &self,
         function: EntityId,
     ) -> Result<Option<super::lowering::CopyForm>, Error> {
@@ -233,14 +236,17 @@ impl super::graph::Graph {
             },
         }))
     }
-    pub(crate) fn lower_copy_constructor(&self, function: EntityId) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn lower_copy_constructor(&self, function: EntityId) -> bool {
         self.entity(function).callable().copy_kind.is_some()
     }
-    pub(crate) fn lower_class_copy(&self, id: ast::ExprId) -> Result<Option<CopyAction>, Error> {
+    #[inline]
+    pub fn lower_class_copy(&self, id: ast::ExprId) -> Result<Option<CopyAction>, Error> {
         self.expression_facts.get(id)?;
         Ok(self.expression_facts.copy_action(id))
     }
-    pub(crate) fn lower_direct_class_parameter(&self, class: EntityId) -> Result<bool, Error> {
+    pub fn lower_direct_class_parameter(&self, class: EntityId) -> Result<bool, Error> {
         self.entity(class)
             .special()
             .implicit_copies

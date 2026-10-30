@@ -1,15 +1,15 @@
 //! Model census and phase observations for the `LowIR` tool. See NOTICE.
 /// Completed builder work, independent of whether a consumer retains bodies.
 #[derive(Clone, Copy, Default)]
-pub(crate) struct Construction {
+pub struct Construction {
     #[cfg(feature = "telemetry")]
-    pub(crate) functions: crate::support::telemetry::Counter<usize>,
+    pub functions: crate::support::telemetry::Counter<usize>,
     #[cfg(feature = "telemetry")]
-    pub(crate) instructions: crate::support::telemetry::Counter<usize>,
+    pub instructions: crate::support::telemetry::Counter<usize>,
     #[cfg(feature = "telemetry")]
-    pub(crate) blocks: crate::support::telemetry::Counter<usize>,
+    pub blocks: crate::support::telemetry::Counter<usize>,
     #[cfg(feature = "telemetry")]
-    pub(crate) slots: crate::support::telemetry::Counter<usize>,
+    pub slots: crate::support::telemetry::Counter<usize>,
 }
 impl Construction {
     #[cfg(feature = "telemetry")]
@@ -84,6 +84,7 @@ impl Statistics {
     /// # Errors
     /// Returns the unavailable-statistics diagnostic.
     #[cfg(not(feature = "telemetry"))]
+    #[inline]
     pub fn write(&self, output: &mut impl std::io::Write, peak_rss_kb: u64) -> std::io::Result<()> {
         let _ = (self, output, peak_rss_kb);
         Err(std::io::Error::other(

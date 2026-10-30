@@ -8,9 +8,11 @@ use super::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct SegmentId(pub(super) u32);
+pub struct SegmentId(pub(super) u32);
 impl SegmentId {
-    pub(crate) fn index(self) -> usize {
+    #[inline]
+    #[must_use]
+    pub fn index(self) -> usize {
         self.0 as usize
     }
     pub(super) fn new(index: usize) -> Result<Self, Error> {
@@ -20,12 +22,12 @@ impl SegmentId {
     }
 }
 #[derive(Clone, Copy)]
-pub(crate) struct GroupEntry {
+pub struct GroupEntry {
     pub function: EntityId,
     pub kind: SlotKind,
     pub overrider: SegmentId,
 }
-pub(crate) struct Segment {
+pub struct Segment {
     pub class: EntityId,
     pub parent: SegmentId,
     // An edge is identified by its owning class and declaration ordinal.
@@ -35,7 +37,7 @@ pub(crate) struct Segment {
     pub entries: std::ops::Range<usize>,
 }
 #[derive(Default)]
-pub(crate) struct VtableGroup {
+pub struct VtableGroup {
     pub segments: Vec<Segment>,
     pub entries: Vec<GroupEntry>,
 }
@@ -242,13 +244,17 @@ impl Graph {
         self.virtuals.grouped_classes.push(class);
         Ok(())
     }
-    pub(crate) fn lower_grouped_classes(&self) -> &[EntityId] {
+    #[inline]
+    #[must_use]
+    pub fn lower_grouped_classes(&self) -> &[EntityId] {
         &self.virtuals.grouped_classes
     }
-    pub(crate) fn lower_vtable_group(&self, class: EntityId) -> Option<&VtableGroup> {
+    #[inline]
+    #[must_use]
+    pub fn lower_vtable_group(&self, class: EntityId) -> Option<&VtableGroup> {
         self.virtuals.groups.get(&class)
     }
-    pub(crate) fn lower_segment_offsets(&self, class: EntityId) -> Result<Vec<u64>, Error> {
+    pub fn lower_segment_offsets(&self, class: EntityId) -> Result<Vec<u64>, Error> {
         let Some(group) = self.lower_vtable_group(class) else {
             return Ok(vec![0]);
         };

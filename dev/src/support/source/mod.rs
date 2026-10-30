@@ -2,14 +2,16 @@
 
 mod translation;
 use std::{cell::OnceCell, rc::Rc};
-pub(crate) use translation::{END_OF_SOURCE, SourceChar, TranslationReader};
+pub use translation::{END_OF_SOURCE, SourceChar, TranslationReader};
 
 /// Compact byte identity within one physical source buffer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct SourceOffset(pub(crate) u32);
+pub struct SourceOffset(pub u32);
 
 impl SourceOffset {
-    pub(crate) fn index(self) -> usize {
+    #[must_use]
+    #[inline]
+    pub fn index(self) -> usize {
         self.0 as usize
     }
 }
@@ -17,8 +19,8 @@ impl SourceOffset {
 /// A fatal lexical error; presentation is deferred until the tool boundary.
 #[derive(Debug)]
 pub struct SourceError {
-    pub(crate) offset: SourceOffset,
-    pub(crate) message: &'static str,
+    pub offset: SourceOffset,
+    pub message: &'static str,
 }
 
 impl std::fmt::Display for SourceError {
@@ -30,7 +32,9 @@ impl std::fmt::Display for SourceError {
 impl std::error::Error for SourceError {}
 
 impl SourceError {
-    pub(crate) fn new(offset: SourceOffset, message: &'static str) -> Self {
+    #[must_use]
+    #[inline]
+    pub fn new(offset: SourceOffset, message: &'static str) -> Self {
         Self { offset, message }
     }
 }
@@ -79,7 +83,7 @@ pub struct SourceBuffer {
 
 /// An immutable source image; file-backed consumers share one retained allocation.
 #[derive(Clone)]
-pub(crate) enum SourceImage<'a> {
+pub enum SourceImage<'a> {
     Borrowed(&'a SourceBuffer),
     Shared(Rc<SourceBuffer>),
 }
@@ -138,7 +142,7 @@ impl SourceBuffer {
     }
 
     /// Physical line indexing is shared by every inclusion and built only on demand.
-    pub(crate) fn line_starts(&self) -> &[u32] {
+    pub fn line_starts(&self) -> &[u32] {
         self.line_starts.get_or_init(|| {
             let mut starts = vec![self.begin.0];
             // Construction guarantees every byte offset fits the compact space.
@@ -152,15 +156,18 @@ impl SourceBuffer {
             starts
         })
     }
-    #[cfg(test)]
-    pub(crate) fn has_line_index(&self) -> bool {
+    #[cfg(any(test, feature = "test-support"))]
+    #[inline]
+    pub fn has_line_index(&self) -> bool {
         self.line_starts.get().is_some()
     }
 
-    pub(crate) fn bytes(&self) -> &[u8] {
+    #[inline]
+    pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }
-    pub(crate) fn begin(&self) -> SourceOffset {
+    #[inline]
+    pub fn begin(&self) -> SourceOffset {
         self.begin
     }
 

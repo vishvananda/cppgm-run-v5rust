@@ -2895,20 +2895,25 @@ impl Symbols<'_, '_> {
     }
 }
 
-#[cfg(test)]
-pub(crate) use vtables::{
+#[cfg(any(test, feature = "test-support"))]
+pub use vtables::{
     assert_covariant_routes, assert_definition_destructor_targets, assert_hierarchy_flags,
     assert_table_demand,
 };
 
-#[cfg(test)]
-pub(crate) use virtual_bases::assert_base_routes;
+#[cfg(any(test, feature = "test-support"))]
+pub use virtual_bases::assert_base_routes;
 
-#[cfg(test)]
-pub(crate) use vtables::assert_construction_context;
+#[cfg(any(test, feature = "test-support"))]
+pub use vtables::assert_construction_context;
 
-#[cfg(test)]
-pub(crate) fn assert_label_name_demand(
+#[cfg(any(test, feature = "test-support"))]
+#[expect(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "existing test-only invariant assertions shared across phase crates"
+)]
+pub fn assert_label_name_demand(
     graph: &Graph,
     tree: &ast::Tree,
     cursor: &Cursor<'_>,

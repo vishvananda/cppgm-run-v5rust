@@ -249,8 +249,12 @@ impl Function<'_, '_, '_, '_> {
     }
 }
 
-#[cfg(test)]
-pub(crate) fn assert_base_routes(
+#[cfg(any(test, feature = "test-support"))]
+#[expect(
+    clippy::unwrap_used,
+    reason = "existing test-only invariant assertions shared across phase crates"
+)]
+pub fn assert_base_routes(
     graph: &crate::sema::Graph,
     tree: &crate::syntax::ast::Tree,
     cursor: &crate::syntax::cursor::Cursor<'_>,

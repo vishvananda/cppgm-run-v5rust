@@ -15,14 +15,14 @@ use crate::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum BitOperation {
+pub enum BitOperation {
     ByteSwap,
     LeadingZeros,
     TrailingZeros,
     Population,
 }
 #[derive(Clone, Copy)]
-pub(crate) struct IntegerBuiltin {
+pub struct IntegerBuiltin {
     pub operation: BitOperation,
     // None selects the generic form, preserving the operand's unsigned type.
     pub operand: Option<Scalar>,

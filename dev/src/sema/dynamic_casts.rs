@@ -10,7 +10,7 @@ use super::{
 use crate::{lex::vocabulary::Keyword, syntax::ast};
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum RuntimeCast {
+pub enum RuntimeCast {
     Class {
         from: EntityId,
         to: EntityId,
@@ -22,7 +22,7 @@ pub(crate) enum RuntimeCast {
 }
 
 impl Graph {
-    pub(crate) fn lower_cast_bases(
+    pub fn lower_cast_bases(
         &self,
         class: EntityId,
     ) -> impl Iterator<Item = Result<(EntityId, bool, bool, u64), Error>> + '_ {
@@ -36,7 +36,8 @@ impl Graph {
             ))
         })
     }
-    pub(crate) fn lower_runtime_cast(&self, id: ast::ExprId) -> Result<Option<RuntimeCast>, Error> {
+    #[inline]
+    pub fn lower_runtime_cast(&self, id: ast::ExprId) -> Result<Option<RuntimeCast>, Error> {
         self.expression_facts.get(id)?;
         Ok(self.expression_facts.runtime_cast(id))
     }

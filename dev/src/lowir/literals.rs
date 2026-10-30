@@ -3,13 +3,14 @@ use super::{Error, vocabulary::Type};
 use crate::{types::FundamentalType, types::floating::FloatingScanner};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum FloatKind {
+pub enum FloatKind {
     F32,
     F64,
     F80,
 }
 impl FloatKind {
-    pub(crate) fn from_type(ty: Type) -> Option<Self> {
+    #[must_use]
+    pub fn from_type(ty: Type) -> Option<Self> {
         match ty {
             Type::F32 => Some(Self::F32),
             Type::F64 => Some(Self::F64),
@@ -24,7 +25,8 @@ impl FloatKind {
             Self::F80 => FundamentalType::LongDouble,
         }
     }
-    pub(crate) fn ty(self) -> Type {
+    #[must_use]
+    pub fn ty(self) -> Type {
         match self {
             Self::F32 => Type::F32,
             Self::F64 => Type::F64,
@@ -54,12 +56,13 @@ impl FloatKind {
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum Constant {
+pub enum Constant {
     Integer(u128),
     Float(FloatKind, u128),
 }
 impl Constant {
-    pub(crate) fn is_nan(self) -> bool {
+    #[must_use]
+    pub fn is_nan(self) -> bool {
         let Self::Float(kind, bits) = self else {
             return false;
         };
@@ -68,7 +71,8 @@ impl Constant {
         bits >> shift & ((1 << exponent) - 1) == (1 << exponent) - 1
             && bits & ((1 << fraction) - 1) != 0
     }
-    pub(crate) fn with_nan_payload(self, payload: u128) -> Option<Self> {
+    #[must_use]
+    pub fn with_nan_payload(self, payload: u128) -> Option<Self> {
         let Self::Float(kind, bits) = self else {
             return None;
         };
@@ -81,7 +85,8 @@ impl Constant {
 }
 /// One integer token's magnitude and optional negation, modulo the target 128 bits.
 /// Narrow-context sign extension belongs to the consuming literal boundary.
-pub(crate) fn scan_integer(text: &str, negative: bool) -> Option<u128> {
+#[must_use]
+pub fn scan_integer(text: &str, negative: bool) -> Option<u128> {
     let hex = text.starts_with("0x") || text.starts_with("0X");
     let (base, digits) = if hex {
         (16_u128, &text[2..])
@@ -112,7 +117,8 @@ pub(crate) fn scan_integer(text: &str, negative: bool) -> Option<u128> {
         value
     })
 }
-pub(crate) fn floating_spelling(text: &str) -> bool {
+#[must_use]
+pub fn floating_spelling(text: &str) -> bool {
     let hex = text.starts_with("0x") || text.starts_with("0X");
     text.contains('.')
         || text.bytes().any(|c| {
@@ -133,7 +139,8 @@ fn suffix(text: &str) -> FloatKind {
         FloatKind::F64
     }
 }
-pub(crate) fn special(text: &str, context: Type, negative: bool) -> Constant {
+#[must_use]
+pub fn special(text: &str, context: Type, negative: bool) -> Constant {
     let written = if matches!(text, "inf" | "INFINITY" | "nan" | "NAN" | "snan" | "SNAN") {
         FloatKind::F64
     } else {
@@ -159,7 +166,7 @@ pub(crate) fn special(text: &str, context: Type, negative: bool) -> Constant {
 }
 
 /// Validate the C strto* grammar before using the shared exact rational scanner.
-pub(crate) fn scan(
+pub fn scan(
     scanner: &mut FloatingScanner,
     text: &str,
     context: Type,
@@ -230,7 +237,7 @@ pub(crate) fn scan(
 }
 
 /// Match C++'s integer-to-x87 addition, followed by the target conversion.
-pub(crate) fn integer_as_float(
+pub fn integer_as_float(
     scanner: &mut FloatingScanner,
     bits: u128,
     kind: FloatKind,
@@ -274,7 +281,7 @@ fn finite(kind: FloatKind, encoding: u128) -> Result<(u128, i64, bool), Error> {
 
 /// Native immediates and global initializers convert the signed low integer
 /// word through x87, or round a retained floating value to its stored width.
-pub(crate) fn native_float(
+pub fn native_float(
     scanner: &mut FloatingScanner,
     value: Constant,
     target: FloatKind,
@@ -336,7 +343,7 @@ pub(crate) fn native_float(
 
 /// The native dump uses the first general-decimal precision that roundtrips
 /// at the stated width. This is a view of bits, separate from `LowIR`'s spelling.
-pub(crate) fn mir_text(
+pub fn mir_text(
     scanner: &mut FloatingScanner,
     kind: FloatKind,
     bits: u128,
@@ -379,7 +386,7 @@ pub(crate) fn mir_text(
     Ok(format!("{sign}{spelling}{}", kind.suffix()))
 }
 
-pub(crate) fn text(
+pub fn text(
     scanner: &mut FloatingScanner,
     kind: FloatKind,
     bits: u128,

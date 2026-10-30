@@ -14,7 +14,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy)]
-pub(crate) enum SourceFunction {
+pub enum SourceFunction {
     Function(EntityId),
     ImplicitConstructor(EntityId),
 }

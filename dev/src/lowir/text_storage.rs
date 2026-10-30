@@ -6,9 +6,9 @@ use std::{
     ops::Range,
 };
 
-pub(crate) const BUFFER_BYTES: usize = 1 << 20;
+pub const BUFFER_BYTES: usize = 1 << 20;
 #[derive(Default)]
-pub(crate) struct DefinitionBytes {
+pub struct DefinitionBytes {
     buffer: Vec<u8>,
     spill: Option<RefCell<File>>,
     make_spill: Option<fn() -> io::Result<File>>,
@@ -16,17 +16,21 @@ pub(crate) struct DefinitionBytes {
     failed: bool,
 }
 impl DefinitionBytes {
-    pub(crate) fn set_spill_factory(&mut self, factory: fn() -> io::Result<File>) {
+    #[inline]
+    pub fn set_spill_factory(&mut self, factory: fn() -> io::Result<File>) {
         self.make_spill = Some(factory);
     }
-    #[cfg(test)]
-    pub(crate) fn retained_capacity(&self) -> usize {
+    #[cfg(any(test, feature = "test-support"))]
+    #[inline]
+    pub fn retained_capacity(&self) -> usize {
         self.buffer.capacity()
     }
-    pub(crate) fn len(&self) -> usize {
+    #[inline]
+    pub fn len(&self) -> usize {
         self.size
     }
-    pub(crate) fn is_empty(&self) -> bool {
+    #[inline]
+    pub fn is_empty(&self) -> bool {
         self.size == 0
     }
     fn flush_buffer(&mut self) -> io::Result<()> {
@@ -44,11 +48,7 @@ impl DefinitionBytes {
         self.buffer.clear();
         Ok(())
     }
-    pub(crate) fn copy_range(
-        &self,
-        range: Range<usize>,
-        output: &mut impl Write,
-    ) -> io::Result<()> {
+    pub fn copy_range(&self, range: Range<usize>, output: &mut impl Write) -> io::Result<()> {
         if self.failed {
             return Err(io::Error::other("serialized definition spill failed"));
         }

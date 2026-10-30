@@ -10,24 +10,19 @@ use crate::support::hash::HashMap;
 use crate::support::hash::HashSet;
 
 #[derive(Clone, Copy)]
-pub(crate) struct BaseRoute {
+pub struct BaseRoute {
     pub via: Option<EntityId>,
     pub offset: u64,
 }
 /// Query-owner storage over completed layouts. Canonical class-pair keys are
 /// immutable after layout publication; no emission or semantic body demand.
 #[derive(Default)]
-pub(crate) struct BaseRoutes {
+pub struct BaseRoutes {
     selected: HashMap<(EntityId, EntityId), BaseRoute>,
     holders: HashMap<EntityId, HashMap<EntityId, EntityId>>,
 }
 impl BaseRoutes {
-    pub(crate) fn get(
-        &mut self,
-        graph: &Graph,
-        from: EntityId,
-        to: EntityId,
-    ) -> Result<BaseRoute, Error> {
+    pub fn get(&mut self, graph: &Graph, from: EntityId, to: EntityId) -> Result<BaseRoute, Error> {
         // ProgramLowering keeps routes only for classes with virtual bases.
         // Ordinary projections perform their nonvirtual search on each demand.
         if graph.lower_virtual_bases(from).is_empty() {
@@ -78,14 +73,21 @@ impl BaseRoutes {
         }
         entry.insert(holders);
     }
-    #[cfg(test)]
-    pub(crate) fn len(&self) -> usize {
+    #[cfg(any(test, feature = "test-support"))]
+    #[inline]
+    #[must_use]
+    pub fn len(&self) -> usize {
         self.selected.len()
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 
 /// Checked canonical result identities; lowering selects their ABI route.
-pub(crate) struct CovariantResult {
+pub struct CovariantResult {
     pub from: EntityId,
     pub to: EntityId,
     pub through: Option<EntityId>,
@@ -93,7 +95,7 @@ pub(crate) struct CovariantResult {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum BaseProjection {
+pub enum BaseProjection {
     Fixed(u64),
     Nonvirtual {
         from: EntityId,
@@ -107,7 +109,8 @@ pub(crate) enum BaseProjection {
     },
 }
 impl BaseProjection {
-    pub(crate) fn known_offset(self) -> Option<u64> {
+    #[must_use]
+    pub fn known_offset(self) -> Option<u64> {
         match self {
             Self::Fixed(offset) => Some(offset),
             Self::Nonvirtual {
@@ -120,7 +123,9 @@ impl BaseProjection {
             Self::Route { .. } => None,
         }
     }
-    pub(crate) fn is_zero(self) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn is_zero(self) -> bool {
         self.known_offset() == Some(0)
     }
     pub(super) fn negated(self) -> Result<Self, Error> {
@@ -252,7 +257,7 @@ fn found_offset(work: &[OffsetFrame], extra: u64) -> Result<u64, Error> {
     })
 }
 impl Graph {
-    pub(crate) fn lower_path_projection(&self, path: BasePathId) -> Result<BaseProjection, Error> {
+    pub fn lower_path_projection(&self, path: BasePathId) -> Result<BaseProjection, Error> {
         if self.base_paths.projection(path) {
             return self.lower_member_route_projection(path);
         }
@@ -302,13 +307,16 @@ impl Graph {
     }
     /// Projection queries run after their storage-layout boundary; an absent
     /// sparse layout then denotes a class with no virtual bases.
-    pub(crate) fn lower_virtual_bases(&self, class: EntityId) -> &[(EntityId, u64)] {
+    #[inline]
+    #[must_use]
+    pub fn lower_virtual_bases(&self, class: EntityId) -> &[(EntityId, u64)] {
         self.virtuals
             .storage_layouts
             .get(&class)
             .map_or(&[], |layout| layout.bases.as_slice())
     }
-    pub(crate) fn lower_itanium_primary(&self, class: EntityId) -> Option<(EntityId, bool)> {
+    #[must_use]
+    pub fn lower_itanium_primary(&self, class: EntityId) -> Option<(EntityId, bool)> {
         if let Some(facts) = self.virtuals.classes.get(&class) {
             return facts.primary.map(|primary| {
                 (
@@ -332,7 +340,8 @@ impl Graph {
                     .map(|base| (base, true))
             })
     }
-    pub(crate) fn lower_nonvirtual_bases(
+    #[must_use]
+    pub fn lower_nonvirtual_bases(
         &self,
         class: EntityId,
     ) -> impl DoubleEndedIterator<Item = EntityId> + '_ {
@@ -343,7 +352,8 @@ impl Graph {
             .filter(|edge| !edge.is_virtual)
             .map(|edge| edge.class)
     }
-    pub(crate) fn lower_nonvirtual_base_offsets(
+    #[must_use]
+    pub fn lower_nonvirtual_base_offsets(
         &self,
         class: EntityId,
     ) -> impl DoubleEndedIterator<Item = (EntityId, Result<u64, Error>)> + '_ {
@@ -532,14 +542,15 @@ impl Graph {
         }
         Ok(known[&derived])
     }
-    pub(crate) fn lower_nonvirtual_offset(
+    #[inline]
+    pub fn lower_nonvirtual_offset(
         &self,
         from: EntityId,
         to: EntityId,
     ) -> Result<Option<u64>, Error> {
         self.base_search_offset(from, to, OffsetSearch::Nonvirtual)
     }
-    pub(crate) fn lower_vcall_functions(&self, class: EntityId) -> Result<Vec<EntityId>, Error> {
+    pub fn lower_vcall_functions(&self, class: EntityId) -> Result<Vec<EntityId>, Error> {
         if !self.lower_polymorphic(class) {
             return Ok(Vec::new());
         }
@@ -563,12 +574,10 @@ impl Graph {
         });
         Ok(entries.into_iter().map(|entry| entry.function).collect())
     }
-    pub(crate) fn lower_vcall_signature(
-        &self,
-        function: EntityId,
-    ) -> Result<VcallSignature, Error> {
+    #[inline]
+    pub fn lower_vcall_signature(&self, function: EntityId) -> Result<VcallSignature, Error> {
         self.virtual_signature(function).map(VcallSignature)
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct VcallSignature(super::final_overriders::VirtualSignature);
+pub struct VcallSignature(super::final_overriders::VirtualSignature);

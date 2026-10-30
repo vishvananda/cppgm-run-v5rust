@@ -15,11 +15,11 @@ use std::sync::Arc;
 #[path = "body_edits.rs"]
 mod body_edits;
 #[path = "store_validation.rs"]
-pub(crate) mod store_validation;
-pub(crate) use body_edits::LinkEditor;
+pub mod store_validation;
+pub use body_edits::LinkEditor;
 #[path = "body_import.rs"]
 mod body_import;
-pub(crate) use body_import::ImportMap;
+pub use body_import::ImportMap;
 #[cfg(feature = "telemetry")]
 #[path = "model_storage.rs"]
 mod model_storage;
@@ -28,7 +28,7 @@ mod program_copies;
 macro_rules! identity {
     ($($name:ident),+ ) => { $(
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-        pub(crate) struct $name(u32);
+        pub struct $name(u32);
     )+ };
 }
 identity!(
@@ -45,21 +45,27 @@ identity!(
     GlobalId
 );
 impl NameId {
-    pub(crate) fn empty() -> Self {
+    #[inline]
+    #[must_use]
+    pub fn empty() -> Self {
         Self(0)
     }
 }
 impl TempId {
-    pub(crate) fn index(self) -> usize {
+    #[inline]
+    #[must_use]
+    pub fn index(self) -> usize {
         self.0 as usize
     }
 }
 impl SlotId {
-    pub(crate) fn index(self) -> usize {
+    #[inline]
+    #[must_use]
+    pub fn index(self) -> usize {
         self.0 as usize
     }
 }
-pub(crate) struct Names {
+pub struct Names {
     text: Vec<Arc<[u8]>>,
     index: HashMap<Arc<[u8]>, NameId>,
     #[cfg(feature = "telemetry")]
@@ -81,19 +87,25 @@ impl Default for Names {
     }
 }
 impl Names {
-    pub(crate) fn find(&self, text: &str) -> Option<NameId> {
+    #[inline]
+    #[must_use]
+    pub fn find(&self, text: &str) -> Option<NameId> {
         self.index.get(text.as_bytes()).copied()
     }
-    pub(crate) fn intern(&mut self, text: &str) -> Result<NameId, Error> {
+    #[inline]
+    pub fn intern(&mut self, text: &str) -> Result<NameId, Error> {
         self.intern_bytes(text.as_bytes())
     }
-    pub(crate) fn intern_bytes(&mut self, text: &[u8]) -> Result<NameId, Error> {
+    #[inline]
+    pub fn intern_bytes(&mut self, text: &[u8]) -> Result<NameId, Error> {
         self.intern_kind(text, true)
     }
-    pub(crate) fn intern_view(&mut self, text: &str) -> Result<NameId, Error> {
+    #[inline]
+    pub fn intern_view(&mut self, text: &str) -> Result<NameId, Error> {
         self.intern_kind(text.as_bytes(), false)
     }
-    pub(crate) fn intern_view_bytes(&mut self, text: &[u8]) -> Result<NameId, Error> {
+    #[inline]
+    pub fn intern_view_bytes(&mut self, text: &[u8]) -> Result<NameId, Error> {
         self.intern_kind(text, false)
     }
     fn intern_kind(&mut self, text: &[u8], logical: bool) -> Result<NameId, Error> {
@@ -118,25 +130,33 @@ impl Names {
         let _ = logical;
         Ok(id)
     }
-    pub(crate) fn get(&self, id: NameId) -> &str {
+    #[inline]
+    #[must_use]
+    pub fn get(&self, id: NameId) -> &str {
         // Vocabulary and sigil names are ASCII. Object spellings and debug-file
         // tokens retain arbitrary bytes and must use the byte view instead.
         std::str::from_utf8(self.bytes(id)).unwrap_or("")
     }
     #[cfg(feature = "telemetry")]
-    pub(crate) fn logical_len(&self) -> usize {
+    #[inline]
+    #[must_use]
+    pub fn logical_len(&self) -> usize {
         self.logical_count
     }
     #[cfg(feature = "telemetry")]
-    pub(crate) fn storage_bytes(&self) -> usize {
+    #[inline]
+    #[must_use]
+    pub fn storage_bytes(&self) -> usize {
         self.text.iter().map(|text| text.len()).sum()
     }
-    pub(crate) fn bytes(&self, id: NameId) -> &[u8] {
+    #[inline]
+    #[must_use]
+    pub fn bytes(&self, id: NameId) -> &[u8] {
         &self.text[id.0 as usize]
     }
 }
 /// A consumer owns only its phase's encoded state, never front-end facts.
-pub(crate) trait DefinitionSink: std::any::Any {
+pub trait DefinitionSink: std::any::Any {
     fn needs_boundaries(&self) -> bool {
         false
     }
@@ -148,16 +168,16 @@ pub(crate) trait DefinitionSink: std::any::Any {
     fn into_any(self: Box<Self>) -> Box<dyn std::any::Any>;
 }
 #[derive(Default)]
-pub(crate) struct Program {
-    pub(crate) construction: super::statistics::Construction,
-    pub(crate) object_facts: bool,
+pub struct Program {
+    pub construction: super::statistics::Construction,
+    pub object_facts: bool,
     definition_sink: Option<Box<dyn DefinitionSink>>,
     retained_definitions: Option<RetainedDefinitions>,
     forward_boundaries: Vec<Option<(SignatureId, Metadata)>>,
     forward_globals: Vec<Option<ForwardGlobal>>,
     immediate_declarations: Vec<SymbolId>,
     immediate_declaration_set: crate::support::hash::HashSet<SymbolId>,
-    pub(crate) names: Names,
+    pub names: Names,
     functions: Vec<Function>,
     unpublished_functions: HashSet<SymbolId>,
     completed_definition: Option<SymbolId>,
@@ -177,11 +197,11 @@ pub(crate) struct Program {
 /// Adjustment facts published before a thunk's definition reaches the backend.
 /// Its ordinary body remains the text spelling for non-object consumers.
 #[derive(Clone, Copy)]
-pub(crate) struct JumpThunk {
-    pub(crate) target: SymbolId,
-    pub(crate) this_index: u32,
-    pub(crate) adjustment: i64,
-    pub(crate) vcall_offset: i64,
+pub struct JumpThunk {
+    pub target: SymbolId,
+    pub this_index: u32,
+    pub adjustment: i64,
+    pub vcall_offset: i64,
 }
 #[derive(Default)]
 struct RetainedDefinitions {
@@ -189,24 +209,32 @@ struct RetainedDefinitions {
     held: Vec<SymbolId>,
 }
 impl Program {
-    pub(crate) fn set_jump_thunk(&mut self, symbol: SymbolId, thunk: JumpThunk) {
+    #[inline]
+    pub fn set_jump_thunk(&mut self, symbol: SymbolId, thunk: JumpThunk) {
         self.jump_thunks.insert(symbol, thunk);
     }
-    pub(crate) fn jump_thunk(&self, symbol: SymbolId) -> Option<JumpThunk> {
+    #[inline]
+    #[must_use]
+    pub fn jump_thunk(&self, symbol: SymbolId) -> Option<JumpThunk> {
         self.jump_thunks.get(&symbol).copied()
     }
-    pub(crate) fn has_jump_thunks(&self) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn has_jump_thunks(&self) -> bool {
         !self.jump_thunks.is_empty()
     }
-    pub(crate) fn clear_jump_thunks(&mut self) {
+    #[inline]
+    pub fn clear_jump_thunks(&mut self) {
         self.jump_thunks.clear();
     }
-    pub(crate) fn sink_reads_jump_thunks(&self) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn sink_reads_jump_thunks(&self) -> bool {
         self.definition_sink
             .as_ref()
             .is_some_and(|sink| sink.reads_jump_thunks())
     }
-    pub(crate) fn retain_definitions(&mut self) -> Result<(), Error> {
+    pub fn retain_definitions(&mut self) -> Result<(), Error> {
         if self.definition_sink.is_some() || self.retained_definitions.is_some() {
             return Err(Error::Construction(
                 "definition delivery already configured".into(),
@@ -215,26 +243,26 @@ impl Program {
         self.retained_definitions = Some(RetainedDefinitions::default());
         Ok(())
     }
-    pub(crate) fn finish_retained_definitions(&mut self, startup: [Option<SymbolId>; 2]) {
+    pub fn finish_retained_definitions(&mut self, startup: [Option<SymbolId>; 2]) {
         if let Some(mut retained) = self.retained_definitions.take() {
             retained.completed.append(&mut retained.held);
             retained.completed.extend(startup.into_iter().flatten());
             self.order_retained_definitions(&retained.completed);
         }
     }
-    pub(crate) fn set_forward_global(&mut self, symbol: SymbolId, facts: ForwardGlobal) {
+    #[inline]
+    pub fn set_forward_global(&mut self, symbol: SymbolId, facts: ForwardGlobal) {
         self.forward_globals.resize(self.symbols.len(), None);
         if self.forward_globals[symbol.index()].is_none() {
             self.forward_globals[symbol.index()] = Some(facts);
         }
     }
-    pub(crate) fn forward_global(&self, symbol: SymbolId) -> Option<ForwardGlobal> {
+    #[inline]
+    #[must_use]
+    pub fn forward_global(&self, symbol: SymbolId) -> Option<ForwardGlobal> {
         self.forward_globals.get(symbol.index()).copied().flatten()
     }
-    pub(crate) fn set_definition_sink(
-        &mut self,
-        sink: Box<dyn DefinitionSink>,
-    ) -> Result<(), Error> {
+    pub fn set_definition_sink(&mut self, sink: Box<dyn DefinitionSink>) -> Result<(), Error> {
         if self.definition_sink.is_some() || self.retained_definitions.is_some() {
             return Err(Error::Construction(
                 "definition sink already installed".into(),
@@ -243,21 +271,28 @@ impl Program {
         self.definition_sink = Some(sink);
         Ok(())
     }
-    pub(crate) fn take_definition_sink(&mut self) -> Option<Box<dyn DefinitionSink>> {
+    #[inline]
+    pub fn take_definition_sink(&mut self) -> Option<Box<dyn DefinitionSink>> {
         self.definition_sink.take()
     }
-    pub(crate) fn has_definition_sink(&self) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn has_definition_sink(&self) -> bool {
         self.definition_sink.is_some()
     }
-    pub(crate) fn needs_forward_boundaries(&self) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn needs_forward_boundaries(&self) -> bool {
         self.definition_sink
             .as_ref()
             .is_some_and(|sink| sink.needs_boundaries())
     }
-    pub(crate) fn completed_definition(&self) -> Option<SymbolId> {
+    #[inline]
+    #[must_use]
+    pub fn completed_definition(&self) -> Option<SymbolId> {
         self.completed_definition
     }
-    pub(crate) fn prepare_reader(&mut self) -> Result<(), Error> {
+    pub fn prepare_reader(&mut self) -> Result<(), Error> {
         if !self.reader_vocabulary {
             super::vocabulary::intern_reader_words(&mut self.names)?;
             self.reader_vocabulary = true;
@@ -265,7 +300,8 @@ impl Program {
         Ok(())
     }
     #[cfg(feature = "telemetry")]
-    pub(crate) fn statistics(&self) -> super::Statistics {
+    #[must_use]
+    pub fn statistics(&self) -> super::Statistics {
         let mut stats = super::Statistics {
             symbols: self.symbols.len(),
             functions: self.functions.len(),
@@ -307,11 +343,12 @@ impl Program {
         stats
     }
     #[cfg(not(feature = "telemetry"))]
-    pub(crate) fn statistics(&self) -> super::Statistics {
+    #[inline]
+    pub fn statistics(&self) -> super::Statistics {
         let _ = self;
         super::Statistics::default()
     }
-    pub(crate) fn add(&mut self, symbol: SymbolId, function: Function) -> Result<(), Error> {
+    pub fn add(&mut self, symbol: SymbolId, function: Function) -> Result<(), Error> {
         let id = FunctionId(u32::try_from(self.functions.len()).map_err(|_| Error::Limit)?);
         if function.body.is_some() || self.jump_thunk(symbol).is_some() {
             self.completed_definition = Some(symbol);
@@ -321,10 +358,12 @@ impl Program {
         self.publications.push(symbol);
         Ok(())
     }
-    pub(crate) fn find_symbol(&self, name: NameId) -> Option<SymbolId> {
+    #[inline]
+    #[must_use]
+    pub fn find_symbol(&self, name: NameId) -> Option<SymbolId> {
         self.index.get(&name).copied()
     }
-    pub(crate) fn reference(
+    pub fn reference(
         &mut self,
         name: NameId,
         source: SourceId,
@@ -343,31 +382,35 @@ impl Program {
         self.index.insert(name, id);
         Ok(id)
     }
-    pub(crate) fn add_source(&mut self, path: &Path) -> Result<SourceId, Error> {
+    #[inline]
+    pub fn add_source(&mut self, path: &Path) -> Result<SourceId, Error> {
         let id = SourceId(u32::try_from(self.sources.len()).map_err(|_| Error::Limit)?);
         self.sources.push(path.into());
         Ok(id)
     }
-    pub(crate) fn reference_from(
-        &mut self,
-        name: NameId,
-        owner: SymbolId,
-    ) -> Result<SymbolId, Error> {
+    #[inline]
+    pub fn reference_from(&mut self, name: NameId, owner: SymbolId) -> Result<SymbolId, Error> {
         let source = self.symbol(owner).source;
         self.reference(name, source, 0)
     }
-    pub(crate) fn source(&self, id: SourceId) -> &Path {
+    #[inline]
+    #[must_use]
+    pub fn source(&self, id: SourceId) -> &Path {
         &self.sources[id.0 as usize]
     }
-    pub(crate) fn symbol(&self, id: SymbolId) -> &Symbol {
+    #[inline]
+    #[must_use]
+    pub fn symbol(&self, id: SymbolId) -> &Symbol {
         &self.symbols[id.0 as usize]
     }
-    pub(crate) fn symbol_id(&self, index: usize) -> Option<SymbolId> {
+    #[inline]
+    #[must_use]
+    pub fn symbol_id(&self, index: usize) -> Option<SymbolId> {
         (index < self.symbols.len())
             .then(|| u32::try_from(index).ok().map(SymbolId))
             .flatten()
     }
-    pub(crate) fn finish_symbols(&self) -> Result<(), Error> {
+    pub fn finish_symbols(&self) -> Result<(), Error> {
         for symbol in &self.symbols {
             if matches!(symbol.detail, SymbolDetail::Unresolved) {
                 return Err(Error::at_path(
@@ -382,18 +425,22 @@ impl Program {
         }
         Ok(())
     }
-    pub(crate) fn add_signature(&mut self, signature: Signature) -> Result<SignatureId, Error> {
+    #[inline]
+    pub fn add_signature(&mut self, signature: Signature) -> Result<SignatureId, Error> {
         let id = SignatureId(u32::try_from(self.signatures.len()).map_err(|_| Error::Limit)?);
         self.signatures.push(signature);
         Ok(id)
     }
-    pub(crate) fn signature_mut(&mut self, id: SignatureId) -> &mut Signature {
+    #[inline]
+    pub fn signature_mut(&mut self, id: SignatureId) -> &mut Signature {
         &mut self.signatures[id.0 as usize]
     }
-    pub(crate) fn signature(&self, id: SignatureId) -> &Signature {
+    #[inline]
+    #[must_use]
+    pub fn signature(&self, id: SignatureId) -> &Signature {
         &self.signatures[id.0 as usize]
     }
-    pub(crate) fn set_forward_boundary(
+    pub fn set_forward_boundary(
         &mut self,
         symbol: SymbolId,
         signature: SignatureId,
@@ -402,14 +449,15 @@ impl Program {
         self.forward_boundaries.resize(self.symbols.len(), None);
         self.forward_boundaries[symbol.index()] = Some((signature, metadata));
     }
-    pub(crate) fn forward_boundary(&self, symbol: SymbolId) -> Option<SignatureId> {
+    #[must_use]
+    pub fn forward_boundary(&self, symbol: SymbolId) -> Option<SignatureId> {
         self.forward_boundaries
             .get(symbol.index())
             .copied()
             .flatten()
             .map(|(signature, _)| signature)
     }
-    pub(crate) fn callee_metadata(&self, value: Value) -> Option<&Metadata> {
+    pub fn callee_metadata(&self, value: Value) -> Option<&Metadata> {
         if let Some(function) = self.callee_function(value) {
             return Some(&function.metadata);
         }
@@ -424,7 +472,8 @@ impl Program {
             .and_then(Option::as_ref)
             .map(|(_, metadata)| metadata)
     }
-    pub(crate) fn call_boundary(&self, call: &Call) -> Option<&Signature> {
+    #[must_use]
+    pub fn call_boundary(&self, call: &Call) -> Option<&Signature> {
         if let Some(id) = call.signature {
             return Some(self.signature(id));
         }
@@ -441,7 +490,8 @@ impl Program {
             })
             .map(|signature| self.signature(signature))
     }
-    pub(crate) fn callee_function(&self, value: Value) -> Option<&Function> {
+    #[must_use]
+    pub fn callee_function(&self, value: Value) -> Option<&Function> {
         if let Value::Symbol(id) = value
             && let SymbolDetail::Function(id) = self.symbol(id).detail
         {
@@ -449,17 +499,21 @@ impl Program {
         }
         None
     }
-    pub(crate) fn may_end_block(&self, kind: &InstructionKind) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn may_end_block(&self, kind: &InstructionKind) -> bool {
         kind.terminator()
             || matches!(kind, InstructionKind::Call(call) if self.call_boundary(call).is_some_and(|s| s.boundary.returns == Returns::NoReturn))
     }
-    pub(crate) fn stream_last_definition(
+    #[inline]
+    pub fn stream_last_definition(
         &mut self,
         output: &mut impl std::io::Write,
     ) -> Result<(), Error> {
         self.stream_last_function(output, false, false).map(|_| ())
     }
-    pub(crate) fn stream_last_body(
+    #[inline]
+    pub fn stream_last_body(
         &mut self,
         output: &mut impl std::io::Write,
     ) -> Result<SymbolId, Error> {
@@ -467,7 +521,7 @@ impl Program {
     }
     /// Replace only function-definition positions, as `ProgramLowering`'s retained
     /// order does; globals and declarations retain their publication positions.
-    pub(crate) fn order_retained_definitions(&mut self, completed: &[SymbolId]) {
+    pub fn order_retained_definitions(&mut self, completed: &[SymbolId]) {
         let mut seen = HashSet::default();
         let completed: Vec<_> = completed
             .iter()
@@ -508,10 +562,11 @@ impl Program {
             }
         }
     }
-    pub(crate) fn defer_last_definition(&mut self) -> Result<SymbolId, Error> {
+    #[inline]
+    pub fn defer_last_definition(&mut self) -> Result<SymbolId, Error> {
         self.stream_last_function(&mut std::io::sink(), false, true)
     }
-    pub(crate) fn release_held_definitions(&mut self) {
+    pub fn release_held_definitions(&mut self) {
         if let Some(retained) = &mut self.retained_definitions {
             retained.completed.append(&mut retained.held);
         }
@@ -556,7 +611,7 @@ impl Program {
         self.completed_definition = None;
         Ok(symbol)
     }
-    pub(crate) fn complete_body(&mut self, symbol: SymbolId, body: Body) -> Result<(), Error> {
+    pub fn complete_body(&mut self, symbol: SymbolId, body: Body) -> Result<(), Error> {
         let SymbolDetail::Function(id) = self.symbol(symbol).detail else {
             return Err(Error::Construction(
                 "body completion for a non-function".into(),
@@ -566,7 +621,7 @@ impl Program {
         self.completed_definition = Some(symbol);
         Ok(())
     }
-    pub(crate) fn release_body(&mut self, symbol: SymbolId) -> Result<(), Error> {
+    pub fn release_body(&mut self, symbol: SymbolId) -> Result<(), Error> {
         let SymbolDetail::Function(id) = self.symbol(symbol).detail else {
             return Err(Error::Construction(
                 "body release for a non-function".into(),
@@ -576,16 +631,19 @@ impl Program {
         self.functions[id.0 as usize].body = None;
         Ok(())
     }
-    pub(crate) fn first_source(&self) -> Option<&Path> {
+    #[inline]
+    pub fn first_source(&self) -> Option<&Path> {
         self.sources.first().map(PathBuf::as_path)
     }
-    pub(crate) fn function_defined(&self, symbol: SymbolId) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn function_defined(&self, symbol: SymbolId) -> bool {
         self.streamed_functions.contains(&symbol)
             || self
                 .function(self.symbol(symbol))
                 .is_some_and(|f| f.body.is_some() || self.jump_thunk(symbol).is_some())
     }
-    pub(crate) fn function_declarations(&self) -> impl Iterator<Item = &Function> {
+    pub fn function_declarations(&self) -> impl Iterator<Item = &Function> {
         self.immediate_declarations
             .iter()
             .filter_map(|&id| {
@@ -612,15 +670,18 @@ impl Program {
     }
     /// Runtime declarations publish immediately; ordinary referenced declarations
     /// are the producer's pending list, published after all definitions.
-    pub(crate) fn publish_runtime_declaration(&mut self, symbol: SymbolId) {
+    #[inline]
+    pub fn publish_runtime_declaration(&mut self, symbol: SymbolId) {
         if self.immediate_declaration_set.insert(symbol) {
             self.immediate_declarations.push(symbol);
         }
     }
-    pub(crate) fn functions(&self) -> &[Function] {
+    #[inline]
+    #[must_use]
+    pub fn functions(&self) -> &[Function] {
         &self.functions
     }
-    pub(crate) fn functions_in_symbol_order(&self) -> impl Iterator<Item = &Function> {
+    pub fn functions_in_symbol_order(&self) -> impl Iterator<Item = &Function> {
         self.symbols
             .iter()
             .filter_map(|symbol| match symbol.detail {
@@ -628,20 +689,23 @@ impl Program {
                 _ => None,
             })
     }
-    pub(crate) fn add_global(&mut self, symbol: SymbolId, global: Global) -> Result<(), Error> {
+    pub fn add_global(&mut self, symbol: SymbolId, global: Global) -> Result<(), Error> {
         let id = GlobalId(u32::try_from(self.globals.len()).map_err(|_| Error::Limit)?);
         self.symbols[symbol.0 as usize].detail = SymbolDetail::Global(id);
         self.globals.push(global);
         self.publications.push(symbol);
         Ok(())
     }
-    pub(crate) fn publications(&self) -> &[SymbolId] {
+    #[inline]
+    #[must_use]
+    pub fn publications(&self) -> &[SymbolId] {
         &self.publications
     }
-    pub(crate) fn replace_publications(&mut self, order: Vec<SymbolId>) {
+    #[inline]
+    pub fn replace_publications(&mut self, order: Vec<SymbolId>) {
         self.publications = order;
     }
-    pub(crate) fn discard_function_definition(&mut self, symbol: SymbolId) -> Result<(), Error> {
+    pub fn discard_function_definition(&mut self, symbol: SymbolId) -> Result<(), Error> {
         let body = self.take_body(symbol)?.ok_or(Error::Limit)?;
         drop(body);
         self.unpublished_functions.insert(symbol);
@@ -650,26 +714,33 @@ impl Program {
         }
         Ok(())
     }
-    pub(crate) fn drop_aliases_of(&mut self, dropped: &[bool]) {
+    #[inline]
+    pub fn drop_aliases_of(&mut self, dropped: &[bool]) {
         self.aliases.retain(|alias| !dropped[alias.target.index()]);
         self.alias_names.clear();
         self.alias_names
             .extend(self.aliases.iter().map(|alias| alias.object));
     }
-    #[cfg(test)]
-    pub(crate) fn globals(&self) -> &[Global] {
+    #[cfg(any(test, feature = "test-support"))]
+    #[inline]
+    #[must_use]
+    pub fn globals(&self) -> &[Global] {
         &self.globals
     }
-    pub(crate) fn globals_in_publication_order(&self) -> impl Iterator<Item = &Global> {
+    #[inline]
+    pub fn globals_in_publication_order(&self) -> impl Iterator<Item = &Global> {
         self.globals.iter().enumerate().filter_map(|(index, global)| {
             let symbol = self.find_symbol(global.name)?;
             matches!(self.symbol(symbol).detail, SymbolDetail::Global(id) if usize::try_from(id.0).ok() == Some(index)).then_some(global)
         })
     }
-    pub(crate) fn symbols(&self) -> &[Symbol] {
+    #[inline]
+    #[must_use]
+    pub fn symbols(&self) -> &[Symbol] {
         &self.symbols
     }
-    pub(crate) fn symbol_metadata(&self, symbol: &Symbol) -> Option<&Metadata> {
+    #[must_use]
+    pub fn symbol_metadata(&self, symbol: &Symbol) -> Option<&Metadata> {
         match symbol.detail {
             SymbolDetail::Function(id) => Some(&self.functions[id.0 as usize].metadata),
             SymbolDetail::Global(id) => Some(&self.globals[id.0 as usize].metadata),
@@ -678,7 +749,7 @@ impl Program {
     }
     /// Source object declarations require a definition in another unit. TLS
     /// wrappers carry a generated address definition, even before encoding.
-    pub(crate) fn require_object_definitions(&mut self) {
+    pub fn require_object_definitions(&mut self) {
         for symbol in &self.symbols {
             if self.optional_references.contains(&self.index[&symbol.name]) {
                 continue;
@@ -708,15 +779,18 @@ impl Program {
             }
         }
     }
-    pub(crate) fn optional_reference(&mut self, symbol: SymbolId) {
+    #[inline]
+    pub fn optional_reference(&mut self, symbol: SymbolId) {
         self.optional_references.insert(symbol);
     }
-    pub(crate) fn root_function(&mut self, symbol: SymbolId) {
+    #[inline]
+    pub fn root_function(&mut self, symbol: SymbolId) {
         if let SymbolDetail::Function(id) = self.symbol(symbol).detail {
             self.functions[id.0 as usize].metadata.flags |= 4;
         }
     }
-    pub(crate) fn function(&self, symbol: &Symbol) -> Option<&Function> {
+    #[must_use]
+    pub fn function(&self, symbol: &Symbol) -> Option<&Function> {
         if let SymbolDetail::Function(id) = symbol.detail {
             Some(&self.functions[id.0 as usize])
         } else {
@@ -724,10 +798,13 @@ impl Program {
         }
     }
     // program.cpp::strlen_function observes published function metadata only.
-    pub(crate) fn strlen_function(&self, symbol: SymbolId) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn strlen_function(&self, symbol: SymbolId) -> bool {
         self.library_function(symbol, b"cppgm_builtin_strlen", b"strlen")
     }
-    pub(crate) fn library_function(&self, symbol: SymbolId, builtin: &[u8], plain: &[u8]) -> bool {
+    #[must_use]
+    pub fn library_function(&self, symbol: SymbolId, builtin: &[u8], plain: &[u8]) -> bool {
         let Some(function) = self.function(self.symbol(symbol)) else {
             return false;
         };
@@ -743,7 +820,7 @@ impl Program {
         };
         named(builtin) || function.metadata.linkage == Linkage::C && named(plain)
     }
-    pub(crate) fn take_body(&mut self, symbol: SymbolId) -> Result<Option<Body>, Error> {
+    pub fn take_body(&mut self, symbol: SymbolId) -> Result<Option<Body>, Error> {
         let SymbolDetail::Function(id) = self.symbol(symbol).detail else {
             return Err(Error::Construction(
                 "body mutation for a non-function".into(),
@@ -751,7 +828,7 @@ impl Program {
         };
         Ok(self.functions[id.0 as usize].body.take())
     }
-    pub(crate) fn restore_body(&mut self, symbol: SymbolId, body: Body) -> Result<(), Error> {
+    pub fn restore_body(&mut self, symbol: SymbolId, body: Body) -> Result<(), Error> {
         let SymbolDetail::Function(id) = self.symbol(symbol).detail else {
             return Err(Error::Construction(
                 "body restoration for a non-function".into(),
@@ -766,14 +843,15 @@ impl Program {
         *slot = Some(body);
         Ok(())
     }
-    pub(crate) fn global(&self, symbol: &Symbol) -> Option<&Global> {
+    #[must_use]
+    pub fn global(&self, symbol: &Symbol) -> Option<&Global> {
         if let SymbolDetail::Global(id) = symbol.detail {
             Some(&self.globals[id.0 as usize])
         } else {
             None
         }
     }
-    pub(crate) fn set_global_binding_and_object(
+    pub fn set_global_binding_and_object(
         &mut self,
         symbol: SymbolId,
         binding: super::vocabulary::Binding,
@@ -789,20 +867,24 @@ impl Program {
         metadata.object = Some(object);
         Ok(())
     }
-    pub(crate) fn add_alias(&mut self, alias: ObjectAlias) -> bool {
+    pub fn add_alias(&mut self, alias: ObjectAlias) -> bool {
         if !self.alias_names.insert(alias.object) {
             return false;
         }
         self.aliases.push(alias);
         true
     }
-    pub(crate) fn has_alias(&self, name: NameId) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn has_alias(&self, name: NameId) -> bool {
         self.alias_names.contains(&name)
     }
-    pub(crate) fn aliases(&self) -> &[ObjectAlias] {
+    #[inline]
+    #[must_use]
+    pub fn aliases(&self) -> &[ObjectAlias] {
         &self.aliases
     }
-    pub(crate) fn legacy_roles(&mut self) {
+    pub fn legacy_roles(&mut self) {
         if self
             .functions
             .iter()
@@ -826,37 +908,39 @@ impl Program {
         }
     }
 }
-pub(crate) struct Symbol {
-    pub(crate) name: NameId,
-    pub(crate) detail: SymbolDetail,
+pub struct Symbol {
+    pub name: NameId,
+    pub detail: SymbolDetail,
     source: SourceId,
     line: u32,
 }
 #[derive(Clone, Copy)]
-pub(crate) enum SymbolDetail {
+pub enum SymbolDetail {
     Unresolved,
     Function(FunctionId),
     Global(GlobalId),
 }
 impl Symbol {
-    pub(crate) fn declared(&self) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn declared(&self) -> bool {
         !matches!(self.detail, SymbolDetail::Unresolved)
     }
 }
-pub(crate) struct Global {
-    pub(crate) name: NameId,
-    pub(crate) ty: Option<Type>,
-    pub(crate) metadata: Metadata,
-    pub(crate) init: GlobalInit,
+pub struct Global {
+    pub name: NameId,
+    pub ty: Option<Type>,
+    pub metadata: Metadata,
+    pub init: GlobalInit,
 }
 /// Address-selection facts stated before a streamed global is published.
 #[derive(Clone, Copy)]
-pub(crate) struct ForwardGlobal {
-    pub(crate) binding: Option<Binding>,
-    pub(crate) storage: Option<Storage>,
-    pub(crate) defined: bool,
+pub struct ForwardGlobal {
+    pub binding: Option<Binding>,
+    pub storage: Option<Storage>,
+    pub defined: bool,
 }
-pub(crate) enum GlobalInit {
+pub enum GlobalInit {
     Declaration,
     Zero,
     Constant(Constant),
@@ -864,89 +948,89 @@ pub(crate) enum GlobalInit {
     Data(Vec<DataItem>),
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum DataItem {
+pub enum DataItem {
     Zero(i64),
     Constant(Type, Constant),
     Address(Type, SymbolId, i64),
 }
-pub(crate) struct ObjectAlias {
-    pub(crate) object: NameId,
-    pub(crate) target: SymbolId,
+pub struct ObjectAlias {
+    pub object: NameId,
+    pub target: SymbolId,
 }
-pub(crate) struct Signature {
-    pub(crate) parameters: Vec<Parameter>,
-    pub(crate) result: Type,
-    pub(crate) boundary: Boundary,
+pub struct Signature {
+    pub parameters: Vec<Parameter>,
+    pub result: Type,
+    pub boundary: Boundary,
 }
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) enum Arity {
+pub enum Arity {
     #[default]
     Fixed,
     Variadic,
 }
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) enum Unwind {
+pub enum Unwind {
     #[default]
     Default,
     No,
 }
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) enum Returns {
+pub enum Returns {
     #[default]
     Default,
     NoReturn,
 }
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) enum Linkage {
+pub enum Linkage {
     #[default]
     Default,
     C,
 }
 #[derive(Default)]
-pub(crate) struct Boundary {
-    pub(crate) arity: Arity,
-    pub(crate) effects: Option<Effects>,
-    pub(crate) unwind: Unwind,
-    pub(crate) returns: Returns,
-    pub(crate) result_classes: Option<super::vocabulary::ObjectClasses>,
+pub struct Boundary {
+    pub arity: Arity,
+    pub effects: Option<Effects>,
+    pub unwind: Unwind,
+    pub returns: Returns,
+    pub result_classes: Option<super::vocabulary::ObjectClasses>,
 }
 #[derive(Clone, Copy, Default)]
-pub(crate) struct Metadata {
-    pub(crate) role: Option<Role>,
-    pub(crate) linkage: Linkage,
-    pub(crate) binding: Option<Binding>,
-    pub(crate) flags: u8,
-    pub(crate) object: Option<NameId>,
-    pub(crate) storage: Option<Storage>,
-    pub(crate) section: Option<NameId>,
-    pub(crate) tls_for: Option<SymbolId>,
+pub struct Metadata {
+    pub role: Option<Role>,
+    pub linkage: Linkage,
+    pub binding: Option<Binding>,
+    pub flags: u8,
+    pub object: Option<NameId>,
+    pub storage: Option<Storage>,
+    pub section: Option<NameId>,
+    pub tls_for: Option<SymbolId>,
 }
-pub(crate) struct Parameter {
-    pub(crate) name: NameId,
-    pub(crate) ty: Type,
-    pub(crate) pass: Option<Pass>,
-    pub(crate) no_alias: bool,
-    pub(crate) object_bytes: u64,
-    pub(crate) classes: Option<super::vocabulary::ObjectClasses>,
+pub struct Parameter {
+    pub name: NameId,
+    pub ty: Type,
+    pub pass: Option<Pass>,
+    pub no_alias: bool,
+    pub object_bytes: u64,
+    pub classes: Option<super::vocabulary::ObjectClasses>,
 }
-pub(crate) struct Function {
-    pub(crate) name: NameId,
-    pub(crate) signature: SignatureId,
-    pub(crate) metadata: Metadata,
-    pub(crate) body: Option<Body>,
-    pub(crate) location: Option<DebugLocation>,
+pub struct Function {
+    pub name: NameId,
+    pub signature: SignatureId,
+    pub metadata: Metadata,
+    pub body: Option<Body>,
+    pub location: Option<DebugLocation>,
 }
 #[derive(Clone, Copy)]
-pub(crate) struct DebugLocation {
-    pub(crate) file: NameId,
-    pub(crate) line: u32,
-    pub(crate) column: u32,
+pub struct DebugLocation {
+    pub file: NameId,
+    pub line: u32,
+    pub column: u32,
 }
 /// One-based body-local identity: absence needs no extra instruction word.
 #[derive(Clone, Copy)]
-pub(crate) struct LocationId(NonZeroU32);
+pub struct LocationId(NonZeroU32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum Value {
+pub enum Value {
     Temp(TempId),
     Slot(SlotId),
     Integer(LiteralId),
@@ -954,30 +1038,32 @@ pub(crate) enum Value {
     Symbol(SymbolId),
 }
 #[derive(Clone)]
-pub(crate) struct Temp {
-    pub(crate) generated: bool,
-    pub(crate) name: NameId,
-    pub(crate) ty: Option<Type>,
-    pub(crate) definition: Option<InstId>,
-    pub(crate) first_use: u32,
-    pub(crate) uses: u32,
+pub struct Temp {
+    pub generated: bool,
+    pub name: NameId,
+    pub ty: Option<Type>,
+    pub definition: Option<InstId>,
+    pub first_use: u32,
+    pub uses: u32,
 }
 #[derive(Clone)]
-pub(crate) struct Slot {
-    pub(crate) name: NameId,
-    pub(crate) ty: Type,
+pub struct Slot {
+    pub name: NameId,
+    pub ty: Type,
 }
 #[derive(Clone)]
-pub(crate) struct Block {
-    pub(crate) name: NameId,
-    pub(crate) placed: bool,
-    pub(crate) first_use: u32,
-    pub(crate) instructions: Vec<InstId>,
+pub struct Block {
+    pub name: NameId,
+    pub placed: bool,
+    pub first_use: u32,
+    pub instructions: Vec<InstId>,
     origin: BlockName,
 }
 impl Block {
     /// The block's own identity, excluding names synthesized for a text view.
-    pub(crate) fn source_name(&self) -> Option<NameId> {
+    #[inline]
+    #[must_use]
+    pub fn source_name(&self) -> Option<NameId> {
         match self.origin {
             BlockName::Source(name) if name != NameId(0) => Some(name),
             _ => None,
@@ -993,7 +1079,7 @@ pub(super) enum BlockName {
     Optimizer(OptimizerBlock),
 }
 #[derive(Clone, Copy)]
-pub(crate) enum OptimizerBlock {
+pub enum OptimizerBlock {
     Unrolled,
     Dead,
     Thread,
@@ -1011,7 +1097,8 @@ pub(crate) enum OptimizerBlock {
     InlineCopy,
 }
 impl OptimizerBlock {
-    pub(crate) fn spelling(self) -> &'static str {
+    #[must_use]
+    pub fn spelling(self) -> &'static str {
         match self {
             Self::Unrolled => "unrolled",
             Self::Dead => "dead",
@@ -1032,7 +1119,7 @@ impl OptimizerBlock {
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum OptimizerSlot {
+pub enum OptimizerSlot {
     Field,
     Aggregate,
     Phi,
@@ -1055,7 +1142,7 @@ impl OptimizerSlot {
     }
 }
 #[derive(Default)]
-pub(crate) struct Body {
+pub struct Body {
     literals: Vec<u128>,
     operands: Vec<Value>,
     temps: Vec<Temp>,
@@ -1067,34 +1154,45 @@ pub(crate) struct Body {
     temp_index: HashMap<NameId, TempId>,
     slot_index: HashMap<NameId, SlotId>,
     block_index: HashMap<NameId, BlockId>,
-    pub(crate) layout: Vec<BlockId>,
-    pub(crate) parameter_count: usize,
-    pub(crate) source: Option<SourceId>,
+    pub layout: Vec<BlockId>,
+    pub parameter_count: usize,
+    pub source: Option<SourceId>,
 }
 impl Body {
-    pub(crate) fn new(source: Option<SourceId>, parameter_count: usize) -> Self {
+    #[must_use]
+    pub fn new(source: Option<SourceId>, parameter_count: usize) -> Self {
         Self {
             parameter_count,
             source,
             ..Self::default()
         }
     }
-    pub(crate) fn temp(&self, id: TempId) -> &Temp {
+    #[inline]
+    #[must_use]
+    pub fn temp(&self, id: TempId) -> &Temp {
         &self.temps[id.0 as usize]
     }
-    pub(crate) fn temp_mut(&mut self, id: TempId) -> &mut Temp {
+    #[inline]
+    pub fn temp_mut(&mut self, id: TempId) -> &mut Temp {
         &mut self.temps[id.0 as usize]
     }
-    pub(crate) fn slot(&self, id: SlotId) -> &Slot {
+    #[inline]
+    #[must_use]
+    pub fn slot(&self, id: SlotId) -> &Slot {
         &self.slots[id.0 as usize]
     }
-    pub(crate) fn block(&self, id: BlockId) -> &Block {
+    #[inline]
+    #[must_use]
+    pub fn block(&self, id: BlockId) -> &Block {
         &self.blocks[id.0 as usize]
     }
-    pub(crate) fn block_mut(&mut self, id: BlockId) -> &mut Block {
+    #[inline]
+    pub fn block_mut(&mut self, id: BlockId) -> &mut Block {
         &mut self.blocks[id.0 as usize]
     }
-    pub(crate) fn instruction(&self, id: InstId) -> &Instruction {
+    #[inline]
+    #[must_use]
+    pub fn instruction(&self, id: InstId) -> &Instruction {
         &self.instructions[id.0 as usize]
     }
     pub(super) fn retarget_region(&mut self, id: InstId, target: BlockId) -> Result<(), Error> {
@@ -1105,11 +1203,7 @@ impl Body {
         }
         Ok(())
     }
-    pub(crate) fn set_location(
-        &mut self,
-        inst: InstId,
-        location: DebugLocation,
-    ) -> Result<(), Error> {
+    pub fn set_location(&mut self, inst: InstId, location: DebugLocation) -> Result<(), Error> {
         let next = self.locations.len().checked_add(1).ok_or(Error::Limit)?;
         let next = u32::try_from(next).map_err(|_| Error::Limit)?;
         let id = LocationId(NonZeroU32::new(next).ok_or(Error::Limit)?);
@@ -1121,16 +1215,19 @@ impl Body {
         instruction.location = Some(id);
         Ok(())
     }
-    pub(crate) fn location(&self, inst: &Instruction) -> Option<DebugLocation> {
+    #[inline]
+    #[must_use]
+    pub fn location(&self, inst: &Instruction) -> Option<DebugLocation> {
         inst.location
             .map(|id| self.locations[(id.0.get() - 1) as usize])
     }
-    pub(crate) fn integer(&mut self, bits: u128) -> Result<Value, Error> {
+    #[inline]
+    pub fn integer(&mut self, bits: u128) -> Result<Value, Error> {
         let id = LiteralId(u32::try_from(self.literals.len()).map_err(|_| Error::Limit)?);
         self.literals.push(bits);
         Ok(Value::Integer(id))
     }
-    pub(crate) fn constant(&mut self, constant: Constant) -> Result<Value, Error> {
+    pub fn constant(&mut self, constant: Constant) -> Result<Value, Error> {
         let (bits, kind) = match constant {
             Constant::Integer(bits) => (bits, None),
             Constant::Float(kind, bits) => (bits, Some(kind)),
@@ -1140,20 +1237,24 @@ impl Body {
         };
         Ok(kind.map_or(Value::Integer(id), |kind| Value::Float(id, kind)))
     }
-    pub(crate) fn literal(&self, id: LiteralId) -> u128 {
+    #[inline]
+    #[must_use]
+    pub fn literal(&self, id: LiteralId) -> u128 {
         self.literals[id.0 as usize]
     }
-    pub(crate) fn add_arguments(&mut self, arguments: &[Value]) -> Result<Arguments, Error> {
+    pub fn add_arguments(&mut self, arguments: &[Value]) -> Result<Arguments, Error> {
         let first = u32::try_from(self.operands.len()).map_err(|_| Error::Limit)?;
         let count = u32::try_from(arguments.len()).map_err(|_| Error::Limit)?;
         let _ = first.checked_add(count).ok_or(Error::Limit)?;
         self.operands.extend_from_slice(arguments);
         Ok(Arguments { first, count })
     }
-    pub(crate) fn arguments(&self, arguments: Arguments) -> &[Value] {
+    #[inline]
+    #[must_use]
+    pub fn arguments(&self, arguments: Arguments) -> &[Value] {
         arguments.slice(&self.operands)
     }
-    pub(crate) fn replace_argument(
+    pub fn replace_argument(
         &mut self,
         arguments: Arguments,
         index: usize,
@@ -1176,44 +1277,62 @@ impl Body {
         self.operands[position] = value;
         Ok(())
     }
-    pub(crate) fn inherit_location(&mut self, destination: InstId, source: InstId) {
+    #[inline]
+    pub fn inherit_location(&mut self, destination: InstId, source: InstId) {
         self.instructions[destination.index()].location =
             self.instructions[source.index()].location;
     }
-    pub(crate) fn visit_values(&self, kind: &InstructionKind, visit: impl FnMut(Value)) {
+    #[inline]
+    pub fn visit_values(&self, kind: &InstructionKind, visit: impl FnMut(Value)) {
         kind.visit_values(&self.operands, visit);
     }
-    pub(crate) fn temps(&self) -> &[Temp] {
+    #[inline]
+    #[must_use]
+    pub fn temps(&self) -> &[Temp] {
         &self.temps
     }
-    pub(crate) fn slots(&self) -> &[Slot] {
+    #[inline]
+    #[must_use]
+    pub fn slots(&self) -> &[Slot] {
         &self.slots
     }
-    pub(crate) fn blocks(&self) -> &[Block] {
+    #[inline]
+    #[must_use]
+    pub fn blocks(&self) -> &[Block] {
         &self.blocks
     }
-    pub(crate) fn instructions(&self) -> &[Instruction] {
+    #[inline]
+    #[must_use]
+    pub fn instructions(&self) -> &[Instruction] {
         &self.instructions
     }
-    pub(crate) fn temp_is_parameter(&self, id: TempId) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn temp_is_parameter(&self, id: TempId) -> bool {
         (id.0 as usize) < self.parameter_count
     }
-    pub(crate) fn temp_id(&self, index: usize) -> Option<TempId> {
+    #[inline]
+    #[must_use]
+    pub fn temp_id(&self, index: usize) -> Option<TempId> {
         (index < self.temps.len())
             .then(|| u32::try_from(index).ok().map(TempId))
             .flatten()
     }
-    pub(crate) fn block_id(&self, index: usize) -> Option<BlockId> {
+    #[inline]
+    #[must_use]
+    pub fn block_id(&self, index: usize) -> Option<BlockId> {
         (index < self.blocks.len())
             .then(|| u32::try_from(index).ok().map(BlockId))
             .flatten()
     }
-    pub(crate) fn slot_id(&self, index: usize) -> Option<SlotId> {
+    #[inline]
+    #[must_use]
+    pub fn slot_id(&self, index: usize) -> Option<SlotId> {
         (index < self.slots.len())
             .then(|| u32::try_from(index).ok().map(SlotId))
             .flatten()
     }
-    pub(crate) fn parameter_value(&self, index: usize) -> Result<Value, Error> {
+    pub fn parameter_value(&self, index: usize) -> Result<Value, Error> {
         if index >= self.parameter_count || index >= self.temps.len() {
             return Err(Error::Limit);
         }
@@ -1221,7 +1340,7 @@ impl Body {
             u32::try_from(index).map_err(|_| Error::Limit)?,
         )))
     }
-    pub(crate) fn generated_block(&mut self) -> Result<BlockId, Error> {
+    pub fn generated_block(&mut self) -> Result<BlockId, Error> {
         let id = BlockId(u32::try_from(self.blocks.len()).map_err(|_| Error::Limit)?);
         self.blocks.push(Block {
             name: NameId(0),
@@ -1234,7 +1353,7 @@ impl Body {
     }
     /// Unrolled copies retain recorded generated kinds; plain blocks get the
     /// optimizer's unrolled kind, independent of their source spelling.
-    pub(crate) fn unrolled_block(&mut self, source: BlockId) -> Result<BlockId, Error> {
+    pub fn unrolled_block(&mut self, source: BlockId) -> Result<BlockId, Error> {
         let origin = match self.block(source).origin {
             BlockName::Source(_) | BlockName::CopiedSource(_) | BlockName::Anonymous => {
                 BlockName::Optimizer(OptimizerBlock::Unrolled)
@@ -1245,12 +1364,13 @@ impl Body {
         self.blocks[id.index()].origin = origin;
         Ok(id)
     }
-    pub(crate) fn optimizer_block(&mut self, kind: OptimizerBlock) -> Result<BlockId, Error> {
+    #[inline]
+    pub fn optimizer_block(&mut self, kind: OptimizerBlock) -> Result<BlockId, Error> {
         let id = self.generated_block()?;
         self.blocks[id.index()].origin = BlockName::Optimizer(kind);
         Ok(id)
     }
-    pub(crate) fn optimizer_slot(&mut self, ty: Type, kind: OptimizerSlot) -> Result<Value, Error> {
+    pub fn optimizer_slot(&mut self, ty: Type, kind: OptimizerSlot) -> Result<Value, Error> {
         if self.slot_names.len() < self.slots.len() {
             self.slot_names
                 .extend(self.slots[self.slot_names.len()..].iter().map(|s| {
@@ -1268,7 +1388,7 @@ impl Body {
             ));
         Ok(slot)
     }
-    pub(crate) fn generated_temp(&mut self, ty: Type) -> Result<TempId, Error> {
+    pub fn generated_temp(&mut self, ty: Type) -> Result<TempId, Error> {
         let id = TempId(u32::try_from(self.temps.len()).map_err(|_| Error::Limit)?);
         self.temps.push(Temp {
             name: NameId(0),
@@ -1280,7 +1400,7 @@ impl Body {
         });
         Ok(id)
     }
-    pub(crate) fn use_temp(&mut self, name: NameId, line: u32) -> Result<TempId, Error> {
+    pub fn use_temp(&mut self, name: NameId, line: u32) -> Result<TempId, Error> {
         if let Some(&id) = self.temp_index.get(&name) {
             return Ok(id);
         }
@@ -1296,7 +1416,7 @@ impl Body {
         self.temp_index.insert(name, id);
         Ok(id)
     }
-    pub(crate) fn use_block(&mut self, name: NameId, line: u32) -> Result<BlockId, Error> {
+    pub fn use_block(&mut self, name: NameId, line: u32) -> Result<BlockId, Error> {
         if let Some(&id) = self.block_index.get(&name) {
             return Ok(id);
         }
@@ -1311,19 +1431,24 @@ impl Body {
         self.block_index.insert(name, id);
         Ok(id)
     }
-    pub(crate) fn find_slot(&self, name: NameId) -> Option<SlotId> {
+    #[inline]
+    #[must_use]
+    pub fn find_slot(&self, name: NameId) -> Option<SlotId> {
         self.slot_index.get(&name).copied()
     }
-    pub(crate) fn find_temp(&self, name: NameId) -> Option<TempId> {
+    #[inline]
+    #[must_use]
+    pub fn find_temp(&self, name: NameId) -> Option<TempId> {
         self.temp_index.get(&name).copied()
     }
-    pub(crate) fn add_slot(&mut self, name: NameId, ty: Type) -> Result<(), Error> {
+    #[inline]
+    pub fn add_slot(&mut self, name: NameId, ty: Type) -> Result<(), Error> {
         let id = SlotId(u32::try_from(self.slots.len()).map_err(|_| Error::Limit)?);
         self.slots.push(Slot { name, ty });
         self.slot_index.insert(name, id);
         Ok(())
     }
-    pub(crate) fn constructed_slot(&mut self, ty: Type) -> Result<Value, Error> {
+    pub fn constructed_slot(&mut self, ty: Type) -> Result<Value, Error> {
         let id = SlotId(u32::try_from(self.slots.len()).map_err(|_| Error::Limit)?);
         self.slots.push(Slot {
             name: NameId(0),
@@ -1358,7 +1483,7 @@ impl Body {
         }
         Ok(())
     }
-    pub(crate) fn refarg_slot(&mut self, ty: Type) -> Result<Value, Error> {
+    pub fn refarg_slot(&mut self, ty: Type) -> Result<Value, Error> {
         if self.slot_names.is_empty() {
             self.slot_names.extend(
                 self.slots
@@ -1384,11 +1509,7 @@ impl Body {
     pub(super) fn block_name(&self, id: BlockId) -> BlockName {
         self.block(id).origin
     }
-    pub(crate) fn append(
-        &mut self,
-        block: BlockId,
-        instruction: Instruction,
-    ) -> Result<InstId, Error> {
+    pub fn append(&mut self, block: BlockId, instruction: Instruction) -> Result<InstId, Error> {
         let id = InstId(u32::try_from(self.instructions.len()).map_err(|_| Error::Limit)?);
         let mut overflow = false;
         let temps = &mut self.temps;
@@ -1413,16 +1534,17 @@ impl Body {
     }
 }
 #[derive(Clone)]
-pub(crate) struct Instruction {
-    pub(crate) result: Option<TempId>,
-    pub(crate) kind: InstructionKind,
-    pub(crate) line: u32,
+pub struct Instruction {
+    pub result: Option<TempId>,
+    pub kind: InstructionKind,
+    pub line: u32,
     location: Option<LocationId>,
     switch_type: Option<Type>,
     copy_memory: Facts,
 }
 impl Instruction {
-    pub(crate) fn new(result: Option<TempId>, kind: InstructionKind, line: u32) -> Self {
+    #[must_use]
+    pub fn new(result: Option<TempId>, kind: InstructionKind, line: u32) -> Self {
         Self {
             result,
             kind,
@@ -1432,10 +1554,12 @@ impl Instruction {
             copy_memory: Facts::default(),
         }
     }
-    pub(crate) fn copy_memory_facts(&self) -> Facts {
+    #[inline]
+    #[must_use]
+    pub fn copy_memory_facts(&self) -> Facts {
         self.copy_memory
     }
-    pub(crate) fn reuse_load(&mut self, value: Value) -> Result<(), Error> {
+    pub fn reuse_load(&mut self, value: Value) -> Result<(), Error> {
         let InstructionKind::Load(facts, ty, _) = self.kind else {
             return Err(Error::Limit);
         };
@@ -1443,12 +1567,14 @@ impl Instruction {
         self.kind = InstructionKind::Copy(ty, value);
         Ok(())
     }
-    pub(crate) fn switch_type(&self) -> Option<Type> {
+    #[inline]
+    #[must_use]
+    pub fn switch_type(&self) -> Option<Type> {
         self.switch_type
     }
 }
 #[derive(Clone)]
-pub(crate) enum InstructionKind {
+pub enum InstructionKind {
     Const(Type, Value),
     Copy(Type, Value),
     Unary(Unary, Type, Value),
@@ -1473,7 +1599,7 @@ pub(crate) enum InstructionKind {
 }
 /// Runtime facts only: later consumers implement their machine/runtime effects.
 #[derive(Clone)]
-pub(crate) enum RuntimeInstruction {
+pub enum RuntimeInstruction {
     AtomicLoad(Type, Value, MemoryOrder, Facts),
     AtomicStore(Type, Value, Value, MemoryOrder),
     AtomicUpdate(AtomicUpdate, Type, Value, Value, MemoryOrder),
@@ -1502,7 +1628,9 @@ pub(crate) enum RuntimeInstruction {
 }
 impl RuntimeInstruction {
     /// Handler references are distinct from ordinary control-flow successors.
-    pub(crate) fn handler_target(&self) -> Option<BlockId> {
+    #[inline]
+    #[must_use]
+    pub fn handler_target(&self) -> Option<BlockId> {
         match self {
             Self::EhTry(block) | Self::EhCleanup(Some(block)) => Some(*block),
             _ => None,
@@ -1551,17 +1679,17 @@ impl RuntimeInstruction {
     }
 }
 #[derive(Clone)]
-pub(crate) struct Call {
-    pub(crate) result: Type,
-    pub(crate) callee: Value,
-    pub(crate) arguments: Arguments,
-    pub(crate) copy_elision: bool,
-    pub(crate) argument_classes: Vec<(u32, super::vocabulary::ObjectClasses)>,
-    pub(crate) signature: Option<SignatureId>,
+pub struct Call {
+    pub result: Type,
+    pub callee: Value,
+    pub arguments: Arguments,
+    pub copy_elision: bool,
+    pub argument_classes: Vec<(u32, super::vocabulary::ObjectClasses)>,
+    pub signature: Option<SignatureId>,
 }
 /// A checked slice in the owning function's mutable extra-operand store.
 #[derive(Clone, Copy)]
-pub(crate) struct Arguments {
+pub struct Arguments {
     first: u32,
     count: u32,
 }
@@ -1571,29 +1699,42 @@ impl Arguments {
     }
 }
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct Facts(u8);
+pub struct Facts(u8);
 impl Facts {
-    pub(crate) fn arithmetic(nowrap: bool, exact: bool) -> Self {
+    #[inline]
+    #[must_use]
+    pub fn arithmetic(nowrap: bool, exact: bool) -> Self {
         Self((u8::from(nowrap) * 32) | (u8::from(exact) * 16))
     }
-    pub(crate) fn memory(volatile: bool, typed: bool) -> Self {
+    #[inline]
+    #[must_use]
+    pub fn memory(volatile: bool, typed: bool) -> Self {
         Self(u8::from(volatile) | (u8::from(typed) * 64))
     }
-    pub(crate) fn volatile(self) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn volatile(self) -> bool {
         self.0 & 1 != 0
     }
-    pub(crate) fn typed(self) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn typed(self) -> bool {
         self.0 & 64 != 0
     }
-    pub(crate) fn nowrap(self) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn nowrap(self) -> bool {
         self.0 & 32 != 0
     }
-    pub(crate) fn exact(self) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn exact(self) -> bool {
         self.0 & 16 != 0
     }
 }
 impl InstructionKind {
-    pub(crate) fn terminator(&self) -> bool {
+    #[must_use]
+    pub fn terminator(&self) -> bool {
         matches!(
             self,
             Self::Jump(_)
@@ -1604,7 +1745,8 @@ impl InstructionKind {
                 | Self::Runtime(RuntimeInstruction::Throw(..) | RuntimeInstruction::Resume)
         )
     }
-    pub(crate) fn result_type(&self) -> Type {
+    #[must_use]
+    pub fn result_type(&self) -> Type {
         match self {
             Self::Const(t, _)
             | Self::Copy(t, _)
@@ -1666,7 +1808,7 @@ impl InstructionKind {
             _ => {}
         }
     }
-    pub(crate) fn visit_targets(&self, mut visit: impl FnMut(BlockId)) {
+    pub fn visit_targets(&self, mut visit: impl FnMut(BlockId)) {
         match self {
             Self::Jump(b) => visit(*b),
             Self::Branch(_, a, b) => {
@@ -1684,18 +1826,24 @@ impl InstructionKind {
     }
 }
 impl InstId {
-    pub(crate) fn index(self) -> usize {
+    #[inline]
+    #[must_use]
+    pub fn index(self) -> usize {
         self.0 as usize
     }
 }
 impl BlockId {
-    pub(crate) fn index(self) -> usize {
+    #[inline]
+    #[must_use]
+    pub fn index(self) -> usize {
         self.0 as usize
     }
 }
 
 impl SymbolId {
-    pub(crate) fn index(self) -> usize {
+    #[inline]
+    #[must_use]
+    pub fn index(self) -> usize {
         self.0 as usize
     }
 }

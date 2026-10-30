@@ -5,12 +5,12 @@
 //! equality resolves collisions; iteration order never defines output order.
 use std::hash::{BuildHasherDefault, Hasher as Hash};
 
-pub(crate) type BuildHasher = BuildHasherDefault<Hasher>;
-pub(crate) type HashMap<K, V> = std::collections::HashMap<K, V, BuildHasher>;
-pub(crate) type HashSet<K> = std::collections::HashSet<K, BuildHasher>;
+pub type BuildHasher = BuildHasherDefault<Hasher>;
+pub type HashMap<K, V> = std::collections::HashMap<K, V, BuildHasher>;
+pub type HashSet<K> = std::collections::HashSet<K, BuildHasher>;
 
 #[derive(Default)]
-pub(crate) struct Hasher(u64);
+pub struct Hasher(u64);
 impl Hasher {
     #[inline]
     fn mix(&mut self, value: u64) {

@@ -116,7 +116,7 @@ fn recognize(body: &Body) -> Option<JumpThunk> {
 }
 /// Explicit `LowIR` (and optimized bodies) has no authoritative lowering record.
 /// Match the frozen adapter only when the program has no published thunk facts.
-pub(crate) fn recover(program: &mut Program, model: ObjectModel) {
+pub fn recover(program: &mut Program, model: ObjectModel) {
     if program.has_jump_thunks() {
         return;
     }

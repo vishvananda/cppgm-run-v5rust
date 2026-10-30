@@ -217,14 +217,16 @@ impl Graph {
         }
         Ok(())
     }
-    pub(crate) fn lower_static_construction(&self, entity: EntityId) -> Option<&[Item]> {
+    #[must_use]
+    pub fn lower_static_construction(&self, entity: EntityId) -> Option<&[Item]> {
         self.static_constructions
             .attempts
             .get(&entity)?
             .image
             .as_deref()
     }
-    pub(crate) fn lower_evaluated_construction(&self, entity: EntityId) -> bool {
+    #[must_use]
+    pub fn lower_evaluated_construction(&self, entity: EntityId) -> bool {
         self.aggregate_constants.get(entity).is_some()
             || self
                 .static_constructions
@@ -232,7 +234,9 @@ impl Graph {
                 .get(&entity)
                 .is_some_and(|a| a.evaluated)
     }
-    pub(crate) fn lower_static_construction_demands(&self, entity: EntityId) -> &[Item] {
+    #[inline]
+    #[must_use]
+    pub fn lower_static_construction_demands(&self, entity: EntityId) -> &[Item] {
         self.static_constructions
             .attempts
             .get(&entity)

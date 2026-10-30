@@ -64,7 +64,7 @@ mod mir_registers;
 mod object;
 mod object_compile;
 mod object_storage;
-pub(crate) use compilation_observations::{ObservationOptions, Observations};
+pub use compilation_observations::{ObservationOptions, Observations};
 mod region_flow;
 mod register_allocation;
 mod rotations;
@@ -73,17 +73,17 @@ mod shrink_wrap;
 mod split_placement;
 mod store_coalescing;
 mod unwind_rules;
-pub(crate) use elf_reader::read as read_object;
-#[cfg(test)]
-pub(crate) use elf_writer::bytes as object_bytes;
-pub(crate) use elf_writer::write as write_object;
-pub(crate) use jump_thunk::recover as recover_jump_thunks;
-pub(crate) use linker::link as link_objects;
-pub(crate) use object::Object;
-#[cfg(test)]
-pub(crate) use object_compile::compile as compile_object;
-pub(crate) use object_compile::compile_observed as compile_object_observed;
-pub(crate) use object_compile::{ObjectBuilder, ObjectModel};
+pub use elf_reader::read as read_object;
+#[cfg(any(test, feature = "test-support"))]
+pub use elf_writer::bytes as object_bytes;
+pub use elf_writer::write as write_object;
+pub use jump_thunk::recover as recover_jump_thunks;
+pub use linker::link as link_objects;
+pub use object::Object;
+#[cfg(any(test, feature = "test-support"))]
+pub use object_compile::compile as compile_object;
+pub use object_compile::compile_observed as compile_object_observed;
+pub use object_compile::{ObjectBuilder, ObjectModel};
 mod parallel_transfer;
 mod placement;
 mod return_slots;
@@ -111,15 +111,15 @@ use crate::lowir::{Error, model::Program};
 use std::{io::Write, path::PathBuf};
 
 #[derive(Default)]
-pub(crate) struct Options {
-    pub(crate) output: PathBuf,
-    pub(crate) machine_ir: PathBuf,
-    pub(crate) optimization_level: u8,
-    pub(crate) stats: bool,
-    pub(crate) permissions: Option<std::fs::Permissions>,
+pub struct Options {
+    pub output: PathBuf,
+    pub machine_ir: PathBuf,
+    pub optimization_level: u8,
+    pub stats: bool,
+    pub permissions: Option<std::fs::Permissions>,
 }
 
-pub(crate) fn compile(program: &mut Program, options: &Options) -> Result<Statistics, Error> {
+pub fn compile(program: &mut Program, options: &Options) -> Result<Statistics, Error> {
     let start = crate::support::telemetry::Clock::now();
     let startup = startup::Startup::find(program)?;
     if !options.output.as_os_str().is_empty() && startup.entry.is_none() {
@@ -217,7 +217,7 @@ pub(crate) fn compile(program: &mut Program, options: &Options) -> Result<Statis
 }
 
 #[derive(Default)]
-pub(crate) struct Statistics {
+pub struct Statistics {
     runtime_linked: bool,
     total_ms: crate::support::telemetry::Counter<f64>,
     select_ms: crate::support::telemetry::Counter<f64>,
@@ -306,7 +306,7 @@ impl Statistics {
     }
 
     #[cfg(feature = "telemetry")]
-    pub(crate) fn write(&self, out: &mut impl Write, peak_rss: u64) -> std::io::Result<()> {
+    pub fn write(&self, out: &mut impl Write, peak_rss: u64) -> std::io::Result<()> {
         if self.runtime_linked {
             return out.write_all(b"\n");
         }
@@ -350,7 +350,7 @@ impl Statistics {
         )
     }
     #[cfg(not(feature = "telemetry"))]
-    pub(crate) fn write(&self, out: &mut impl Write, peak_rss: u64) -> std::io::Result<()> {
+    pub fn write(&self, out: &mut impl Write, peak_rss: u64) -> std::io::Result<()> {
         let _ = (self, out, peak_rss);
         Err(std::io::Error::other(
             crate::support::telemetry::UNAVAILABLE,

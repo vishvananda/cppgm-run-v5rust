@@ -18,13 +18,13 @@ struct Piece {
 }
 
 #[derive(Default)]
-pub(crate) struct StringSequence {
+pub struct StringSequence {
     source: Vec<u8>,
     pieces: Vec<Piece>,
     units: Vec<u8>,
 }
 
-pub(crate) struct StringValue {
+pub struct StringValue {
     pub ty: FundamentalType,
     pub elements: u32,
     pub initializer_bound: u64,
@@ -32,19 +32,26 @@ pub(crate) struct StringValue {
 }
 
 impl StringSequence {
+    #[inline]
     pub fn clear(&mut self) {
         self.source.clear();
         self.pieces.clear();
         self.units.clear();
     }
 
+    #[inline]
+    #[must_use]
     pub fn source(&self) -> &[u8] {
         &self.source[..target_length(self.source.len())]
     }
+    #[inline]
+    #[must_use]
     pub fn data(&self) -> &[u8] {
         &self.units[..target_length(self.units.len())]
     }
 
+    #[inline]
+    #[must_use]
     pub fn suffix(&self, range: Range<usize>) -> &[u8] {
         &self.source[range]
     }

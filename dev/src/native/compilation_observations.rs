@@ -7,17 +7,17 @@ use crate::lowir::Error;
 use std::io::Write;
 
 #[derive(Clone, Copy, Default)]
-pub(crate) struct ObservationOptions {
-    pub(crate) census: bool,
-    pub(crate) clocks: bool,
+pub struct ObservationOptions {
+    pub census: bool,
+    pub clocks: bool,
 }
 #[derive(Default)]
-pub(crate) struct Observations {
-    pub(crate) census: Vec<String>,
-    pub(crate) statistics: ObjectStatistics,
+pub struct Observations {
+    pub census: Vec<String>,
+    pub statistics: ObjectStatistics,
 }
 #[derive(Default)]
-pub(crate) struct ObjectStatistics {
+pub struct ObjectStatistics {
     backend: Statistics,
     pub(super) landings: crate::support::telemetry::Counter<usize>,
     pub(super) lsdas: crate::support::telemetry::Counter<usize>,
@@ -48,7 +48,7 @@ impl ObjectStatistics {
         Ok(())
     }
     #[cfg(feature = "telemetry")]
-    pub(crate) fn write(&self, object: &Object, out: &mut impl Write) -> std::io::Result<()> {
+    pub fn write(&self, object: &Object, out: &mut impl Write) -> std::io::Result<()> {
         let backend = &self.backend;
         write!(
             out,
@@ -73,7 +73,7 @@ impl ObjectStatistics {
     }
 
     #[cfg(feature = "telemetry")]
-    pub(crate) fn write_clocks(&self, out: &mut impl Write) -> std::io::Result<()> {
+    pub fn write_clocks(&self, out: &mut impl Write) -> std::io::Result<()> {
         write!(
             out,
             " select_ms={} encode_ms={}",

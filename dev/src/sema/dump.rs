@@ -76,7 +76,7 @@ impl Graph {
             tokens.begin, tokens.end
         )
     }
-    pub(crate) fn print(
+    pub fn print(
         &self,
         tree: &crate::syntax::ast::Tree,
         cursor: &Cursor<'_>,

@@ -18,7 +18,9 @@ pub(super) struct VirtualLayout {
 impl Graph {
     /// The base order is fixed when the plan is published. Placement changes
     /// only offsets, so this class-owned identity index needs no invalidation.
-    pub(crate) fn lower_virtual_base_offset(&self, class: EntityId, base: EntityId) -> Option<u64> {
+    #[inline]
+    #[must_use]
+    pub fn lower_virtual_base_offset(&self, class: EntityId, base: EntityId) -> Option<u64> {
         let layout = self.virtuals.storage_layouts.get(&class)?;
         Some(layout.bases[*layout.positions.get(&base)?].1)
     }

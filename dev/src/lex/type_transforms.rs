@@ -1,7 +1,7 @@
 // Translated from lex/gnu_builtins.h and gnu_builtins.cpp. See NOTICE.
 //! C++11 type-transform vocabulary shared by parsing, semantics and ABI views.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum TypeTransform {
+pub enum TypeTransform {
     UnderlyingType,
     AddLvalueReference,
     AddPointer,
@@ -44,13 +44,17 @@ impl TypeTransform {
         (Self::AddAtomic, "_Atomic"),
     ];
 
-    pub(crate) fn find(spelling: &[u8]) -> Option<Self> {
+    #[inline]
+    #[must_use]
+    pub fn find(spelling: &[u8]) -> Option<Self> {
         Self::SPELLINGS
             .iter()
             .find_map(|&(kind, name)| (name.as_bytes() == spelling).then_some(kind))
     }
 
-    pub(crate) fn spelling(self) -> &'static str {
+    #[inline]
+    #[must_use]
+    pub fn spelling(self) -> &'static str {
         Self::SPELLINGS[self as usize].1
     }
 }

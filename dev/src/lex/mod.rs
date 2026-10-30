@@ -1,17 +1,17 @@
 //! Demand-driven phase-7 conversion of typed preprocessing tokens.
-pub(crate) mod builtins;
+pub mod builtins;
 pub mod floating;
-pub(crate) mod gnu_keywords;
+pub mod gnu_keywords;
 pub mod identifiers;
-pub(crate) mod library_builtins;
+pub mod library_builtins;
 pub mod number;
 pub mod pp_lexer;
-pub(crate) mod strings;
-pub(crate) mod vector_lanes;
+pub mod strings;
+pub mod vector_lanes;
 pub use strings::TextError;
-pub(crate) mod predicates;
+pub mod predicates;
 pub mod text;
-pub(crate) mod type_transforms;
+pub mod type_transforms;
 pub mod vocabulary;
 
 use crate::support::source::{SourceBuffer, SourceError, SourceOffset};
@@ -140,16 +140,19 @@ impl<'a> PostTokenizer<PpLexer<'a>> {
     ///
     /// # Errors
     /// Returns the first source decoding error.
+    #[inline]
     pub fn new(source: &'a SourceBuffer, dialect: NumberDialect) -> Result<Self, SourceError> {
         Ok(Self::from_input(PpLexer::new(source)?, dialect))
     }
 }
 
 impl<I: PostTokenInput> PostTokenizer<I> {
-    pub(crate) fn input(&self) -> &I {
+    #[inline]
+    pub fn input(&self) -> &I {
         &self.input
     }
-    pub(crate) fn input_mut(&mut self) -> &mut I {
+    #[inline]
+    pub fn input_mut(&mut self) -> &mut I {
         &mut self.input
     }
     #[must_use]

@@ -93,7 +93,9 @@ const TRAITS: &[&[u8]] = &[
     b"__remove_volatile",
     b"__underlying_type",
 ];
-pub(crate) fn is_trait(name: &[u8]) -> bool {
+#[inline]
+#[must_use]
+pub fn is_trait(name: &[u8]) -> bool {
     // FindGnuTrait guards its vocabulary lookup, including the single-underscore
     // C type spellings that occur in the table but are not queried as traits.
     name.len() >= 6 && name.starts_with(b"__") && TRAITS.binary_search(&name).is_ok()
@@ -258,7 +260,8 @@ const PROVIDED: &[&[u8]] = &[
     b"__sync_xor_and_fetch",
     b"__type_pack_element",
 ];
-pub(crate) fn is_provided(name: &[u8]) -> bool {
+#[must_use]
+pub fn is_provided(name: &[u8]) -> bool {
     // Both frozen registry lookups require two leading underscores, even
     // though the trait vocabulary also lists C's _Atomic and _BitInt.
     if !name.starts_with(b"__") {

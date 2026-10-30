@@ -80,10 +80,12 @@ fn validate_options(program: &Program, source_locations: bool) -> Result<(), Err
     Ok(())
 }
 /// Audit the stored links/results that textual construction establishes while parsing.
-pub(crate) fn validate_constructed(program: &Program) -> Result<(), Error> {
+#[inline]
+pub fn validate_constructed(program: &Program) -> Result<(), Error> {
     validate_constructed_with_spellings(program, true)
 }
-pub(crate) fn validate_constructed_with_spellings(
+#[inline]
+pub fn validate_constructed_with_spellings(
     program: &Program,
     spellings: bool,
 ) -> Result<(), Error> {

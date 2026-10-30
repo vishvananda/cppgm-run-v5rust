@@ -188,7 +188,7 @@ impl super::graph::Graph {
         }
     }
 
-    pub(crate) fn lower_demand_function_nothrow(
+    pub fn lower_demand_function_nothrow(
         &mut self,
         tree: &mut ast::Tree,
         cursor: &mut crate::syntax::cursor::Cursor<'_>,

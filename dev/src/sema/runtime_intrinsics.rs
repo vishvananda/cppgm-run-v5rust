@@ -14,7 +14,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum RuntimeIntrinsic {
+pub enum RuntimeIntrinsic {
     AddressOf,
     ObjectSize { minimum: bool },
     Prefetch,

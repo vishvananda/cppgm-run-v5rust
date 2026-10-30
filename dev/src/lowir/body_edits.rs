@@ -112,7 +112,7 @@ fn rewrite_runtime(runtime: &mut RuntimeInstruction, map: &mut impl Remap) -> Re
 
 impl Body {
     /// Remove unread parameters before ordinary compaction renames temporaries.
-    pub(crate) fn retain_parameters(&mut self, removed: &[bool]) -> Result<(), Error> {
+    pub fn retain_parameters(&mut self, removed: &[bool]) -> Result<(), Error> {
         if removed.len() != self.parameter_count {
             return Err(Error::Limit);
         }
@@ -152,14 +152,11 @@ impl Body {
         }
         Ok(())
     }
-    pub(crate) fn update_instruction(
-        &mut self,
-        id: super::InstId,
-        instruction: super::Instruction,
-    ) {
+    #[inline]
+    pub fn update_instruction(&mut self, id: super::InstId, instruction: super::Instruction) {
         self.instructions[id.index()] = instruction;
     }
-    pub(crate) fn retype_load(&mut self, id: super::InstId, ty: Type) -> Result<(), Error> {
+    pub fn retype_load(&mut self, id: super::InstId, ty: Type) -> Result<(), Error> {
         let instruction = &mut self.instructions[id.index()];
         let InstructionKind::Load(_, from, _) = &mut instruction.kind else {
             return Err(Error::Limit);
@@ -170,7 +167,7 @@ impl Body {
         Ok(())
     }
     /// Copy within one function, retaining locations/facts and owning fresh call operands.
-    pub(crate) fn copy_instruction(
+    pub fn copy_instruction(
         &mut self,
         target: BlockId,
         source: super::InstId,
@@ -191,7 +188,7 @@ impl Body {
         }
         self.append(target, instruction)
     }
-    pub(crate) fn rewrite_values(
+    pub fn rewrite_values(
         &mut self,
         id: super::InstId,
         rewrite_value: impl FnMut(Value) -> Result<Value, Error>,
@@ -202,12 +199,13 @@ impl Body {
         };
         rewrite(&mut self.instructions[id.index()].kind, &mut map)
     }
-    pub(crate) fn replace_kind(&mut self, id: super::InstId, kind: InstructionKind) {
+    #[inline]
+    pub fn replace_kind(&mut self, id: super::InstId, kind: InstructionKind) {
         let instruction = &mut self.instructions[id.index()];
         instruction.kind = kind;
         instruction.switch_type = None;
     }
-    pub(crate) fn replace_links(
+    pub fn replace_links(
         &mut self,
         block: BlockId,
         instructions: Vec<super::InstId>,
@@ -221,7 +219,7 @@ impl Body {
         self.blocks[block.index()].instructions = instructions;
         Ok(())
     }
-    pub(crate) fn retain_layout(&mut self, dead: &[bool]) -> Result<(), Error> {
+    pub fn retain_layout(&mut self, dead: &[bool]) -> Result<(), Error> {
         if dead.len() != self.blocks.len() {
             return Err(Error::Limit);
         }
@@ -234,7 +232,7 @@ impl Body {
         Ok(())
     }
     /// Absorb a successor after omitting its leading phis and our final jump.
-    pub(crate) fn join_blocks(&mut self, a: BlockId, b: BlockId, phis: usize) -> Result<(), Error> {
+    pub fn join_blocks(&mut self, a: BlockId, b: BlockId, phis: usize) -> Result<(), Error> {
         if a == b {
             return Err(Error::Limit);
         }
@@ -253,7 +251,7 @@ impl Body {
         a.instructions.append(&mut b.instructions);
         Ok(())
     }
-    pub(crate) fn remove_phi_predecessor(&mut self, block: BlockId, pred: BlockId) {
+    pub fn remove_phi_predecessor(&mut self, block: BlockId, pred: BlockId) {
         for &id in &self.blocks[block.index()].instructions {
             let InstructionKind::Phi(_, pairs) = &mut self.instructions[id.index()].kind else {
                 break;
@@ -263,7 +261,7 @@ impl Body {
             }
         }
     }
-    pub(crate) fn rename_phi_predecessor(&mut self, block: BlockId, from: BlockId, to: BlockId) {
+    pub fn rename_phi_predecessor(&mut self, block: BlockId, from: BlockId, to: BlockId) {
         for &id in &self.blocks[block.index()].instructions {
             let InstructionKind::Phi(_, pairs) = &mut self.instructions[id.index()].kind else {
                 break;
@@ -275,7 +273,7 @@ impl Body {
             }
         }
     }
-    pub(crate) fn append_phi_predecessor(
+    pub fn append_phi_predecessor(
         &mut self,
         id: super::InstId,
         block: BlockId,
@@ -290,7 +288,7 @@ impl Body {
         pairs.push((block, value));
         Ok(())
     }
-    pub(crate) fn redirect_successors(&mut self, id: super::InstId, from: BlockId, to: BlockId) {
+    pub fn redirect_successors(&mut self, id: super::InstId, from: BlockId, to: BlockId) {
         let redirect = |block: &mut BlockId| {
             if *block == from {
                 *block = to;
@@ -311,12 +309,13 @@ impl Body {
             _ => (),
         }
     }
-    pub(crate) fn clear_speculation_facts(&mut self, id: super::InstId) {
+    #[inline]
+    pub fn clear_speculation_facts(&mut self, id: super::InstId) {
         if let InstructionKind::Binary(_, facts, ..) = &mut self.instructions[id.index()].kind {
             facts.0 &= !0x30;
         }
     }
-    pub(crate) fn record_switch_types(&mut self) {
+    pub fn record_switch_types(&mut self) {
         for &block in &self.layout {
             let Some(&last) = self.blocks[block.index()].instructions.last() else {
                 continue;
@@ -331,10 +330,7 @@ impl Body {
     }
     /// Substitute one canonical literal per known temporary, in `TempId` order.
     /// A call's callee must keep its callable identity even when known constant.
-    pub(crate) fn substitute_constants(
-        &mut self,
-        constants: &[Option<Constant>],
-    ) -> Result<u64, Error> {
+    pub fn substitute_constants(&mut self, constants: &[Option<Constant>]) -> Result<u64, Error> {
         if constants.len() != self.temps.len() {
             return Err(Error::Limit);
         }
@@ -373,7 +369,7 @@ impl Body {
         }
         Ok(())
     }
-    pub(crate) fn anonymous_parameter(&mut self, index: usize) -> Result<(), Error> {
+    pub fn anonymous_parameter(&mut self, index: usize) -> Result<(), Error> {
         if index >= self.parameter_count {
             return Err(Error::Limit);
         }
@@ -383,13 +379,14 @@ impl Body {
         temp.generated = true;
         Ok(())
     }
-    pub(crate) fn generated_block_origin(&mut self, block: BlockId, stem: &'static str) {
+    #[inline]
+    pub fn generated_block_origin(&mut self, block: BlockId, stem: &'static str) {
         let name = self.blocks[block.index()].name;
         self.block_index.remove(&name);
         self.blocks[block.index()].name = NameId(0);
         self.blocks[block.index()].origin = BlockName::Generated(stem);
     }
-    pub(crate) fn explicit_value_names(&self) -> impl Iterator<Item = NameId> + '_ {
+    pub fn explicit_value_names(&self) -> impl Iterator<Item = NameId> + '_ {
         self.temps
             .iter()
             .filter(|temp| !temp.generated && temp.name != NameId(0))
@@ -402,7 +399,7 @@ impl Body {
                 }
             }))
     }
-    pub(crate) fn count_uses(&self) -> Result<Vec<u32>, Error> {
+    pub fn count_uses(&self) -> Result<Vec<u32>, Error> {
         let mut counts = vec![0_u32; self.temps.len()];
         let mut overflow = false;
         for &block in &self.layout {
@@ -424,14 +421,14 @@ impl Body {
         }
         Ok(counts)
     }
-    pub(crate) fn recount_uses(&mut self) -> Result<(), Error> {
+    pub fn recount_uses(&mut self) -> Result<(), Error> {
         let counts = self.count_uses()?;
         for (temp, count) in self.temps.iter_mut().zip(counts) {
             temp.uses = count;
         }
         Ok(())
     }
-    pub(crate) fn retain_instructions(&mut self, live: &[bool]) -> Result<bool, Error> {
+    pub fn retain_instructions(&mut self, live: &[bool]) -> Result<bool, Error> {
         if live.len() != self.instructions.len() {
             return Err(Error::Limit);
         }
@@ -446,7 +443,8 @@ impl Body {
         Ok(changed)
     }
     /// Dense storage is built separately; a bad linked reference leaves this body intact.
-    pub(crate) fn compact(&mut self) -> Result<(), Error> {
+    #[inline]
+    pub fn compact(&mut self) -> Result<(), Error> {
         let out = Compactor::run(self)?;
         *self = out;
         Ok(())
@@ -701,7 +699,7 @@ impl Body {
 
 /// A function-local edit view over instruction IDs. Records and operands stay
 /// in Body; commit materializes block order once after constant-time link edits.
-pub(crate) struct LinkEditor {
+pub struct LinkEditor {
     next: Vec<Option<super::InstId>>,
     previous: Vec<Option<super::InstId>>,
     block_of: Vec<Option<BlockId>>,
@@ -709,7 +707,7 @@ pub(crate) struct LinkEditor {
     last: Vec<Option<super::InstId>>,
 }
 impl LinkEditor {
-    pub(crate) fn new(body: &Body) -> Result<Self, Error> {
+    pub fn new(body: &Body) -> Result<Self, Error> {
         let mut out = Self {
             next: vec![None; body.instructions.len()],
             previous: vec![None; body.instructions.len()],
@@ -726,19 +724,27 @@ impl LinkEditor {
         }
         Ok(out)
     }
-    pub(crate) fn first(&self, block: BlockId) -> Option<super::InstId> {
+    #[inline]
+    #[must_use]
+    pub fn first(&self, block: BlockId) -> Option<super::InstId> {
         self.first[block.index()]
     }
-    pub(crate) fn last(&self, block: BlockId) -> Option<super::InstId> {
+    #[inline]
+    #[must_use]
+    pub fn last(&self, block: BlockId) -> Option<super::InstId> {
         self.last[block.index()]
     }
-    pub(crate) fn next(&self, id: super::InstId) -> Option<super::InstId> {
+    #[inline]
+    #[must_use]
+    pub fn next(&self, id: super::InstId) -> Option<super::InstId> {
         self.next[id.index()]
     }
-    pub(crate) fn previous(&self, id: super::InstId) -> Option<super::InstId> {
+    #[inline]
+    #[must_use]
+    pub fn previous(&self, id: super::InstId) -> Option<super::InstId> {
         self.previous[id.index()]
     }
-    pub(crate) fn unlink(&mut self, block: BlockId, id: super::InstId) -> Result<(), Error> {
+    pub fn unlink(&mut self, block: BlockId, id: super::InstId) -> Result<(), Error> {
         if self.block_of.get(id.index()) != Some(&Some(block)) {
             return Err(Error::Limit);
         }
@@ -759,7 +765,7 @@ impl LinkEditor {
         self.block_of[id.index()] = None;
         Ok(())
     }
-    pub(crate) fn insert_after(
+    pub fn insert_after(
         &mut self,
         block: BlockId,
         prev: Option<super::InstId>,
@@ -797,7 +803,9 @@ impl LinkEditor {
         }
         Ok(())
     }
-    pub(crate) fn ids(&self, block: BlockId) -> Vec<super::InstId> {
+    #[must_use]
+    #[inline]
+    pub fn ids(&self, block: BlockId) -> Vec<super::InstId> {
         let mut ids = Vec::new();
         let mut next = self.first(block);
         while let Some(id) = next {
@@ -806,13 +814,15 @@ impl LinkEditor {
         }
         ids
     }
-    pub(crate) fn write_links(&self, body: &mut Body) -> Result<(), Error> {
+    #[inline]
+    pub fn write_links(&self, body: &mut Body) -> Result<(), Error> {
         for block in body.layout.clone() {
             body.replace_links(block, self.ids(block))?;
         }
         Ok(())
     }
-    pub(crate) fn commit(self, body: &mut Body) -> Result<(), Error> {
+    #[inline]
+    pub fn commit(self, body: &mut Body) -> Result<(), Error> {
         self.write_links(body)
     }
 }

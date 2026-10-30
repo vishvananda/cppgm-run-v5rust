@@ -4,7 +4,7 @@ use crate::lowir::vocabulary::Binding;
 impl Program {
     /// Specialization changes the definition's signature alone; declarations
     /// and other definitions may still share the old immutable signature.
-    pub(crate) fn remove_function_parameters(
+    pub fn remove_function_parameters(
         &mut self,
         symbol: SymbolId,
         removed: &[bool],
@@ -46,11 +46,7 @@ impl Program {
         self.functions[id.0 as usize].signature = signature;
         Ok(())
     }
-    pub(crate) fn inline_copy(
-        &mut self,
-        source: SymbolId,
-        name: NameId,
-    ) -> Result<SymbolId, Error> {
+    pub fn inline_copy(&mut self, source: SymbolId, name: NameId) -> Result<SymbolId, Error> {
         let symbol = self.symbol(source);
         let (file, line) = (symbol.source, symbol.line);
         let function = self.function(symbol).ok_or(Error::Limit)?;

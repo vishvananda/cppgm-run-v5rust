@@ -1,11 +1,16 @@
 //! Frozen C++ character classes (C++11 Annex E, not Unicode categories).
-pub(crate) fn digit(c: u32) -> bool {
+#[inline]
+#[must_use]
+pub fn digit(c: u32) -> bool {
     (0x30..=0x39).contains(&c)
 }
-pub(crate) fn octal(c: u32) -> bool {
+#[inline]
+#[must_use]
+pub fn octal(c: u32) -> bool {
     (0x30..=0x37).contains(&c)
 }
-pub(crate) fn hex_value(c: u32) -> Option<u32> {
+#[must_use]
+pub fn hex_value(c: u32) -> Option<u32> {
     match c {
         0x30..=0x39 => Some(c - 0x30),
         0x61..=0x66 => Some(c - 0x61 + 10),
@@ -13,16 +18,23 @@ pub(crate) fn hex_value(c: u32) -> Option<u32> {
         _ => None,
     }
 }
-pub(crate) fn horizontal(c: u32) -> bool {
+#[inline]
+#[must_use]
+pub fn horizontal(c: u32) -> bool {
     matches!(c, 0x20 | 0x09 | 0x0b | 0x0c | 0x0d)
 }
-pub(crate) fn control(c: u32) -> bool {
+#[inline]
+#[must_use]
+pub fn control(c: u32) -> bool {
     c <= 0x1f || (0x7f..=0x9f).contains(&c)
 }
-pub(crate) fn basic(c: u32) -> bool {
+#[inline]
+#[must_use]
+pub fn basic(c: u32) -> bool {
     matches!(c, 0x09..=0x0c) || ((0x20..=0x7e).contains(&c) && !matches!(c, 0x24 | 0x40 | 0x60))
 }
-pub(crate) fn identifier_start(c: u32) -> bool {
+#[must_use]
+pub fn identifier_start(c: u32) -> bool {
     identifier_continue(c)
         && !digit(c)
         && !in_ranges(
@@ -35,7 +47,9 @@ pub(crate) fn identifier_start(c: u32) -> bool {
             ],
         )
 }
-pub(crate) fn identifier_continue(c: u32) -> bool {
+#[inline]
+#[must_use]
+pub fn identifier_continue(c: u32) -> bool {
     if c < 0x80 {
         return digit(c) || (0x61..=0x7a).contains(&c) || (0x41..=0x5a).contains(&c) || c == 0x5f;
     }

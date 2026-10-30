@@ -108,7 +108,7 @@ pub(super) struct Group {
     pub(super) signature: SymbolId,
     pub(super) sections: Vec<SectionId>,
 }
-pub(crate) struct Object {
+pub struct Object {
     pub(super) path: Vec<u8>,
     names: Vec<u8>,
     sections: Vec<Section>,
@@ -229,7 +229,8 @@ impl Object {
         self.sections.len()
     }
     #[cfg(feature = "telemetry")]
-    pub(crate) fn section_bytes(&self) -> usize {
+    #[must_use]
+    pub fn section_bytes(&self) -> usize {
         self.sections
             .iter()
             .map(|section| section.bytes.len())

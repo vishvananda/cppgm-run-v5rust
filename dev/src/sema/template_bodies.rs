@@ -120,7 +120,9 @@ impl Bodies {
     }
 }
 impl Graph {
-    pub(crate) fn lower_function_instantiated(&self, entity: EntityId) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn lower_function_instantiated(&self, entity: EntityId) -> bool {
         !self.function_templates.specializations.contains(entity)
             && (self.function_templates.primary(entity).is_some()
                 || self.function_templates.bodies.source(entity).is_some())
@@ -128,7 +130,7 @@ impl Graph {
 
     /// The selected Lower entry needs definition availability before its call
     /// exception query. Borrowing does not rerun the unit-tail driver.
-    pub(crate) fn lower_demand_definition(
+    pub fn lower_demand_definition(
         &mut self,
         tree: &mut ast::Tree,
         cursor: &mut Cursor<'_>,
@@ -187,7 +189,9 @@ impl Graph {
         }
     }
     /// Definition availability at the original lowering demand boundary.
-    pub(crate) fn lower_definition_at_emission(&self, entity: EntityId) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn lower_definition_at_emission(&self, entity: EntityId) -> bool {
         let bodies = &self.function_templates.bodies;
         (bodies.synthesized(entity) || bodies.emission_definitions.contains(&entity))
             && !bodies.semantic_uses.contains(&entity)
@@ -236,8 +240,8 @@ fn body_parameter_source(
 /// Semantic analysis exclusively borrows the unit syntax: defaults append at
 /// selected calls, while this driver drains unit-tail body demands. Both paths
 /// read ordinary slab IDs directly, with no pattern redirection or overlay map.
-#[cfg(test)]
-pub(crate) fn analyze_unit(
+#[cfg(any(test, feature = "test-support"))]
+pub fn analyze_unit(
     tree: &mut ast::Tree,
     cursor: &mut Cursor<'_>,
     declarations: List<ast::DeclId>,
@@ -268,14 +272,14 @@ pub(crate) fn analyze_unit(
 
 /// Invocation facts survive unit-tail demands through the semantic graph.
 #[derive(Clone, Copy)]
-pub(crate) struct AnalysisOptions {
+pub struct AnalysisOptions {
     pub mode: super::analyzer::AnalysisMode,
     pub hosted: bool,
     pub cxx14: bool,
     pub exceptions: bool,
 }
 
-pub(crate) fn analyze_unit_with_mode(
+pub fn analyze_unit_with_mode(
     tree: &mut ast::Tree,
     cursor: &mut Cursor<'_>,
     declarations: List<ast::DeclId>,

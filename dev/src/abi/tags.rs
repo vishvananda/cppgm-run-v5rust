@@ -38,7 +38,8 @@ fn extend_small(set: &mut Vec<NodeId>, tags: &[NodeId], limit: usize) {
 }
 
 impl Graph {
-    pub(crate) fn note_implicit_tags(&mut self, derived: NodeId, underived: NodeId) {
+    #[inline]
+    pub fn note_implicit_tags(&mut self, derived: NodeId, underived: NodeId) {
         self.tags.underived.entry(derived).or_insert(underived);
     }
 
@@ -48,7 +49,7 @@ impl Graph {
 
     /// Collect every tag, except that a local scope contributes only tags
     /// actually written in its enclosing function's underived encoding.
-    pub(crate) fn collect_tags(&mut self, root: NodeId) -> Vec<NodeId> {
+    pub fn collect_tags(&mut self, root: NodeId) -> Vec<NodeId> {
         const LIMIT: usize = 8;
         self.tags.sets.resize(self.len(), [Set::Unknown; 2]);
         let root = self.tag_node(root);

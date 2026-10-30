@@ -3,9 +3,11 @@ use super::ParseError;
 use std::marker::PhantomData;
 
 #[derive(Debug)]
-pub(crate) struct Id<T>(u32, PhantomData<fn() -> T>);
+pub struct Id<T>(u32, PhantomData<fn() -> T>);
 impl<T> Id<T> {
-    pub(crate) fn index(self) -> usize {
+    #[inline]
+    #[must_use]
+    pub fn index(self) -> usize {
         self.0 as usize
     }
 }
@@ -27,7 +29,7 @@ impl<T> Clone for Id<T> {
     }
 }
 #[derive(Debug)]
-pub(crate) struct List<T> {
+pub struct List<T> {
     begin: u32,
     end: u32,
     marker: PhantomData<fn() -> T>,
@@ -60,7 +62,7 @@ impl<T> Default for List<T> {
 }
 impl<T> List<T> {
     /// Borrow a checked range of an existing immutable slab list.
-    pub(crate) fn range(self, range: std::ops::Range<usize>) -> Result<Self, ParseError> {
+    pub fn range(self, range: std::ops::Range<usize>) -> Result<Self, ParseError> {
         let count = usize::try_from(self.end - self.begin)
             .map_err(|_| ParseError::Limit("syntax list range"))?;
         if range.start > range.end || range.end > count {
@@ -84,12 +86,14 @@ impl<T> List<T> {
             marker: PhantomData,
         })
     }
-    pub(crate) fn is_empty(self) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn is_empty(self) -> bool {
         self.begin == self.end
     }
 }
 
-pub(crate) struct Store<T> {
+pub struct Store<T> {
     data: Vec<T>,
 }
 impl<T> Default for Store<T> {
@@ -99,34 +103,43 @@ impl<T> Default for Store<T> {
 }
 impl<T> Store<T> {
     #[cfg(feature = "telemetry")]
-    pub(crate) fn reserved_bytes(&self) -> usize {
+    #[inline]
+    #[must_use]
+    pub fn reserved_bytes(&self) -> usize {
         self.data
             .capacity()
             .saturating_mul(std::mem::size_of::<T>())
     }
 
-    pub(crate) fn add(&mut self, value: T) -> Result<Id<T>, ParseError> {
+    #[inline]
+    pub fn add(&mut self, value: T) -> Result<Id<T>, ParseError> {
         let index =
             u32::try_from(self.data.len()).map_err(|_| ParseError::Limit("syntax store limit"))?;
         self.data.push(value);
         Ok(Id(index, PhantomData))
     }
-    pub(crate) fn get(&self, id: Id<T>) -> &T {
+    #[inline]
+    #[must_use]
+    pub fn get(&self, id: Id<T>) -> &T {
         &self.data[id.0 as usize]
     }
-    pub(crate) fn replace(&mut self, id: Id<T>, value: T) {
+    #[inline]
+    pub fn replace(&mut self, id: Id<T>, value: T) {
         self.data[id.0 as usize] = value;
     }
-    pub(crate) fn mark(&self) -> usize {
+    #[inline]
+    #[must_use]
+    pub fn mark(&self) -> usize {
         self.data.len()
     }
-    pub(crate) fn rewind(&mut self, mark: usize) {
+    #[inline]
+    pub fn rewind(&mut self, mark: usize) {
         self.data.truncate(mark);
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct ListMark(usize, usize);
-pub(crate) struct Lists<T> {
+pub struct ListMark(usize, usize);
+pub struct Lists<T> {
     data: Vec<T>,
     scratch: Vec<T>,
 }
@@ -140,20 +153,25 @@ impl<T> Default for Lists<T> {
 }
 impl<T: Copy> Lists<T> {
     #[cfg(feature = "telemetry")]
-    pub(crate) fn reserved_bytes(&self) -> usize {
+    #[inline]
+    #[must_use]
+    pub fn reserved_bytes(&self) -> usize {
         self.data
             .capacity()
             .saturating_add(self.scratch.capacity())
             .saturating_mul(std::mem::size_of::<T>())
     }
 
-    pub(crate) fn begin(&self) -> usize {
+    #[inline]
+    #[must_use]
+    pub fn begin(&self) -> usize {
         self.scratch.len()
     }
-    pub(crate) fn push(&mut self, value: T) {
+    #[inline]
+    pub fn push(&mut self, value: T) {
         self.scratch.push(value);
     }
-    pub(crate) fn finish(&mut self, start: usize) -> Result<List<T>, ParseError> {
+    pub fn finish(&mut self, start: usize) -> Result<List<T>, ParseError> {
         let begin =
             u32::try_from(self.data.len()).map_err(|_| ParseError::Limit("syntax list limit"))?;
         let count = u32::try_from(self.scratch.len() - start)
@@ -169,33 +187,40 @@ impl<T: Copy> Lists<T> {
             marker: PhantomData,
         })
     }
-    pub(crate) fn extend(&mut self, list: List<T>) {
+    #[inline]
+    pub fn extend(&mut self, list: List<T>) {
         self.scratch
             .extend_from_slice(&self.data[list.begin as usize..list.end as usize]);
     }
-    pub(crate) fn get(&self, list: List<T>) -> &[T] {
+    #[inline]
+    #[must_use]
+    pub fn get(&self, list: List<T>) -> &[T] {
         &self.data[list.begin as usize..list.end as usize]
     }
-    pub(crate) fn replace(&mut self, list: List<T>, index: usize, value: T) {
+    #[inline]
+    pub fn replace(&mut self, list: List<T>, index: usize, value: T) {
         self.data[list.begin as usize..list.end as usize][index] = value;
     }
-    pub(crate) fn mark(&self) -> ListMark {
+    #[inline]
+    #[must_use]
+    pub fn mark(&self) -> ListMark {
         ListMark(self.data.len(), self.scratch.len())
     }
-    pub(crate) fn rewind(&mut self, mark: ListMark) {
+    #[inline]
+    pub fn rewind(&mut self, mark: ListMark) {
         self.data.truncate(mark.0);
         self.scratch.truncate(mark.1);
     }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct Text {
+pub struct Text {
     begin: u32,
     end: u32,
     block: Option<std::num::NonZeroU32>,
 }
 #[derive(Default)]
-pub(crate) struct TextStore {
+pub struct TextStore {
     pub(super) literals: Store<super::ast::LiteralData>,
     bytes: Vec<u8>,
     strings: Vec<Box<[u8]>>,
@@ -203,7 +228,8 @@ pub(crate) struct TextStore {
     string_bytes: usize,
 }
 impl TextStore {
-    pub(crate) fn literal(
+    #[inline]
+    pub fn literal(
         &mut self,
         data: super::ast::LiteralData,
     ) -> Result<super::ast::Literal, ParseError> {
@@ -214,7 +240,7 @@ impl TextStore {
     /// spelling arena retains the frozen 16-KiB/8-MiB block growth policy.
     /// A boxed-slice handle is the 16-byte block record; scalar/data copies
     /// live in the separate typed syntax backing store.
-    pub(crate) fn copy_string(&mut self, bytes: &[u8]) -> Result<Text, ParseError> {
+    pub fn copy_string(&mut self, bytes: &[u8]) -> Result<Text, ParseError> {
         const HEADER: usize = std::mem::size_of::<Box<[u8]>>();
         let count = bytes
             .len()
@@ -262,11 +288,14 @@ impl TextStore {
         })
     }
     #[cfg(feature = "telemetry")]
-    pub(crate) fn spelling_bytes(&self) -> usize {
+    #[inline]
+    #[must_use]
+    pub fn spelling_bytes(&self) -> usize {
         self.string_bytes
     }
     #[cfg(feature = "telemetry")]
-    pub(crate) fn reserved_bytes(&self) -> usize {
+    #[must_use]
+    pub fn reserved_bytes(&self) -> usize {
         self.literals
             .reserved_bytes()
             .saturating_add(self.bytes.capacity())
@@ -277,7 +306,7 @@ impl TextStore {
             )
     }
 
-    pub(crate) fn add(&mut self, bytes: &[u8]) -> Result<Text, ParseError> {
+    pub fn add(&mut self, bytes: &[u8]) -> Result<Text, ParseError> {
         let begin = u32::try_from(self.bytes.len())
             .map_err(|_| ParseError::Limit("syntax spelling limit"))?;
         let count =
@@ -292,7 +321,8 @@ impl TextStore {
             block: None,
         })
     }
-    pub(crate) fn unquote(text: Text) -> Text {
+    #[must_use]
+    pub fn unquote(text: Text) -> Text {
         Text {
             block: text.block,
             begin: text.begin.saturating_add(1).min(text.end),
@@ -302,7 +332,9 @@ impl TextStore {
                 .max(text.begin.saturating_add(1).min(text.end)),
         }
     }
-    pub(crate) fn get(&self, text: Text) -> &[u8] {
+    #[inline]
+    #[must_use]
+    pub fn get(&self, text: Text) -> &[u8] {
         let bytes = text.block.map_or(self.bytes.as_slice(), |block| {
             self.strings[(block.get() - 1) as usize].as_ref()
         });

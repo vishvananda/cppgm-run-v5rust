@@ -16,7 +16,7 @@ pub(super) enum Wave {
 #[non_exhaustive]
 pub struct Limits {
     pub(crate) caller_budget: u32,
-    pub(crate) once_cap: u32,
+    pub once_cap: u32,
     pub(crate) once_caller_budget: u32,
     pub(crate) hint_late_cap: u32,
 }

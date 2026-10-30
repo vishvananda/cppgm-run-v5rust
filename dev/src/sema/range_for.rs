@@ -45,7 +45,7 @@ struct RangeContext {
     dependent: bool,
 }
 #[derive(Clone, Copy)]
-pub(crate) struct RangeForFacts {
+pub struct RangeForFacts {
     pub range: Option<ast::InitDeclarator>,
     pub begin: ast::InitDeclarator,
     pub end: Option<ast::InitDeclarator>,
@@ -62,14 +62,16 @@ impl Graph {
     pub(super) fn known_range_for(&self, id: ast::StmtId) -> Option<RangeForFacts> {
         self.range_loops.records.get(&id).copied()
     }
-    pub(crate) fn lower_range_for(&self, id: ast::StmtId) -> Result<RangeForFacts, Error> {
+    pub fn lower_range_for(&self, id: ast::StmtId) -> Result<RangeForFacts, Error> {
         self.range_loops
             .records
             .get(&id)
             .copied()
             .ok_or(Error::Invariant("range-for without equivalent"))
     }
-    pub(crate) fn lower_range_object(&self, entity: EntityId) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn lower_range_object(&self, entity: EntityId) -> bool {
         self.range_loops.objects.contains(&entity)
     }
 }

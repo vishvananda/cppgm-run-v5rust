@@ -32,7 +32,9 @@ impl StackBudget {
             bytes: usize::try_from(bytes).map_err(|_| "host stack budget exceeds usize")?,
         })
     }
-    pub(crate) fn exceeded(self, base: usize, here: usize) -> bool {
+    #[must_use]
+    #[inline]
+    pub fn exceeded(self, base: usize, here: usize) -> bool {
         base.abs_diff(here) > self.bytes
     }
 }

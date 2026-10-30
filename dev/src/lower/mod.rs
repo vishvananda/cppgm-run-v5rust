@@ -72,7 +72,7 @@ mod object_arrays;
 mod object_classes;
 mod object_storage;
 mod observations;
-pub(crate) use observations::Statistics;
+pub use observations::Statistics;
 mod operator_calls;
 mod overflow_intrinsics;
 mod pointers;
@@ -104,7 +104,7 @@ use crate::{
     syntax::{ast, cursor::Cursor, storage::List},
 };
 #[derive(Debug)]
-pub(crate) enum Error {
+pub enum Error {
     Semantic(sema::Error),
     Ir(crate::lowir::Error),
     Abi(crate::abi::Error),
@@ -126,7 +126,7 @@ impl From<crate::abi::Error> for Error {
     }
 }
 #[derive(Default)]
-pub(crate) struct Output {
+pub struct Output {
     pub program: Program,
     pub definitions: definition_order::Definitions,
     pub initializer: Option<crate::lowir::model::SymbolId>,
@@ -137,7 +137,7 @@ pub(crate) struct Output {
     finalizers: Vec<shutdown::Finalizer>,
 }
 impl Output {
-    pub(crate) fn set_debug_locations(&mut self, enabled: bool) {
+    pub fn set_debug_locations(&mut self, enabled: bool) {
         self.symbols.debug_locations = if enabled {
             symbols::DebugLocations::Enabled
         } else {
@@ -145,26 +145,26 @@ impl Output {
         };
     }
 
-    pub(crate) fn statistics(&self, semantic: sema::Work) -> Statistics {
+    pub fn statistics(&self, semantic: sema::Work) -> Statistics {
         self.symbols.work.snapshot(&self.program, semantic)
     }
-    pub(crate) fn retain_definitions(&mut self) -> Result<(), Error> {
+    pub fn retain_definitions(&mut self) -> Result<(), Error> {
         self.program.retain_definitions()?;
         self.definitions.retain();
         Ok(())
     }
-    pub(crate) fn retain_object_definitions(&mut self, host_objects: bool) -> Result<(), Error> {
+    pub fn retain_object_definitions(&mut self, host_objects: bool) -> Result<(), Error> {
         self.retain_definitions()?;
         self.set_object_mode(host_objects);
         Ok(())
     }
-    pub(crate) fn set_object_mode(&mut self, host_objects: bool) {
+    pub fn set_object_mode(&mut self, host_objects: bool) {
         self.program.object_facts = true;
         self.symbols.object_mode = true;
         self.symbols.host_objects = host_objects;
     }
 
-    pub(crate) fn finish_initialization(&mut self) -> Result<(), Error> {
+    pub fn finish_initialization(&mut self) -> Result<(), Error> {
         if let Some(symbol) = self.initializer {
             self.startup.finish(&mut self.program, symbol)?;
         }
@@ -178,17 +178,17 @@ impl Output {
             .finish_retained(&mut self.program, [self.initializer, self.finalizer]);
         Ok(())
     }
-    pub(crate) fn finish_entry_aliases(&mut self) {
+    pub fn finish_entry_aliases(&mut self) {
         self.symbols.finish_entry_aliases(&mut self.program);
     }
-    pub(crate) fn finish_program(mut self) -> Result<Program, Error> {
+    pub fn finish_program(mut self) -> Result<Program, Error> {
         self.finish_initialization()?;
         self.finish_entry_aliases();
         // Only LowIR crosses the completed lowering boundary. Its demand,
         // naming and definition-order caches have had their last consumer.
         Ok(self.program)
     }
-    pub(crate) fn finish_program_observed(
+    pub fn finish_program_observed(
         mut self,
         work: sema::Work,
     ) -> Result<(Program, Statistics), Error> {
@@ -244,7 +244,7 @@ fn finish_unit(
         .publish_finalizers(finalizers);
     Ok(cx.symbols.initialization)
 }
-pub(crate) fn lower_unit(
+pub fn lower_unit(
     output: &mut Output,
     graph: &mut Graph,
     tree: &mut ast::Tree,
@@ -649,25 +649,25 @@ fn emit_pending(
     Ok(())
 }
 
-#[cfg(test)]
-pub(crate) use reference_lifetimes::tests::assert_extended_ownership;
+#[cfg(any(test, feature = "test-support"))]
+pub use reference_lifetimes::tests::assert_extended_ownership;
 
-#[cfg(test)]
-pub(crate) use temporary_scan::tests::assert_constructor_parameter_temporaries;
+#[cfg(any(test, feature = "test-support"))]
+pub use temporary_scan::tests::assert_constructor_parameter_temporaries;
 
-#[cfg(test)]
-pub(crate) use symbols::{
+#[cfg(any(test, feature = "test-support"))]
+pub use symbols::{
     assert_covariant_routes, assert_definition_destructor_targets, assert_hierarchy_flags,
     assert_table_demand,
 };
 
-#[cfg(test)]
-pub(crate) use symbols::assert_base_routes;
+#[cfg(any(test, feature = "test-support"))]
+pub use symbols::assert_base_routes;
 
-#[cfg(test)]
-pub(crate) use symbols::assert_construction_context;
+#[cfg(any(test, feature = "test-support"))]
+pub use symbols::assert_construction_context;
 
-#[cfg(test)]
-pub(crate) use symbols::assert_label_name_demand;
+#[cfg(any(test, feature = "test-support"))]
+pub use symbols::assert_label_name_demand;
 
 mod vectors;

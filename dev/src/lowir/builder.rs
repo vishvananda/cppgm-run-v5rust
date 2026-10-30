@@ -9,7 +9,7 @@ use super::{
     vocabulary::Type,
 };
 
-pub(crate) struct FunctionBuilder<'a> {
+pub struct FunctionBuilder<'a> {
     program: &'a mut Program,
     symbol: SymbolId,
     function: Function,
@@ -20,19 +20,21 @@ pub(crate) struct FunctionBuilder<'a> {
     current_location: Option<super::model::DebugLocation>,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Position {
+pub struct Position {
     block: BlockId,
     after: Option<super::model::InstId>,
 }
 impl Position {
-    pub(crate) fn shares_block(self, other: Self) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn shares_block(self, other: Self) -> bool {
         self.block == other.block
     }
 }
 
 /// A suspended body owns its construction state without borrowing the program.
 /// This permits declaration-ordered startup work between ordinary definitions.
-pub(crate) struct SuspendedFunction {
+pub struct SuspendedFunction {
     symbol: SymbolId,
     function: Function,
     body: Body,
@@ -43,7 +45,7 @@ pub(crate) struct SuspendedFunction {
 }
 
 impl<'a> FunctionBuilder<'a> {
-    pub(crate) fn resume(program: &'a mut Program, saved: SuspendedFunction) -> Self {
+    pub fn resume(program: &'a mut Program, saved: SuspendedFunction) -> Self {
         Self {
             program,
             symbol: saved.symbol,
@@ -55,7 +57,8 @@ impl<'a> FunctionBuilder<'a> {
             current_location: saved.current_location,
         }
     }
-    pub(crate) fn suspend(self) -> SuspendedFunction {
+    #[must_use]
+    pub fn suspend(self) -> SuspendedFunction {
         SuspendedFunction {
             symbol: self.symbol,
             function: self.function,
@@ -68,7 +71,7 @@ impl<'a> FunctionBuilder<'a> {
     }
     /// Move construction out while a nested initializer borrows the program.
     /// The caller must restore it before issuing another builder operation.
-    pub(crate) fn take_construction(&mut self) -> SuspendedFunction {
+    pub fn take_construction(&mut self) -> SuspendedFunction {
         let placeholder = Function {
             name: self.function.name,
             signature: self.function.signature,
@@ -86,7 +89,7 @@ impl<'a> FunctionBuilder<'a> {
             current_location: self.current_location,
         }
     }
-    pub(crate) fn restore_construction(&mut self, saved: SuspendedFunction) {
+    pub fn restore_construction(&mut self, saved: SuspendedFunction) {
         self.symbol = saved.symbol;
         self.function = saved.function;
         self.body = saved.body;
@@ -95,7 +98,7 @@ impl<'a> FunctionBuilder<'a> {
         self.publish = saved.publish;
         self.current_location = saved.current_location;
     }
-    pub(crate) fn new(
+    pub fn new(
         program: &'a mut Program,
         name: &str,
         parameters: &[(&str, Type)],
@@ -113,7 +116,7 @@ impl<'a> FunctionBuilder<'a> {
             .collect::<Result<Vec<_>, Error>>()?;
         Self::with_parameter_ids(program, symbol, &parameters, result)
     }
-    pub(crate) fn with_parameter_ids(
+    pub fn with_parameter_ids(
         program: &'a mut Program,
         symbol: SymbolId,
         parameters: &[(NameId, Type)],
@@ -124,7 +127,7 @@ impl<'a> FunctionBuilder<'a> {
         }
         Self::construct(program, symbol, parameters, result)
     }
-    pub(crate) fn with_signature(
+    pub fn with_signature(
         program: &'a mut Program,
         symbol: SymbolId,
         signature: Signature,
@@ -134,7 +137,7 @@ impl<'a> FunctionBuilder<'a> {
         }
         Self::construct_signature(program, symbol, signature)
     }
-    pub(crate) fn rebuild_signature(
+    pub fn rebuild_signature(
         program: &'a mut Program,
         symbol: SymbolId,
         signature: Signature,
@@ -149,7 +152,7 @@ impl<'a> FunctionBuilder<'a> {
     /// Emit another ABI entry of a source function sharing an explicit object
     /// label. The lowering owner verifies the source and variant provenance.
     #[cfg(test)]
-    pub(crate) fn rebuild_abi_entry(
+    pub fn rebuild_abi_entry(
         program: &'a mut Program,
         symbol: SymbolId,
         parameters: &[(&str, Type)],
@@ -162,7 +165,7 @@ impl<'a> FunctionBuilder<'a> {
         Self::rebuild_parameter_ids(program, symbol, &parameters, result)
     }
     #[cfg(test)]
-    pub(crate) fn rebuild_parameter_ids(
+    pub fn rebuild_parameter_ids(
         program: &'a mut Program,
         symbol: SymbolId,
         parameters: &[(NameId, Type)],
@@ -233,7 +236,7 @@ impl<'a> FunctionBuilder<'a> {
     }
     /// Complete a generated callable whose boundary was published at demand.
     /// Its named parameters and ABI facts are shared with earlier callers.
-    pub(crate) fn from_forward_boundary(
+    pub fn from_forward_boundary(
         program: &'a mut Program,
         symbol: SymbolId,
     ) -> Result<Self, Error> {
@@ -268,7 +271,7 @@ impl<'a> FunctionBuilder<'a> {
             current_location: None,
         })
     }
-    pub(crate) fn complete(program: &'a mut Program, symbol: SymbolId) -> Result<Self, Error> {
+    pub fn complete(program: &'a mut Program, symbol: SymbolId) -> Result<Self, Error> {
         let source = program
             .function(program.symbol(symbol))
             .ok_or(Error::Limit)?;
@@ -295,10 +298,11 @@ impl<'a> FunctionBuilder<'a> {
             current_location: None,
         })
     }
-    pub(crate) fn anonymous_block(&mut self) -> Result<BlockId, Error> {
+    #[inline]
+    pub fn anonymous_block(&mut self) -> Result<BlockId, Error> {
         self.body.generated_block()
     }
-    pub(crate) fn anonymous_slot(&mut self, ty: Type) -> Result<Value, Error> {
+    pub fn anonymous_slot(&mut self, ty: Type) -> Result<Value, Error> {
         if self.publish {
             return Err(Error::Construction(
                 "anonymous slot requires an internal definition".into(),
@@ -308,23 +312,29 @@ impl<'a> FunctionBuilder<'a> {
             .push(super::construction_names::SlotName::Anonymous);
         self.body.constructed_slot(ty)
     }
-    pub(crate) fn current_location(&self) -> Option<super::model::DebugLocation> {
+    #[inline]
+    #[must_use]
+    pub fn current_location(&self) -> Option<super::model::DebugLocation> {
         self.current_location
     }
-    pub(crate) fn set_current_location(&mut self, location: Option<super::model::DebugLocation>) {
+    #[inline]
+    pub fn set_current_location(&mut self, location: Option<super::model::DebugLocation>) {
         self.current_location = location;
     }
-    pub(crate) fn definition_location(&mut self, location: Option<super::model::DebugLocation>) {
+    #[inline]
+    pub fn definition_location(&mut self, location: Option<super::model::DebugLocation>) {
         self.function.location = location;
         self.current_location = location;
     }
-    pub(crate) fn metadata(&mut self, metadata: Metadata) {
+    #[inline]
+    pub fn metadata(&mut self, metadata: Metadata) {
         self.function.metadata = metadata;
     }
-    pub(crate) fn boundary(&mut self, boundary: Boundary) {
+    #[inline]
+    pub fn boundary(&mut self, boundary: Boundary) {
         self.program.signature_mut(self.function.signature).boundary = boundary;
     }
-    pub(crate) fn parameter_boundary(
+    pub fn parameter_boundary(
         &mut self,
         index: usize,
         pass: Option<super::vocabulary::Pass>,
@@ -342,7 +352,7 @@ impl<'a> FunctionBuilder<'a> {
         parameter.no_alias = no_alias;
         Ok(())
     }
-    pub(crate) fn parameter_classes(
+    pub fn parameter_classes(
         &mut self,
         index: usize,
         classes: Option<super::vocabulary::ObjectClasses>,
@@ -355,11 +365,12 @@ impl<'a> FunctionBuilder<'a> {
             .classes = classes;
         Ok(())
     }
-    pub(crate) fn slot(&mut self, name: &str, ty: Type) -> Result<Value, Error> {
+    #[inline]
+    pub fn slot(&mut self, name: &str, ty: Type) -> Result<Value, Error> {
         let name = self.program.names.intern(name)?;
         self.named_slot(name, ty)
     }
-    pub(crate) fn named_slot(&mut self, name: NameId, ty: Type) -> Result<Value, Error> {
+    pub fn named_slot(&mut self, name: NameId, ty: Type) -> Result<Value, Error> {
         let range_for = matches!(
             self.program.names.get(name),
             "__range" | "__begin" | "__end" | "__idx"
@@ -371,12 +382,13 @@ impl<'a> FunctionBuilder<'a> {
         });
         self.body.constructed_slot(ty)
     }
-    pub(crate) fn generated_slot(&mut self, stem: &'static str, ty: Type) -> Result<Value, Error> {
+    #[inline]
+    pub fn generated_slot(&mut self, stem: &'static str, ty: Type) -> Result<Value, Error> {
         self.slot_names
             .push(super::construction_names::SlotName::Generated(stem));
         self.body.constructed_slot(ty)
     }
-    pub(crate) fn parameter_slot(&mut self, index: usize, ty: Type) -> Result<Value, Error> {
+    pub fn parameter_slot(&mut self, index: usize, ty: Type) -> Result<Value, Error> {
         self.body.anonymous_parameter(index)?;
         self.slot_names.push(if u16::try_from(index).is_ok() {
             super::construction_names::SlotName::Parameter(index)
@@ -385,22 +397,26 @@ impl<'a> FunctionBuilder<'a> {
         });
         self.body.constructed_slot(ty)
     }
-    pub(crate) fn program(&mut self) -> &mut Program {
+    #[inline]
+    pub fn program(&mut self) -> &mut Program {
         self.program
     }
-    pub(crate) fn block_id(&mut self, name: &str) -> Result<BlockId, Error> {
+    #[inline]
+    pub fn block_id(&mut self, name: &str) -> Result<BlockId, Error> {
         let name = self.program.names.intern(name)?;
         self.body.use_block(name, 0)
     }
-    pub(crate) fn block_origin(&mut self, block: BlockId, stem: &'static str) {
+    #[inline]
+    pub fn block_origin(&mut self, block: BlockId, stem: &'static str) {
         self.body.generated_block_origin(block, stem);
     }
-    pub(crate) fn generated_block(&mut self, stem: &'static str) -> Result<BlockId, Error> {
+    #[inline]
+    pub fn generated_block(&mut self, stem: &'static str) -> Result<BlockId, Error> {
         let block = self.body.generated_block()?;
         self.block_origin(block, stem);
         Ok(block)
     }
-    pub(crate) fn signature(
+    pub fn signature(
         &mut self,
         name: &str,
         ty: Type,
@@ -420,33 +436,42 @@ impl<'a> FunctionBuilder<'a> {
             boundary: Boundary::default(),
         })
     }
-    pub(crate) fn parameter(&self, index: usize) -> Result<Value, Error> {
+    #[inline]
+    pub fn parameter(&self, index: usize) -> Result<Value, Error> {
         self.body.parameter_value(index)
     }
-    pub(crate) fn is_object_value(&self, value: Value) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn is_object_value(&self, value: Value) -> bool {
         matches!(value, Value::Temp(id) if matches!(self.body.temp(id).ty, Some(Type::Object { .. })))
     }
     /// The frozen immediate query reads the low word of an integer operand.
-    pub(crate) fn integer_low(&self, value: Value) -> Option<u64> {
+    #[inline]
+    #[must_use]
+    pub fn integer_low(&self, value: Value) -> Option<u64> {
         let Value::Integer(id) = value else {
             return None;
         };
         u64::try_from(self.body.literal(id) & u128::from(u64::MAX)).ok()
     }
-    pub(crate) fn integer(&mut self, value: u128) -> Result<Value, Error> {
+    #[inline]
+    pub fn integer(&mut self, value: u128) -> Result<Value, Error> {
         self.constant(Constant::Integer(value))
     }
-    pub(crate) fn constant(&mut self, value: Constant) -> Result<Value, Error> {
+    #[inline]
+    pub fn constant(&mut self, value: Constant) -> Result<Value, Error> {
         self.body.constant(value)
     }
-    pub(crate) fn arguments(&mut self, values: &[Value]) -> Result<super::model::Arguments, Error> {
+    #[inline]
+    pub fn arguments(&mut self, values: &[Value]) -> Result<super::model::Arguments, Error> {
         self.body.add_arguments(values)
     }
-    pub(crate) fn block(&mut self, name: &str) -> Result<(), Error> {
+    #[inline]
+    pub fn block(&mut self, name: &str) -> Result<(), Error> {
         let id = self.block_id(name)?;
         self.place_block(id)
     }
-    pub(crate) fn place_block(&mut self, id: BlockId) -> Result<(), Error> {
+    pub fn place_block(&mut self, id: BlockId) -> Result<(), Error> {
         if self.body.block(id).placed {
             return Err(Error::Diagnostic("duplicate constructed block".into()));
         }
@@ -455,12 +480,13 @@ impl<'a> FunctionBuilder<'a> {
         self.block = Some(id);
         Ok(())
     }
-    pub(crate) fn generated(&mut self, kind: InstructionKind) -> Result<Value, Error> {
+    #[inline]
+    pub fn generated(&mut self, kind: InstructionKind) -> Result<Value, Error> {
         let id = self.body.generated_temp(kind.result_type())?;
         self.append(kind, Some(id))?;
         Ok(Value::Temp(id))
     }
-    pub(crate) fn value(&mut self, kind: InstructionKind, name: &str) -> Result<Value, Error> {
+    pub fn value(&mut self, kind: InstructionKind, name: &str) -> Result<Value, Error> {
         let name = self.program.names.intern(name)?;
         let id = self.body.use_temp(name, 0)?;
         if self.body.temp_is_parameter(id) || self.body.temp(id).definition.is_some() {
@@ -470,22 +496,25 @@ impl<'a> FunctionBuilder<'a> {
         self.append(kind, Some(id))?;
         Ok(Value::Temp(id))
     }
-    pub(crate) fn effect(&mut self, kind: InstructionKind) -> Result<(), Error> {
+    #[inline]
+    pub fn effect(&mut self, kind: InstructionKind) -> Result<(), Error> {
         self.append(kind, None)
     }
-    pub(crate) fn position(&self) -> Result<Position, Error> {
+    pub fn position(&self) -> Result<Position, Error> {
         let block = self.block.ok_or(Error::Limit)?;
         Ok(Position {
             block,
             after: self.body.block(block).instructions.last().copied(),
         })
     }
-    pub(crate) fn same_block(&self, position: Position) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn same_block(&self, position: Position) -> bool {
         self.block == Some(position.block)
     }
     /// Unlinks an empty region without renumbering instructions or definitions.
     /// Callers rebase captured positions equal to the removed marker.
-    pub(crate) fn drop_empty_region(
+    pub fn drop_empty_region(
         &mut self,
         target: BlockId,
     ) -> Result<Option<(Position, Position)>, Error> {
@@ -502,7 +531,8 @@ impl<'a> FunctionBuilder<'a> {
         Ok(Some((removed, self.position()?)))
     }
     /// Whether a captured call boundary has already crossed an EH marker.
-    pub(crate) fn region_since(&self, position: Position) -> bool {
+    #[must_use]
+    pub fn region_since(&self, position: Position) -> bool {
         use super::model::RuntimeInstruction as R;
         self.body
             .block(position.block)
@@ -519,7 +549,8 @@ impl<'a> FunctionBuilder<'a> {
     }
     /// Inserts a region marker at a captured call boundary. Instruction IDs
     /// remain stable; only that block's execution order changes.
-    pub(crate) fn insert_marker(
+    #[inline]
+    pub fn insert_marker(
         &mut self,
         position: Position,
         kind: super::model::RuntimeInstruction,
@@ -528,7 +559,8 @@ impl<'a> FunctionBuilder<'a> {
         Ok(())
     }
     /// Inserts a result-free instruction without changing stable definition IDs.
-    pub(crate) fn insert_effect(
+    #[inline]
+    pub fn insert_effect(
         &mut self,
         position: Position,
         kind: InstructionKind,
@@ -537,7 +569,7 @@ impl<'a> FunctionBuilder<'a> {
     }
     /// Splices a group once, so resetting many lifetime flags does not shift
     /// the entire expression's instruction sequence once per temporary.
-    pub(crate) fn insert_effects(
+    pub fn insert_effects(
         &mut self,
         position: Position,
         kinds: impl Iterator<Item = InstructionKind>,
@@ -573,15 +605,13 @@ impl<'a> FunctionBuilder<'a> {
             after,
         })
     }
-    pub(crate) fn retarget_region(
-        &mut self,
-        marker: Position,
-        target: BlockId,
-    ) -> Result<(), Error> {
+    #[inline]
+    pub fn retarget_region(&mut self, marker: Position, target: BlockId) -> Result<(), Error> {
         let id = marker.after.ok_or(Error::Limit)?;
         self.body.retarget_region(id, target)
     }
-    pub(crate) fn addressed_storage(&self, address: Value) -> Value {
+    #[must_use]
+    pub fn addressed_storage(&self, address: Value) -> Value {
         if let Value::Temp(temp) = address
             && let Some(id) = self.body.temp(temp).definition
             && let InstructionKind::Addr(storage @ Value::Slot(_)) = self.body.instruction(id).kind
@@ -590,12 +620,14 @@ impl<'a> FunctionBuilder<'a> {
         }
         address
     }
-    pub(crate) fn layout_len(&self) -> usize {
+    #[inline]
+    #[must_use]
+    pub fn layout_len(&self) -> usize {
         self.body.layout.len()
     }
     /// Places newly emitted cleanup blocks after their full-expression's first
     /// block, then restores insertion without placing the saved block twice.
-    pub(crate) fn restore_after_cleanup(
+    pub fn restore_after_cleanup(
         &mut self,
         saved: Position,
         start: Position,
@@ -613,7 +645,7 @@ impl<'a> FunctionBuilder<'a> {
     /// Branches, switches, folded branches and EH targets seed incoming edges
     /// even in dead blocks; ordinary jumps propagate only from entry or a
     /// targeted block. A worklist computes the same fixed point in linear time.
-    pub(crate) fn insertion_targeted(&self, folded: &[BlockId]) -> Result<bool, Error> {
+    pub fn insertion_targeted(&self, folded: &[BlockId]) -> Result<bool, Error> {
         let insertion = self.block.ok_or(Error::Limit)?;
         let entry = *self.body.layout.first().ok_or(Error::Limit)?;
         let mut incoming = vec![false; self.body.blocks().len()];
@@ -671,7 +703,7 @@ impl<'a> FunctionBuilder<'a> {
         }
         Ok(())
     }
-    pub(crate) fn finish(mut self) -> Result<(), Error> {
+    pub fn finish(mut self) -> Result<(), Error> {
         super::construction_names::record_shadows(&mut self.slot_names);
         self.body.retain_slot_names(self.slot_names)?;
         self.program.construction.record(&self.body);

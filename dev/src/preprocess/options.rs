@@ -93,14 +93,16 @@ pub enum LanguageStandard {
     Cxx17,
 }
 impl LanguageStandard {
-    pub(crate) fn macro_value(self) -> &'static [u8] {
+    #[must_use]
+    pub fn macro_value(self) -> &'static [u8] {
         match self {
             Self::Cxx11 => b"201103L",
             Self::Cxx14 => b"201402L",
             Self::Cxx17 => b"201703L",
         }
     }
-    pub(crate) fn parse(name: &[u8]) -> Option<(Self, bool)> {
+    #[must_use]
+    pub fn parse(name: &[u8]) -> Option<(Self, bool)> {
         let (version, strict) = if let Some(version) = name.strip_prefix(b"gnu++") {
             (version, false)
         } else {

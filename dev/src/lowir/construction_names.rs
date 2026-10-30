@@ -29,7 +29,7 @@ pub(super) fn record_shadows(labels: &mut [SlotName]) {
     }
 }
 
-pub(crate) struct LocalNames<'a> {
+pub struct LocalNames<'a> {
     names: &'a Names,
     body: &'a Body,
     values: HashSet<&'a str>,
@@ -39,7 +39,7 @@ pub(crate) struct LocalNames<'a> {
     scratch: String,
 }
 impl<'a> LocalNames<'a> {
-    pub(crate) fn new(names: &'a Names, body: &'a Body) -> Result<Self, Error> {
+    pub fn new(names: &'a Names, body: &'a Body) -> Result<Self, Error> {
         let values = body
             .explicit_value_names()
             .map(|name| names.get(name))
@@ -123,7 +123,7 @@ impl<'a> LocalNames<'a> {
             }
         }
     }
-    pub(crate) fn temp(&mut self, index: usize) -> Result<&str, Error> {
+    pub fn temp(&mut self, index: usize) -> Result<&str, Error> {
         let temp = self.body.temps().get(index).ok_or(Error::Limit)?;
         if !temp.generated && temp.name != NameId::empty() {
             return Ok(self.names.get(temp.name));
@@ -148,7 +148,7 @@ impl<'a> LocalNames<'a> {
         };
         spelling(&mut self.scratch, &self.values, stem, separator, ordinal)
     }
-    pub(crate) fn slot(&mut self, index: usize) -> Result<&str, Error> {
+    pub fn slot(&mut self, index: usize) -> Result<&str, Error> {
         let ordinal = *self.slots.get(index).ok_or(Error::Limit)?;
         let (stem, separator, ordinal) = match self.body.slot_name(index) {
             SlotName::Source(name) if name != NameId::empty() => return Ok(self.names.get(name)),
@@ -167,7 +167,7 @@ impl<'a> LocalNames<'a> {
         };
         spelling(&mut self.scratch, &self.values, stem, separator, ordinal)
     }
-    pub(crate) fn block(&mut self, id: BlockId) -> Result<&str, Error> {
+    pub fn block(&mut self, id: BlockId) -> Result<&str, Error> {
         let (stem, separator) = match self.body.block_name(id) {
             BlockName::Source(name) if name != NameId::empty() => return Ok(self.names.get(name)),
             BlockName::Source(_) | BlockName::Anonymous => ("", ""),

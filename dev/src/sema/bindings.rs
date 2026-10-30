@@ -17,7 +17,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy)]
-pub(crate) enum BindingTarget {
+pub enum BindingTarget {
     Element(u64),
     Member {
         member: EntityId,
@@ -26,7 +26,7 @@ pub(crate) enum BindingTarget {
     Dependent,
 }
 #[derive(Clone, Copy)]
-pub(crate) struct BindingAlias {
+pub struct BindingAlias {
     pub object: EntityId,
     pub object_type: TypeId,
     pub target: BindingTarget,
@@ -39,13 +39,16 @@ pub(super) struct Bindings {
     local_discriminators: HashMap<EntityId, u16>,
 }
 impl Graph {
-    pub(crate) fn lower_binding_alias(&self, entity: EntityId) -> Option<BindingAlias> {
+    #[inline]
+    #[must_use]
+    pub fn lower_binding_alias(&self, entity: EntityId) -> Option<BindingAlias> {
         self.decompositions.aliases.get(&entity).copied()
     }
-    pub(crate) fn lower_decomposition(&self, entity: EntityId) -> Option<&[EntityId]> {
+    #[inline]
+    pub fn lower_decomposition(&self, entity: EntityId) -> Option<&[EntityId]> {
         self.decompositions.objects.get(&entity).map(Vec::as_slice)
     }
-    pub(crate) fn lower_decomposition_discriminator(&self, entity: EntityId) -> u32 {
+    pub fn lower_decomposition_discriminator(&self, entity: EntityId) -> u32 {
         self.decompositions
             .local_discriminators
             .get(&entity)

@@ -86,7 +86,7 @@ impl FundamentalType {
 
     /// Canonical type identity stays distinct from its target representation.
     #[must_use]
-    pub(crate) fn floating_representation(self) -> Self {
+    pub fn floating_representation(self) -> Self {
         match self {
             Self::Float32 => Self::Float,
             Self::Float64 | Self::Float32x => Self::Double,
@@ -96,7 +96,7 @@ impl FundamentalType {
         }
     }
     #[must_use]
-    pub(crate) fn floating_rank(self) -> u8 {
+    pub fn floating_rank(self) -> u8 {
         match self {
             Self::BFloat16 => 1,
             Self::Float16 => 2,
@@ -107,7 +107,8 @@ impl FundamentalType {
             _ => 0,
         }
     }
-    pub(crate) fn floating_precision(self) -> Option<u32> {
+    #[must_use]
+    pub fn floating_precision(self) -> Option<u32> {
         Some(match self.floating_rank() {
             1 => 8,
             2 => 11,
@@ -119,7 +120,8 @@ impl FundamentalType {
         })
     }
 
-    pub(crate) fn integer_max(self) -> u64 {
+    #[must_use]
+    pub fn integer_max(self) -> u64 {
         match self {
             Self::Int => 0x7FFF_FFFF,
             Self::UnsignedInt => 0xFFFF_FFFF,

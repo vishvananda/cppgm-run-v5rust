@@ -91,7 +91,7 @@ pub(super) struct Conversion {
     pub reference_source: ReferenceSource,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum ObjectSource {
+pub enum ObjectSource {
     Implicit,
     Explicit {
         expression: ast::ExprId,
@@ -140,24 +140,25 @@ pub(super) enum DestructorTarget {
     Class(super::graph::BindingId),
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum GlvalueKind {
+pub enum GlvalueKind {
     Ordinary,
     BitField,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum ClassInitialization {
+pub enum ClassInitialization {
     Constructed(super::constructor_initialization::ConstructorArguments),
     Aggregate(crate::syntax::storage::List<ast::ExprId>),
     FlexibleAggregate(crate::syntax::storage::List<ast::ExprId>),
     FromExpression(ast::ExprId),
 }
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum QueryKind {
+pub enum QueryKind {
     Ordinary,
     Specialization,
 }
 impl QueryKind {
-    pub(crate) fn is_specialization(self) -> bool {
+    #[inline]
+    pub fn is_specialization(self) -> bool {
         matches!(self, Self::Specialization)
     }
 }
@@ -177,7 +178,7 @@ impl ExpressionDependence {
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ExpressionOrigin {
+pub enum ExpressionOrigin {
     Written,
     Implicit,
 }

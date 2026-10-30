@@ -15,13 +15,13 @@ use crate::{
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Binding {
+pub enum Binding {
     Memory,
     Register,
     Immediate,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Operation {
+pub enum Operation {
     Fence,
     Add,
     Sub,
@@ -44,7 +44,7 @@ pub(super) struct Operand {
     pub tied: Option<usize>,
 }
 #[derive(Clone, Copy)]
-pub(crate) struct Instruction {
+pub struct Instruction {
     pub operation: Operation,
     pub locked: bool,
     pub destination: usize,
@@ -53,7 +53,7 @@ pub(crate) struct Instruction {
     pub immediate: u64,
 }
 #[derive(Clone)]
-pub(crate) struct Program {
+pub struct Program {
     pub instructions: Box<[Instruction]>,
     pub registers: Box<[bool]>,
     pub tied: Box<[Option<usize>]>,
@@ -65,7 +65,8 @@ pub(super) struct Programs {
     values: HashMap<ast::StmtId, Program>,
 }
 impl Graph {
-    pub(crate) fn lower_assembly(&self, id: ast::StmtId) -> Result<&Program, Error> {
+    #[inline]
+    pub fn lower_assembly(&self, id: ast::StmtId) -> Result<&Program, Error> {
         self.assembly.values.get(&id).ok_or(Error::Invariant(
             "an asm statement the analysis did not lift",
         ))

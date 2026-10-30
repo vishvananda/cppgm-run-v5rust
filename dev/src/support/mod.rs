@@ -2,9 +2,9 @@
 
 pub mod unicode;
 
-pub(crate) mod hash;
+pub mod hash;
 pub mod source;
 pub mod stack;
 pub mod telemetry;
 
-pub(crate) mod ordering;
+pub mod ordering;

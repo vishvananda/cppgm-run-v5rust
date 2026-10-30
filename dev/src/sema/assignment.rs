@@ -286,14 +286,14 @@ struct Candidate {
     object: Conversion,
     source: ArgumentSequence,
 }
-pub(crate) struct Properties {
+pub struct Properties {
     pub deleted: bool,
     pub trivial: bool,
     pub nothrow: bool,
     pub actions: Vec<Action>,
 }
 #[derive(Clone, Copy)]
-pub(crate) struct Action {
+pub struct Action {
     pub member: Option<EntityId>,
     pub base: Option<(EntityId, u32)>,
     pub ty: TypeId,
@@ -302,10 +302,14 @@ pub(crate) struct Action {
     pub parameter_constructor: Option<super::construction::ConstructorId>,
 }
 impl Graph {
-    pub(crate) fn lower_assignment(&self, function: EntityId) -> Option<&Properties> {
+    #[inline]
+    #[must_use]
+    pub fn lower_assignment(&self, function: EntityId) -> Option<&Properties> {
         self.entity(function).callable().assignment.as_ref()
     }
-    pub(crate) fn lower_implicit_assignment(&self, function: EntityId) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn lower_implicit_assignment(&self, function: EntityId) -> bool {
         self.entity(function).callable().assignment_origin == Origin::Implicit
     }
     pub(super) fn ignored_assignment(&self, function: EntityId) -> bool {

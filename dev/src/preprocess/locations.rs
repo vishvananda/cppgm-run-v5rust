@@ -4,7 +4,7 @@ use super::error::PreprocessError;
 use crate::support::source::{SourceBuffer, SourceError, SourceImage, SourceOffset};
 use std::rc::Rc;
 
-pub(crate) trait SourcePositions {
+pub trait SourcePositions {
     fn source_file(&self, location: SourceOffset) -> Rc<[u8]>;
     fn source_column(&self, location: SourceOffset) -> u32;
     fn source_line(&self, location: SourceOffset) -> Result<i64, PreprocessError>;
@@ -20,17 +20,17 @@ struct EarlierState {
     until: SourceOffset,
     state: LineState,
 }
-pub(crate) struct Locations<'a> {
+pub struct Locations<'a> {
     source: SourceImage<'a>,
     current: LineState,
     earlier: Vec<EarlierState>,
     file_literal: Option<Rc<[u8]>>,
 }
 impl<'a> Locations<'a> {
-    pub(crate) fn new(source: &'a SourceBuffer, name: &[u8]) -> Self {
+    pub fn new(source: &'a SourceBuffer, name: &[u8]) -> Self {
         Self::with_image(SourceImage::Borrowed(source), name)
     }
-    pub(crate) fn with_image(source: SourceImage<'a>, name: &[u8]) -> Self {
+    pub fn with_image(source: SourceImage<'a>, name: &[u8]) -> Self {
         Self {
             source,
             current: LineState {
@@ -49,20 +49,20 @@ impl<'a> Locations<'a> {
             )
             .map_or(&self.current, |earlier| &earlier.state)
     }
-    pub(crate) fn name_at(&self, location: SourceOffset) -> Rc<[u8]> {
+    pub fn name_at(&self, location: SourceOffset) -> Rc<[u8]> {
         self.state_at(location).name.clone()
     }
-    pub(crate) fn column_at(&self, location: SourceOffset) -> u32 {
+    pub fn column_at(&self, location: SourceOffset) -> u32 {
         let start = self.starts()[self
             .starts()
             .partition_point(|&start| start <= location.0)
             .saturating_sub(1)];
         location.0.saturating_sub(start) + 1
     }
-    pub(crate) fn line_at(&self, location: SourceOffset) -> Result<i64, PreprocessError> {
+    pub fn line_at(&self, location: SourceOffset) -> Result<i64, PreprocessError> {
         Ok((self.physical_line(location)? + self.state_at(location).delta).max(1))
     }
-    pub(crate) fn line_and_name(
+    pub fn line_and_name(
         &self,
         location: SourceOffset,
     ) -> Result<(Rc<[u8]>, i64), PreprocessError> {
@@ -75,10 +75,10 @@ impl<'a> Locations<'a> {
         i64::try_from(self.starts().partition_point(|&start| start <= location.0))
             .map_err(|_| PreprocessError::Invariant("physical line index exceeds source bounds"))
     }
-    pub(crate) fn presumed_line(&self, location: SourceOffset) -> Result<i64, PreprocessError> {
+    pub fn presumed_line(&self, location: SourceOffset) -> Result<i64, PreprocessError> {
         Ok((self.physical_line(location)? + self.current.delta).max(1))
     }
-    pub(crate) fn file_literal(&mut self) -> Rc<[u8]> {
+    pub fn file_literal(&mut self) -> Rc<[u8]> {
         self.file_literal
             .get_or_insert_with(|| {
                 let mut text = vec![b'"'];
@@ -102,10 +102,10 @@ impl<'a> Locations<'a> {
             })
             .clone()
     }
-    pub(crate) fn presumed_name(&self) -> &[u8] {
+    pub fn presumed_name(&self) -> &[u8] {
         &self.current.name
     }
-    pub(crate) fn set_line(
+    pub fn set_line(
         &mut self,
         newline: SourceOffset,
         number: u32,
@@ -129,7 +129,7 @@ impl<'a> Locations<'a> {
         });
         Ok(())
     }
-    pub(crate) fn describe(&self, error: &SourceError) -> Result<Vec<u8>, PreprocessError> {
+    pub fn describe(&self, error: &SourceError) -> Result<Vec<u8>, PreprocessError> {
         let offset = error
             .offset
             .index()

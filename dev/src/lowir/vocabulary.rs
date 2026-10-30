@@ -1,6 +1,6 @@
 //! `LowIR` scalar and operation vocabulary, translated from `lowir_model.h`. See NOTICE.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum Type {
+pub enum Type {
     Void,
     I1,
     I8,
@@ -19,13 +19,16 @@ pub(crate) enum Type {
 }
 impl Type {
     /// The frozen object payload holds 48 target bits; source layout stays u64.
-    pub(crate) fn object(bytes: u64, align: u8) -> Self {
+    #[inline]
+    #[must_use]
+    pub fn object(bytes: u64, align: u8) -> Self {
         Self::Object {
             bytes: bytes & ((1_u64 << 48) - 1),
             align,
         }
     }
-    pub(crate) fn scalar(text: &str) -> Option<Self> {
+    #[must_use]
+    pub fn scalar(text: &str) -> Option<Self> {
         Some(match text {
             "void" => Self::Void,
             "i1" => Self::I1,
@@ -44,7 +47,8 @@ impl Type {
             _ => return None,
         })
     }
-    pub(crate) fn bits(self) -> u32 {
+    #[must_use]
+    pub fn bits(self) -> u32 {
         match self {
             Self::I1 => 1,
             Self::I8 | Self::U8 => 8,
@@ -55,7 +59,8 @@ impl Type {
             _ => 0,
         }
     }
-    pub(crate) fn float_rank(self) -> u8 {
+    #[must_use]
+    pub fn float_rank(self) -> u8 {
         match self {
             Self::F32 => 1,
             Self::F64 => 2,
@@ -90,12 +95,14 @@ impl std::fmt::Display for Type {
 macro_rules! vocabulary {
     ($name:ident { $($variant:ident => $word:literal),+ $(,)? }) => {
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-        pub(crate) enum $name { $($variant),+ }
+        pub enum $name { $($variant),+ }
         impl $name {
-            pub(crate) fn parse(text: &str) -> Option<Self> {
+            #[inline]
+            pub fn parse(text: &str) -> Option<Self> {
                 match text { $($word => Some(Self::$variant),)+ _ => None }
             }
-            pub(crate) fn spelling(self) -> &'static str {
+            #[inline]
+            pub fn spelling(self) -> &'static str {
                 match self { $(Self::$variant => $word,)+ }
             }
         }
@@ -105,7 +112,8 @@ vocabulary!(Unary { Neg => "neg", Not => "not", BitNot => "bitnot", ByteSwap => 
 vocabulary!(Binary { Add => "add", Sub => "sub", Mul => "mul", Div => "div", Mod => "mod", UDiv => "udiv", UMod => "umod", And => "and", Or => "or", Xor => "xor", Shl => "shl", Shr => "shr", UShr => "ushr" });
 vocabulary!(Compare { Eq => "eq", Ne => "ne", Lt => "lt", Le => "le", Gt => "gt", Ge => "ge", Ult => "ult", Ule => "ule", Ugt => "ugt", Uge => "uge" });
 impl Compare {
-    pub(crate) fn swapped(self) -> Self {
+    #[must_use]
+    pub fn swapped(self) -> Self {
         match self {
             Self::Eq | Self::Ne => self,
             Self::Lt => Self::Gt,
@@ -118,7 +126,8 @@ impl Compare {
             Self::Uge => Self::Ule,
         }
     }
-    pub(crate) fn inverted(self) -> Self {
+    #[must_use]
+    pub fn inverted(self) -> Self {
         match self {
             Self::Eq => Self::Ne,
             Self::Ne => Self::Eq,
@@ -145,14 +154,17 @@ vocabulary!(Role {
     BadArrayNewLength => "bad_array_new_length", RttiPointer => "rtti_pointer",
 });
 impl Role {
-    pub(crate) fn global(self) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn global(self) -> bool {
         matches!(
             self,
             Self::RttiClass | Self::RttiSi | Self::RttiVmi | Self::RttiData | Self::RttiPointer
         )
     }
 }
-pub(crate) fn named_literal(text: &str) -> bool {
+#[must_use]
+pub fn named_literal(text: &str) -> bool {
     if text == "nullptr" {
         return true;
     }
@@ -173,7 +185,7 @@ vocabulary!(Fence { Thread => "atomic_thread_fence", Signal => "atomic_signal_fe
 /// GNU/Clang atomic ordering numbers, retained without strengthening C++'s rules.
 #[derive(Clone, Copy)]
 #[repr(u8)]
-pub(crate) enum MemoryOrder {
+pub enum MemoryOrder {
     Relaxed,
     Consume,
     Acquire,
@@ -182,7 +194,8 @@ pub(crate) enum MemoryOrder {
     SequentiallyConsistent,
 }
 impl MemoryOrder {
-    pub(crate) fn from_number(number: i64) -> Option<Self> {
+    #[must_use]
+    pub fn from_number(number: i64) -> Option<Self> {
         Some(match number {
             0 => Self::Relaxed,
             1 => Self::Consume,
@@ -193,12 +206,14 @@ impl MemoryOrder {
             _ => return None,
         })
     }
-    pub(crate) fn number(self) -> u8 {
+    #[inline]
+    #[must_use]
+    pub fn number(self) -> u8 {
         self as u8
     }
 }
 #[derive(Clone, Copy)]
-pub(crate) enum ObjectClasses {
+pub enum ObjectClasses {
     Memory,
     X87,
     ComplexX87,
@@ -208,7 +223,8 @@ pub(crate) enum ObjectClasses {
 impl ObjectClasses {
     /// Host object text also accepts every nonzero byte encoding. Keep
     /// noncanonical flags intact; canonical spellings retain their usual view.
-    pub(crate) fn from_number(value: u64, bytes: u64) -> Option<Self> {
+    #[must_use]
+    pub fn from_number(value: u64, bytes: u64) -> Option<Self> {
         let bits = std::num::NonZeroU8::new(u8::try_from(value).ok()?)?;
         Some(match bits.get() {
             0x90 => Self::Memory,
@@ -231,7 +247,8 @@ impl ObjectClasses {
         }
     }
 
-    pub(crate) fn eightbyte(self, index: u32) -> EightbyteClass {
+    #[must_use]
+    pub fn eightbyte(self, index: u32) -> EightbyteClass {
         match (self, index) {
             (Self::Direct(first, _), 0) => first,
             (Self::Direct(_, second), 1) => second.unwrap_or(EightbyteClass::None),
@@ -240,24 +257,33 @@ impl ObjectClasses {
         }
     }
 
-    pub(crate) fn is_memory(self) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn is_memory(self) -> bool {
         matches!(self, Self::Memory) || matches!(self, Self::Raw(bits) if bits.get() & 0x10 != 0)
     }
 
-    pub(crate) fn has_x87(self) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn has_x87(self) -> bool {
         matches!(self, Self::X87) || matches!(self, Self::Raw(bits) if bits.get() & 0x20 != 0)
     }
 
-    pub(crate) fn has_complex_x87(self) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn has_complex_x87(self) -> bool {
         matches!(self, Self::ComplexX87)
             || matches!(self, Self::Raw(bits) if bits.get() & 0x40 != 0)
     }
 
-    pub(crate) fn argument_in_memory(self) -> bool {
+    #[inline]
+    #[must_use]
+    pub fn argument_in_memory(self) -> bool {
         self.is_memory() || self.has_x87() || self.has_complex_x87()
     }
 
-    pub(crate) fn parse(text: &str, bytes: u64) -> Option<Self> {
+    #[must_use]
+    pub fn parse(text: &str, bytes: u64) -> Option<Self> {
         if text == "memory" {
             return Some(Self::Memory);
         }
@@ -292,7 +318,7 @@ impl std::fmt::Display for ObjectClasses {
 
 /// Pre-intern the frozen reader vocabulary, including metadata keys and named
 /// literal variants. These are real unit-owned names, even in an empty input.
-pub(crate) fn intern_reader_words(names: &mut super::model::Names) -> Result<(), super::Error> {
+pub fn intern_reader_words(names: &mut super::model::Names) -> Result<(), super::Error> {
     for word in [
         "declare",
         "global",

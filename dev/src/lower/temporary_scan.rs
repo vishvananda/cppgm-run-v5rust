@@ -737,15 +737,20 @@ impl Function<'_, '_, '_, '_> {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) mod tests {
-    use super::*;
+    use super::{Function, ast};
     use crate::{
         lowir::{builder::FunctionBuilder, model::Program, vocabulary::Type},
         support::stack::StackBudget,
     };
 
-    pub(crate) fn assert_constructor_parameter_temporaries(
+    #[expect(
+        clippy::panic,
+        clippy::unwrap_used,
+        reason = "existing test-only invariant assertions shared across phase crates"
+    )]
+    pub fn assert_constructor_parameter_temporaries(
         graph: &mut crate::sema::Graph,
         tree: &mut ast::Tree,
         cursor: &mut crate::syntax::cursor::Cursor<'_>,
