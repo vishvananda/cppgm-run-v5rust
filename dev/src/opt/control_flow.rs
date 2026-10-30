@@ -14,14 +14,9 @@ const ITERATIVE_DOMINATOR_BLOCKS: usize = 32;
 struct Edges {
     first: Vec<usize>,
     targets: Vec<BlockId>,
+    fill: Vec<usize>,
 }
 impl Edges {
-    fn from_count(count: usize) -> Self {
-        Self {
-            first: vec![0; count + 1],
-            targets: Vec::new(),
-        }
-    }
     fn at(&self, block: BlockId) -> &[BlockId] {
         &self.targets[self.first[block.index()]..self.first[block.index() + 1]]
     }
@@ -29,8 +24,11 @@ impl Edges {
         &self,
         count: usize,
         sources: impl Iterator<Item = BlockId> + Clone,
+        mut out: Self,
     ) -> Result<Self, Error> {
-        let mut out = Self::from_count(count);
+        out.first.resize(count + 1, 0);
+        out.first.fill(0);
+        out.targets.clear();
         for block in sources.clone() {
             for &target in self.at(block) {
                 out.first[target.index() + 1] += 1;
@@ -44,7 +42,9 @@ impl Edges {
         }
         let placeholder = sources.clone().next().ok_or(Error::Limit)?;
         out.targets.resize(out.first[count], placeholder);
-        let mut fill = out.first[..count].to_vec();
+        out.fill.clear();
+        out.fill.extend_from_slice(&out.first[..count]);
+        let fill = &mut out.fill;
         for block in sources {
             for &target in self.at(block) {
                 out.targets[fill[target.index()]] = block;
@@ -54,6 +54,7 @@ impl Edges {
         Ok(out)
     }
 }
+#[derive(Default)]
 pub(super) struct Cfg {
     successors: Edges,
     predecessors: Edges,
@@ -65,6 +66,8 @@ pub(super) struct Cfg {
     dom_in: Vec<usize>,
     dom_out: Vec<usize>,
     children: Edges,
+    reverse_handlers: Edges,
+    order_stack: Vec<(BlockId, usize)>,
 }
 impl Cfg {
     pub(super) fn common_dominator(&self, mut a: BlockId, mut b: BlockId) -> Option<BlockId> {
@@ -155,9 +158,11 @@ impl Cfg {
         for &block in layout {
             placed[block.index()] = Some(block);
         }
-        self.predecessors = self
-            .successors
-            .reverse(dead.len(), placed.iter().copied().flatten())?;
+        self.predecessors = self.successors.reverse(
+            dead.len(),
+            placed.iter().copied().flatten(),
+            std::mem::take(&mut self.predecessors),
+        )?;
         Ok(())
     }
     pub(super) fn analyze(body: &Body) -> Result<Self, Error> {
@@ -166,24 +171,35 @@ impl Cfg {
         Ok(out)
     }
     pub(super) fn light(body: &Body) -> Result<Self, Error> {
-        let count = body.blocks().len();
-        let mut out = Self {
-            successors: Edges::from_count(count),
-            predecessors: Edges::default(),
-            handlers: Edges::from_count(count),
-            flags: vec![0; count],
-            rpo: Vec::new(),
-            rpo_index: vec![None; count],
-            idom: Vec::new(),
-            dom_in: Vec::new(),
-            dom_out: Vec::new(),
-            children: Edges::default(),
-        };
-        out.build_edges(body)?;
-        if let Some(&entry) = body.layout.first() {
-            out.build_order(entry);
-        }
+        let mut out = Self::default();
+        out.rebuild(body)?;
         Ok(out)
+    }
+    pub(super) fn rebuild(&mut self, body: &Body) -> Result<(), Error> {
+        let count = body.blocks().len();
+        self.successors.first.resize(count + 1, 0);
+        self.successors.first.fill(0);
+        self.successors.targets.clear();
+        self.predecessors.first.clear();
+        self.predecessors.targets.clear();
+        self.handlers.first.resize(count + 1, 0);
+        self.handlers.first.fill(0);
+        self.handlers.targets.clear();
+        self.flags.resize(count, 0);
+        self.flags.fill(0);
+        self.rpo.clear();
+        self.rpo_index.resize(count, None);
+        self.rpo_index.fill(None);
+        self.idom.clear();
+        self.dom_in.clear();
+        self.dom_out.clear();
+        self.children.first.clear();
+        self.children.targets.clear();
+        self.build_edges(body)?;
+        if let Some(&entry) = body.layout.first() {
+            self.build_order(entry);
+        }
+        Ok(())
     }
     fn build_edges(&mut self, body: &Body) -> Result<(), Error> {
         let count = body.blocks().len();
@@ -240,9 +256,11 @@ impl Cfg {
         }
         // Ordinary predecessors include all placed sources, even unreachable
         // ones. Handler edges stay separate, including repeated markers.
-        self.predecessors = self
-            .successors
-            .reverse(count, placed.iter().copied().flatten())?;
+        self.predecessors = self.successors.reverse(
+            count,
+            placed.iter().copied().flatten(),
+            std::mem::take(&mut self.predecessors),
+        )?;
         Ok(())
     }
     fn target(&self, block: BlockId, index: usize) -> Option<BlockId> {
@@ -254,7 +272,9 @@ impl Cfg {
         }
     }
     fn build_order(&mut self, entry: BlockId) {
-        let mut stack = vec![(entry, 0)];
+        let mut stack = std::mem::take(&mut self.order_stack);
+        stack.clear();
+        stack.push((entry, 0));
         self.flags[entry.index()] |= REACHABLE;
         while let Some((block, mut next)) = stack.pop() {
             let mut child = None;
@@ -273,6 +293,7 @@ impl Cfg {
                 self.rpo.push(block);
             }
         }
+        self.order_stack = stack;
         self.rpo.reverse();
         for (index, &block) in self.rpo.iter().enumerate() {
             self.rpo_index[block.index()] = Some(index);
@@ -280,14 +301,21 @@ impl Cfg {
     }
     pub(super) fn complete(&mut self) -> Result<(), Error> {
         let count = self.flags.len();
-        self.idom = vec![None; count];
+        self.idom.resize(count, None);
+        self.idom.fill(None);
         if self.rpo.len() > 1 {
-            let handlers = self.handlers.reverse(count, self.rpo.iter().copied())?;
-            if self.rpo.len() <= ITERATIVE_DOMINATOR_BLOCKS {
-                self.iterative_dominators(&handlers)?;
+            let handlers = self.handlers.reverse(
+                count,
+                self.rpo.iter().copied(),
+                std::mem::take(&mut self.reverse_handlers),
+            )?;
+            let result = if self.rpo.len() <= ITERATIVE_DOMINATOR_BLOCKS {
+                self.iterative_dominators(&handlers)
             } else {
-                self.large_dominators(&handlers)?;
-            }
+                self.large_dominators(&handlers)
+            };
+            self.reverse_handlers = handlers;
+            result?;
         }
         self.build_intervals()
     }
@@ -390,9 +418,13 @@ impl Cfg {
     }
     fn build_intervals(&mut self) -> Result<(), Error> {
         let count = self.flags.len();
-        self.dom_in = vec![0; count];
-        self.dom_out = vec![0; count];
-        self.children = Edges::from_count(count);
+        self.dom_in.resize(count, 0);
+        self.dom_in.fill(0);
+        self.dom_out.resize(count, 0);
+        self.dom_out.fill(0);
+        self.children.first.resize(count + 1, 0);
+        self.children.first.fill(0);
+        self.children.targets.clear();
         let Some(&entry) = self.rpo.first() else {
             return Ok(());
         };
@@ -407,7 +439,11 @@ impl Cfg {
         self.children
             .targets
             .resize(self.children.first[count], entry);
-        let mut fill = self.children.first[..count].to_vec();
+        self.children.fill.clear();
+        self.children
+            .fill
+            .extend_from_slice(&self.children.first[..count]);
+        let fill = &mut self.children.fill;
         for &block in &self.rpo {
             if let Some(parent) = self.idom[block.index()] {
                 self.children.targets[fill[parent.index()]] = block;
@@ -415,7 +451,9 @@ impl Cfg {
             }
         }
         let mut clock = 1_usize;
-        let mut stack = vec![(entry, 0)];
+        let mut stack = std::mem::take(&mut self.order_stack);
+        stack.clear();
+        stack.push((entry, 0));
         while let Some((block, next)) = stack.pop() {
             if let Some(&child) = self.children.at(block).get(next) {
                 self.dom_in[child.index()] = clock;
@@ -427,6 +465,7 @@ impl Cfg {
                 clock = clock.checked_add(1).ok_or(Error::Limit)?;
             }
         }
+        self.order_stack = stack;
         Ok(())
     }
 }
@@ -617,7 +656,7 @@ mod tests {
                 other.idom = vec![None; count];
                 let handlers = other
                     .handlers
-                    .reverse(count, other.rpo.iter().copied())
+                    .reverse(count, other.rpo.iter().copied(), Edges::default())
                     .unwrap();
                 if count <= ITERATIVE_DOMINATOR_BLOCKS {
                     other.large_dominators(&handlers).unwrap();

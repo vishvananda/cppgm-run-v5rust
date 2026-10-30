@@ -160,7 +160,7 @@ pub(super) fn forwarder(
             callee: Value::Symbol(target),
             arguments,
             copy_elision: false,
-            argument_classes: Vec::new(),
+            argument_classes: (Vec::new()).into(),
             signature: None,
         }))?;
     }
@@ -213,7 +213,7 @@ pub(super) fn finish_unit(
             callee: Value::Symbol(init),
             arguments,
             copy_elision: false,
-            argument_classes: Vec::new(),
+            argument_classes: (Vec::new()).into(),
             signature: None,
         }))?;
     }
@@ -253,7 +253,7 @@ impl Function<'_, '_, '_, '_> {
                 callee: Value::Symbol(wrapper),
                 arguments,
                 copy_elision: false,
-                argument_classes: Vec::new(),
+                argument_classes: (Vec::new()).into(),
                 signature: None,
             }))?;
             self.finish_lifetime_value(value, Type::Ptr, false)

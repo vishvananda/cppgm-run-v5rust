@@ -102,7 +102,7 @@ impl Copies<'_, '_> {
             .body
             .slots()
             .iter()
-            .map(|s| matches!(s.ty,Type::Object{bytes,..} if bytes<=64))
+            .map(|s| matches!(s.ty,Type::Object{bytes,..} if bytes.get()<=64))
             .collect::<Vec<_>>();
         for &block in &self.context.body.layout {
             for id in self.links.ids(block) {
@@ -174,6 +174,7 @@ impl Copies<'_, '_> {
                     let Type::Object { bytes, align } = self.context.body.slot(slot).ty else {
                         return Err(Error::Limit);
                     };
+                    let bytes = bytes.get();
                     self.context
                         .body
                         .replace_kind(id, I::ZeroInit(bytes, align, Value::Slot(slot)));

@@ -366,7 +366,7 @@ impl Function<'_, '_, '_, '_> {
                 arguments,
                 signature: None,
                 copy_elision: false,
-                argument_classes: Vec::new(),
+                argument_classes: (Vec::new()).into(),
             }))?;
             if std::mem::take(&mut self.lifetime.call_region)
                 == super::lifetime::CallRegion::Transient
@@ -414,7 +414,7 @@ impl Function<'_, '_, '_, '_> {
                     arguments,
                     signature: None,
                     copy_elision: false,
-                    argument_classes: Vec::new(),
+                    argument_classes: (Vec::new()).into(),
                 }),
                 source,
             )?;

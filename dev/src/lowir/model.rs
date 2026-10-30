@@ -32,30 +32,40 @@ macro_rules! identity {
     )+ };
 }
 identity!(
-    NameId,
-    TempId,
-    SlotId,
-    BlockId,
-    InstId,
-    FunctionId,
-    LiteralId,
-    SymbolId,
-    SignatureId,
-    SourceId,
-    GlobalId
+    NameId, SlotId, FunctionId, LiteralId, SymbolId, SourceId, GlobalId
 );
+// Store indices reserve the all-ones sentinel, as the reference does.
+// Encoding index + 1 gives Option<Id> the same four-byte representation safely.
+macro_rules! compact_identity {
+    ($($name:ident),+) => { $(
+        #[derive(Clone, Copy, PartialEq, Eq)]
+        pub struct $name(NonZeroU32);
+        impl $name {
+            fn from_index(index: u32) -> Result<Self, Error> {
+                index.checked_add(1).and_then(NonZeroU32::new).map(Self).ok_or(Error::Limit)
+            }
+            #[inline]
+            #[must_use]
+            pub fn index(self) -> usize { (self.0.get() - 1) as usize }
+        }
+        impl std::hash::Hash for $name {
+            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+                state.write_u32(self.0.get() - 1);
+            }
+        }
+        impl std::fmt::Debug for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.debug_tuple(stringify!($name)).field(&(self.0.get() - 1)).finish()
+            }
+        }
+    )+ };
+}
+compact_identity!(TempId, BlockId, InstId, SignatureId);
 impl NameId {
     #[inline]
     #[must_use]
     pub fn empty() -> Self {
         Self(0)
-    }
-}
-impl TempId {
-    #[inline]
-    #[must_use]
-    pub fn index(self) -> usize {
-        self.0 as usize
     }
 }
 impl SlotId {
@@ -427,18 +437,20 @@ impl Program {
     }
     #[inline]
     pub fn add_signature(&mut self, signature: Signature) -> Result<SignatureId, Error> {
-        let id = SignatureId(u32::try_from(self.signatures.len()).map_err(|_| Error::Limit)?);
+        let id = SignatureId::from_index(
+            u32::try_from(self.signatures.len()).map_err(|_| Error::Limit)?,
+        )?;
         self.signatures.push(signature);
         Ok(id)
     }
     #[inline]
     pub fn signature_mut(&mut self, id: SignatureId) -> &mut Signature {
-        &mut self.signatures[id.0 as usize]
+        &mut self.signatures[id.index()]
     }
     #[inline]
     #[must_use]
     pub fn signature(&self, id: SignatureId) -> &Signature {
-        &self.signatures[id.0 as usize]
+        &self.signatures[id.index()]
     }
     pub fn set_forward_boundary(
         &mut self,
@@ -1145,6 +1157,7 @@ impl OptimizerSlot {
 pub struct Body {
     literals: Vec<u128>,
     operands: Vec<Value>,
+    use_scratch: Vec<u32>,
     temps: Vec<Temp>,
     slots: Vec<Slot>,
     slot_names: Vec<super::construction_names::SlotName>,
@@ -1170,11 +1183,11 @@ impl Body {
     #[inline]
     #[must_use]
     pub fn temp(&self, id: TempId) -> &Temp {
-        &self.temps[id.0 as usize]
+        &self.temps[id.index()]
     }
     #[inline]
     pub fn temp_mut(&mut self, id: TempId) -> &mut Temp {
-        &mut self.temps[id.0 as usize]
+        &mut self.temps[id.index()]
     }
     #[inline]
     #[must_use]
@@ -1184,19 +1197,19 @@ impl Body {
     #[inline]
     #[must_use]
     pub fn block(&self, id: BlockId) -> &Block {
-        &self.blocks[id.0 as usize]
+        &self.blocks[id.index()]
     }
     #[inline]
     pub fn block_mut(&mut self, id: BlockId) -> &mut Block {
-        &mut self.blocks[id.0 as usize]
+        &mut self.blocks[id.index()]
     }
     #[inline]
     #[must_use]
     pub fn instruction(&self, id: InstId) -> &Instruction {
-        &self.instructions[id.0 as usize]
+        &self.instructions[id.index()]
     }
     pub(super) fn retarget_region(&mut self, id: InstId, target: BlockId) -> Result<(), Error> {
-        match &mut self.instructions[id.0 as usize].kind {
+        match &mut self.instructions[id.index()].kind {
             InstructionKind::Runtime(RuntimeInstruction::EhTry(current))
             | InstructionKind::Jump(current) => *current = target,
             _ => return Err(Error::Limit),
@@ -1309,20 +1322,28 @@ impl Body {
     #[inline]
     #[must_use]
     pub fn temp_is_parameter(&self, id: TempId) -> bool {
-        (id.0 as usize) < self.parameter_count
+        (id.index()) < self.parameter_count
     }
     #[inline]
     #[must_use]
     pub fn temp_id(&self, index: usize) -> Option<TempId> {
         (index < self.temps.len())
-            .then(|| u32::try_from(index).ok().map(TempId))
+            .then(|| {
+                u32::try_from(index)
+                    .ok()
+                    .and_then(|index| TempId::from_index(index).ok())
+            })
             .flatten()
     }
     #[inline]
     #[must_use]
     pub fn block_id(&self, index: usize) -> Option<BlockId> {
         (index < self.blocks.len())
-            .then(|| u32::try_from(index).ok().map(BlockId))
+            .then(|| {
+                u32::try_from(index)
+                    .ok()
+                    .and_then(|index| BlockId::from_index(index).ok())
+            })
             .flatten()
     }
     #[inline]
@@ -1336,12 +1357,12 @@ impl Body {
         if index >= self.parameter_count || index >= self.temps.len() {
             return Err(Error::Limit);
         }
-        Ok(Value::Temp(TempId(
+        Ok(Value::Temp(TempId::from_index(
             u32::try_from(index).map_err(|_| Error::Limit)?,
-        )))
+        )?))
     }
     pub fn generated_block(&mut self) -> Result<BlockId, Error> {
-        let id = BlockId(u32::try_from(self.blocks.len()).map_err(|_| Error::Limit)?);
+        let id = BlockId::from_index(u32::try_from(self.blocks.len()).map_err(|_| Error::Limit)?)?;
         self.blocks.push(Block {
             name: NameId(0),
             origin: BlockName::Anonymous,
@@ -1389,7 +1410,7 @@ impl Body {
         Ok(slot)
     }
     pub fn generated_temp(&mut self, ty: Type) -> Result<TempId, Error> {
-        let id = TempId(u32::try_from(self.temps.len()).map_err(|_| Error::Limit)?);
+        let id = TempId::from_index(u32::try_from(self.temps.len()).map_err(|_| Error::Limit)?)?;
         self.temps.push(Temp {
             name: NameId(0),
             generated: true,
@@ -1404,7 +1425,7 @@ impl Body {
         if let Some(&id) = self.temp_index.get(&name) {
             return Ok(id);
         }
-        let id = TempId(u32::try_from(self.temps.len()).map_err(|_| Error::Limit)?);
+        let id = TempId::from_index(u32::try_from(self.temps.len()).map_err(|_| Error::Limit)?)?;
         self.temps.push(Temp {
             generated: false,
             name,
@@ -1420,7 +1441,7 @@ impl Body {
         if let Some(&id) = self.block_index.get(&name) {
             return Ok(id);
         }
-        let id = BlockId(u32::try_from(self.blocks.len()).map_err(|_| Error::Limit)?);
+        let id = BlockId::from_index(u32::try_from(self.blocks.len()).map_err(|_| Error::Limit)?)?;
         self.blocks.push(Block {
             name,
             origin: BlockName::Source(name),
@@ -1510,13 +1531,14 @@ impl Body {
         self.block(id).origin
     }
     pub fn append(&mut self, block: BlockId, instruction: Instruction) -> Result<InstId, Error> {
-        let id = InstId(u32::try_from(self.instructions.len()).map_err(|_| Error::Limit)?);
+        let id =
+            InstId::from_index(u32::try_from(self.instructions.len()).map_err(|_| Error::Limit)?)?;
         let mut overflow = false;
         let temps = &mut self.temps;
         instruction.kind.visit_values(&self.operands, |value| {
             if let Value::Temp(temp) = value {
-                if let Some(count) = temps[temp.0 as usize].uses.checked_add(1) {
-                    temps[temp.0 as usize].uses = count;
+                if let Some(count) = temps[temp.index()].uses.checked_add(1) {
+                    temps[temp.index()].uses = count;
                 } else {
                     overflow = true;
                 }
@@ -1684,8 +1706,37 @@ pub struct Call {
     pub callee: Value,
     pub arguments: Arguments,
     pub copy_elision: bool,
-    pub argument_classes: Vec<(u32, super::vocabulary::ObjectClasses)>,
+    pub argument_classes: ArgumentClasses,
     pub signature: Option<SignatureId>,
+}
+/// Immutable sparse call ABI facts. Empty calls allocate nothing, and IR
+/// snapshots share populated facts instead of cloning their parameter list.
+#[derive(Clone, Default)]
+pub struct ArgumentClasses(Option<std::rc::Rc<Vec<(u32, super::vocabulary::ObjectClasses)>>>);
+impl From<Vec<(u32, super::vocabulary::ObjectClasses)>> for ArgumentClasses {
+    fn from(values: Vec<(u32, super::vocabulary::ObjectClasses)>) -> Self {
+        Self((!values.is_empty()).then(|| std::rc::Rc::new(values)))
+    }
+}
+impl FromIterator<(u32, super::vocabulary::ObjectClasses)> for ArgumentClasses {
+    fn from_iter<T: IntoIterator<Item = (u32, super::vocabulary::ObjectClasses)>>(
+        values: T,
+    ) -> Self {
+        Vec::from_iter(values).into()
+    }
+}
+impl std::ops::Deref for ArgumentClasses {
+    type Target = [(u32, super::vocabulary::ObjectClasses)];
+    fn deref(&self) -> &Self::Target {
+        self.0.as_deref().map_or(&[], Vec::as_slice)
+    }
+}
+impl<'a> IntoIterator for &'a ArgumentClasses {
+    type Item = &'a (u32, super::vocabulary::ObjectClasses);
+    type IntoIter = std::slice::Iter<'a, (u32, super::vocabulary::ObjectClasses)>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
 }
 /// A checked slice in the owning function's mutable extra-operand store.
 #[derive(Clone, Copy)]
@@ -1825,20 +1876,6 @@ impl InstructionKind {
         }
     }
 }
-impl InstId {
-    #[inline]
-    #[must_use]
-    pub fn index(self) -> usize {
-        self.0 as usize
-    }
-}
-impl BlockId {
-    #[inline]
-    #[must_use]
-    pub fn index(self) -> usize {
-        self.0 as usize
-    }
-}
 
 impl SymbolId {
     #[inline]
@@ -1853,6 +1890,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn compact_ids_preserve_hashes_debug_indices_and_the_reserved_limit() {
+        use std::hash::{BuildHasher, Hasher};
+        let hash = crate::support::hash::BuildHasher::default();
+        for index in [0, 1, 7, u32::MAX - 1] {
+            let id = TempId::from_index(index).unwrap();
+            assert_eq!(id.index(), index as usize);
+            assert_eq!(hash.hash_one(id), hash.hash_one(index));
+            assert_eq!(format!("{id:?}"), format!("TempId({index})"));
+        }
+        assert!(TempId::from_index(u32::MAX).is_err());
+        assert_eq!(std::mem::size_of::<Option<TempId>>(), 4);
+        let mut state = hash.build_hasher();
+        state.write_u32(0);
+        assert_eq!(
+            hash.hash_one(TempId::from_index(0).unwrap()),
+            state.finish()
+        );
+    }
+
+    #[test]
     fn forward_call_facts_expire_when_a_symbol_is_resolved() -> Result<(), Error> {
         for function in [false, true] {
             let mut program = Program::default();
@@ -1865,7 +1922,7 @@ mod tests {
                 callee: Value::Symbol(symbol),
                 arguments: body.add_arguments(&[])?,
                 copy_elision: false,
-                argument_classes: Vec::new(),
+                argument_classes: (Vec::new()).into(),
                 signature: None,
             };
             assert!(program.call_boundary(&call).is_none());

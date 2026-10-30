@@ -52,6 +52,22 @@ enum PhiOperand {
     Other(Value),
 }
 
+#[derive(Default)]
+pub(super) struct Scratch {
+    replacements: Vec<Option<Value>>,
+    uses: Vec<u32>,
+    alive: Vec<bool>,
+    nonzero: Vec<bool>,
+    equal: Vec<Option<Value>>,
+    nonzero_undo: Vec<TempId>,
+    equal_undo: Vec<TempId>,
+    ordinal: Vec<usize>,
+    first_opener: Vec<Option<usize>>,
+    handler_reached: Vec<bool>,
+    walked: Vec<bool>,
+    table: HashMap<Expression, Available>,
+}
+
 pub(super) struct Simplifier<'a, 'p> {
     pub(super) context: &'a mut Context<'p>,
     pub(super) replacements: Vec<Option<Value>>,
@@ -69,53 +85,93 @@ pub(super) struct Simplifier<'a, 'p> {
     pub(super) changed: bool,
     edited: bool,
 }
+fn resolve_value(replacements: &mut [Option<Value>], mut v: Value) -> Result<Value, Error> {
+    let original = v;
+    let mut count = 0;
+    while let Value::Temp(t) = v {
+        let Some(next) = replacements[t.index()] else {
+            break;
+        };
+        v = next;
+        count += 1;
+        if count > replacements.len() {
+            return Err(Error::Construction("cyclic scalar replacement".into()));
+        }
+    }
+    let result = v;
+    let mut v = original;
+    while let Value::Temp(t) = v {
+        let Some(next) = replacements[t.index()] else {
+            break;
+        };
+        replacements[t.index()] = Some(result);
+        v = next;
+    }
+    Ok(result)
+}
+
 impl<'a, 'p> Simplifier<'a, 'p> {
     fn new(context: &'a mut Context<'p>) -> Self {
         let temps = context.body.temps().len();
         let blocks = context.body.blocks().len();
         let instructions = context.body.instructions().len();
-        let uses = context.entry_uses().to_vec();
+        let mut scratch = std::mem::take(&mut context.simplifier_scratch);
+        scratch.uses.clear();
+        scratch.uses.extend_from_slice(context.entry_uses());
+        scratch.replacements.resize(temps, None);
+        scratch.replacements.fill(None);
+        scratch.alive.resize(instructions, true);
+        scratch.alive.fill(true);
+        scratch.nonzero.resize(temps, false);
+        scratch.nonzero.fill(false);
+        scratch.equal.resize(temps, None);
+        scratch.equal.fill(None);
+        scratch.ordinal.resize(instructions, 0);
+        scratch.ordinal.fill(0);
+        scratch.first_opener.resize(blocks, None);
+        scratch.first_opener.fill(None);
+        scratch.handler_reached.resize(blocks, false);
+        scratch.handler_reached.fill(false);
+        scratch.walked.resize(blocks, false);
+        scratch.walked.fill(false);
+        scratch.nonzero_undo.clear();
+        scratch.equal_undo.clear();
+        scratch.table.clear();
         Self {
             context,
-            replacements: vec![None; temps],
-            uses,
-            alive: vec![true; instructions],
-            nonzero: vec![false; temps],
-            equal: vec![None; temps],
-            nonzero_undo: Vec::new(),
-            equal_undo: Vec::new(),
-            ordinal: vec![0; instructions],
-            first_opener: vec![None; blocks],
-            handler_reached: vec![false; blocks],
-            walked: vec![false; blocks],
-            table: HashMap::default(),
+            replacements: scratch.replacements,
+            uses: scratch.uses,
+            alive: scratch.alive,
+            nonzero: scratch.nonzero,
+            equal: scratch.equal,
+            nonzero_undo: scratch.nonzero_undo,
+            equal_undo: scratch.equal_undo,
+            ordinal: scratch.ordinal,
+            first_opener: scratch.first_opener,
+            handler_reached: scratch.handler_reached,
+            walked: scratch.walked,
+            table: scratch.table,
             changed: false,
             edited: false,
         }
     }
-    pub(super) fn resolve(&mut self, mut v: Value) -> Result<Value, Error> {
-        let original = v;
-        let mut count = 0;
-        while let Value::Temp(t) = v {
-            let Some(next) = self.replacements[t.index()] else {
-                break;
-            };
-            v = next;
-            count += 1;
-            if count > self.replacements.len() {
-                return Err(Error::Construction("cyclic scalar replacement".into()));
-            }
-        }
-        let result = v;
-        let mut v = original;
-        while let Value::Temp(t) = v {
-            let Some(next) = self.replacements[t.index()] else {
-                break;
-            };
-            self.replacements[t.index()] = Some(result);
-            v = next;
-        }
-        Ok(result)
+    fn recycle(&mut self) {
+        let scratch = &mut self.context.simplifier_scratch;
+        std::mem::swap(&mut self.replacements, &mut scratch.replacements);
+        std::mem::swap(&mut self.alive, &mut scratch.alive);
+        std::mem::swap(&mut self.nonzero, &mut scratch.nonzero);
+        std::mem::swap(&mut self.equal, &mut scratch.equal);
+        std::mem::swap(&mut self.ordinal, &mut scratch.ordinal);
+        std::mem::swap(&mut self.first_opener, &mut scratch.first_opener);
+        std::mem::swap(&mut self.handler_reached, &mut scratch.handler_reached);
+        std::mem::swap(&mut self.walked, &mut scratch.walked);
+        std::mem::swap(&mut self.uses, &mut scratch.uses);
+        std::mem::swap(&mut self.nonzero_undo, &mut scratch.nonzero_undo);
+        std::mem::swap(&mut self.equal_undo, &mut scratch.equal_undo);
+        std::mem::swap(&mut self.table, &mut scratch.table);
+    }
+    pub(super) fn resolve(&mut self, v: Value) -> Result<Value, Error> {
+        resolve_value(&mut self.replacements, v)
     }
     fn index_openers(&mut self) -> Result<(), Error> {
         let mut work = Vec::new();
@@ -177,29 +233,16 @@ impl<'a, 'p> Simplifier<'a, 'p> {
             })
     }
     fn substitute(&mut self, id: InstId) -> Result<(), Error> {
-        let original = self.context.body.instruction(id).clone();
-        let mut values = Vec::new();
-        self.context
-            .body
-            .visit_values(&original.kind, |v| values.push(v));
-        for (index, v) in values.iter_mut().enumerate() {
-            if !matches!(v, Value::Temp(_)) {
-                continue;
-            }
-            let was = *v;
-            let mut next = self.resolve(was)?;
-            let callee = matches!(original.kind, I::Call(_)) && index == 0;
-            if !callee
-                && let Value::Temp(t) = next
-                && let Some(equal) = self.equal[t.index()]
-            {
-                next = equal;
-            }
-            if callee && matches!(next, Value::Integer(_) | Value::Float(..)) {
-                continue;
-            }
-            if callee
-                && self.context.level >= 2
+        // Resolve the one operand that queries producer facts before borrowing
+        // the editable operand store. All remaining rewrites use disjoint facts.
+        let callee = if let I::Call(call) = &self.context.body.instruction(id).kind {
+            let original = call.callee;
+            let signature = call.signature.is_some();
+            let mut next = self.resolve(original)?;
+            if matches!(next, Value::Integer(_) | Value::Float(..)) {
+                next = original;
+            } else if self.context.level >= 2
+                && signature
                 && let Some((_, def)) = producer(self.context.body, next)
                 && let I::Addr(s @ Value::Symbol(symbol)) = def.kind
                 && self
@@ -207,17 +250,35 @@ impl<'a, 'p> Simplifier<'a, 'p> {
                     .program
                     .function(self.context.program.symbol(symbol))
                     .is_some()
-                && matches!(&original.kind,I::Call(c) if c.signature.is_some())
             {
                 next = s;
             }
-            self.edited |= was != next;
-            *v = next;
-        }
-        let mut it = values.into_iter();
-        self.context
-            .body
-            .rewrite_values(id, |_| it.next().ok_or(Error::Limit))
+            Some(next)
+        } else {
+            None
+        };
+        let mut index = 0;
+        let replacements = &mut self.replacements;
+        let equal = &self.equal;
+        let edited = &mut self.edited;
+        self.context.body.rewrite_values(id, |was| {
+            let is_callee = index == 0 && callee.is_some();
+            index += 1;
+            let next = if is_callee {
+                callee.ok_or(Error::Limit)?
+            } else if matches!(was, Value::Temp(_)) {
+                let next = resolve_value(replacements, was)?;
+                if let Value::Temp(t) = next {
+                    equal[t.index()].unwrap_or(next)
+                } else {
+                    next
+                }
+            } else {
+                was
+            };
+            *edited |= was != next;
+            Ok(next)
+        })
     }
     fn expression(&self, kind: &I) -> Option<Expression> {
         let (op, ty, mut values) = match *kind {
@@ -637,21 +698,24 @@ impl<'a, 'p> Simplifier<'a, 'p> {
                     }
                 }
             }
-            self.context
-                .body
-                .update_instruction(id, instruction.clone());
-            if let (Some(result), Some(value)) = (instruction.result, value) {
+            let result = instruction.result;
+            let key = if result.is_some()
+                && pure(&instruction.kind)
+                && !matches!(instruction.kind, I::Phi(..) | I::Const(..))
+            {
+                self.expression(&instruction.kind)
+            } else {
+                None
+            };
+            self.context.body.update_instruction(id, instruction);
+            if let (Some(result), Some(value)) = (result, value) {
                 self.replacements[result.index()] = Some(value);
                 self.alive[id.index()] = false;
                 self.context.folded = self.context.folded.checked_add(1).ok_or(Error::Limit)?;
                 self.changed = true;
                 continue;
             }
-            if let Some(result) = instruction.result
-                && pure(&instruction.kind)
-                && !matches!(instruction.kind, I::Phi(..) | I::Const(..))
-                && let Some(key) = self.expression(&instruction.kind)
-            {
+            if let (Some(result), Some(key)) = (result, key) {
                 if let Some(found) = self.table.get(&key).copied()
                     && self.context.cfg()?.dominates(found.block, block)
                 {
@@ -738,8 +802,10 @@ pub(super) fn simplify(context: &mut Context<'_>) -> Result<bool, Error> {
     context.prepare_block_map(Pass::SimplifyValues, true);
     let (changed, edited) = {
         let mut simplifier = Simplifier::new(context);
-        let changed = simplifier.run()?;
-        (changed, simplifier.edited)
+        let changed = simplifier.run();
+        let edited = simplifier.edited;
+        simplifier.recycle();
+        (changed?, edited)
     };
     if !changed && edited {
         context.invalidate_uses();
@@ -747,7 +813,9 @@ pub(super) fn simplify(context: &mut Context<'_>) -> Result<bool, Error> {
     if changed {
         definition_order::restore(context)?;
     }
-    context.body.recount_uses()?;
+    if changed || edited {
+        context.body.recount_uses()?;
+    }
     Ok(changed)
 }
 

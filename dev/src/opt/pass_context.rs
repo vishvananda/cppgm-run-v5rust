@@ -42,6 +42,18 @@ enum CachedCfg {
     Light(Cfg),
     Complete(Cfg),
 }
+#[derive(Default)]
+pub(super) struct Scratch {
+    cfg: Option<Cfg>,
+    passed: Vec<u32>,
+    passed_stamp: u32,
+    block_of: Vec<Option<BlockId>>,
+    uses: Vec<u32>,
+    simplifier: super::value_reuse::Scratch,
+    memory: super::memory_forward::Scratch,
+    promotion: super::slot_promotion::Scratch,
+    constants: super::sparse_constants::Scratch,
+}
 pub(super) struct Context<'a> {
     pub(super) program: &'a mut Program,
     pub(super) symbol: SymbolId,
@@ -66,6 +78,11 @@ pub(super) struct Context<'a> {
     pub(super) passed: Vec<u32>,
     pub(super) passed_stamp: u32,
     cfg: CachedCfg,
+    cfg_spare: Option<Cfg>,
+    pub(super) simplifier_scratch: super::value_reuse::Scratch,
+    pub(super) memory_scratch: super::memory_forward::Scratch,
+    pub(super) promotion_scratch: super::slot_promotion::Scratch,
+    pub(super) constant_scratch: super::sparse_constants::Scratch,
     version: u32,
     settled: Vec<(Pass, u32, bool)>,
     kept_body: Option<Pass>,
@@ -110,6 +127,11 @@ impl<'a> Context<'a> {
             passed: Vec::new(),
             passed_stamp: 0,
             cfg: CachedCfg::Empty,
+            cfg_spare: None,
+            simplifier_scratch: super::value_reuse::Scratch::default(),
+            memory_scratch: super::memory_forward::Scratch::default(),
+            promotion_scratch: super::slot_promotion::Scratch::default(),
+            constant_scratch: super::sparse_constants::Scratch::default(),
             version: 0,
             settled: Vec::new(),
             kept_body: None,
@@ -125,7 +147,12 @@ impl<'a> Context<'a> {
     pub(super) fn ensure_cfg(&mut self) -> Result<(), Error> {
         let prior = std::mem::replace(&mut self.cfg, CachedCfg::Empty);
         self.cfg = match prior {
-            CachedCfg::Empty => CachedCfg::Complete(Cfg::analyze(self.body)?),
+            CachedCfg::Empty => {
+                let mut cfg = self.cfg_spare.take().unwrap_or_default();
+                cfg.rebuild(self.body)?;
+                cfg.complete()?;
+                CachedCfg::Complete(cfg)
+            }
             CachedCfg::Light(mut cfg) => {
                 cfg.complete()?;
                 CachedCfg::Complete(cfg)
@@ -136,7 +163,9 @@ impl<'a> Context<'a> {
     }
     pub(super) fn ensure_cfg_light(&mut self) -> Result<(), Error> {
         if matches!(self.cfg, CachedCfg::Empty) {
-            self.cfg = CachedCfg::Light(Cfg::light(self.body)?);
+            let mut cfg = self.cfg_spare.take().unwrap_or_default();
+            cfg.rebuild(self.body)?;
+            self.cfg = CachedCfg::Light(cfg);
         }
         Ok(())
     }
@@ -167,7 +196,23 @@ impl<'a> Context<'a> {
         self.passed_stamp
     }
     pub(super) fn invalidate_cfg(&mut self) {
-        self.cfg = CachedCfg::Empty;
+        if let CachedCfg::Light(cfg) | CachedCfg::Complete(cfg) =
+            std::mem::replace(&mut self.cfg, CachedCfg::Empty)
+        {
+            self.cfg_spare = Some(cfg);
+        }
+    }
+    pub(super) fn exchange_scratch(&mut self, scratch: &mut Scratch) {
+        self.invalidate_cfg();
+        std::mem::swap(&mut self.cfg_spare, &mut scratch.cfg);
+        std::mem::swap(&mut self.passed, &mut scratch.passed);
+        std::mem::swap(&mut self.passed_stamp, &mut scratch.passed_stamp);
+        std::mem::swap(&mut self.block_of, &mut scratch.block_of);
+        std::mem::swap(&mut self.uses, &mut scratch.uses);
+        std::mem::swap(&mut self.simplifier_scratch, &mut scratch.simplifier);
+        std::mem::swap(&mut self.memory_scratch, &mut scratch.memory);
+        std::mem::swap(&mut self.promotion_scratch, &mut scratch.promotion);
+        std::mem::swap(&mut self.constant_scratch, &mut scratch.constants);
     }
     pub(super) fn running_pass(&self) -> Option<Pass> {
         self.running
@@ -185,7 +230,8 @@ impl<'a> Context<'a> {
         let share = fresh && self.running == Some(pass);
         let key = (self.version, self.body.instructions().len());
         if !share || self.block_of_key != Some(key) {
-            self.block_of = vec![None; key.1];
+            self.block_of.resize(key.1, None);
+            self.block_of.fill(None);
             for &block in &self.body.layout {
                 for &id in &self.body.block(block).instructions {
                     self.block_of[id.index()] = Some(block);
@@ -212,8 +258,7 @@ impl<'a> Context<'a> {
         let share = fresh && self.running == Some(pass);
         let key = (self.version, self.body.temps().len());
         if !share || self.uses_key != Some(key) {
-            self.body.recount_uses()?;
-            self.uses = self.body.temps().iter().map(|t| t.uses).collect();
+            self.body.recount_uses_with(&mut self.uses)?;
             self.uses_key = share.then_some(key);
         }
         Ok(())

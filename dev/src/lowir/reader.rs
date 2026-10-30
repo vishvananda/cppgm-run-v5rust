@@ -122,7 +122,7 @@ impl<'a> Parser<'a> {
                 }
                 let align = u8::try_from(align.trailing_zeros()).map_err(|_| Error::Limit)?;
                 self.advance()?;
-                return Ok(Type::Object { bytes, align });
+                return Ok(Type::object(bytes, align));
             }
         }
         Err(self.fail_token("unknown LowIR type: ", ""))
@@ -325,7 +325,7 @@ impl<'a> Parser<'a> {
     }
     pub(super) fn object_classes(&mut self, ty: Type) -> Result<ObjectClasses, Error> {
         let bytes = match ty {
-            Type::Object { bytes, .. } => bytes,
+            Type::Object { bytes, .. } => bytes.get(),
             Type::I128 | Type::F80 => 16,
             other => u64::from(other.bits().div_ceil(8)),
         };

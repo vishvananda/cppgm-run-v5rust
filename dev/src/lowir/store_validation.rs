@@ -93,9 +93,7 @@ fn links(program: &Program) -> Result<(), Error> {
                 return Err(fail("replaceable metadata requires binding=weak"));
             }
         }
-        if function
-            .is_some_and(|function| function.signature.0 as usize >= program.signatures.len())
-        {
+        if function.is_some_and(|function| function.signature.index() >= program.signatures.len()) {
             return Err(fail("invalid function signature"));
         }
         if let Some(global) = global {
@@ -321,7 +319,7 @@ fn operands(program: &Program, body: &Body, inst: &Instruction) -> Option<&'stat
     {
         return Some("invalid instruction field");
     }
-    if matches!(&inst.kind, I::Call(call) if call.signature.is_some_and(|signature| signature.0 as usize >= program.signatures.len()))
+    if matches!(&inst.kind, I::Call(call) if call.signature.is_some_and(|signature| signature.index() >= program.signatures.len()))
     {
         return Some("invalid call signature");
     }
@@ -343,7 +341,8 @@ mod tests {
             b"global @g:obj<8x8>={zero 8}\nfunction @f()->void {block ^entry: return void}\n",
         )
         .unwrap();
-        program.functions[0].signature = super::super::SignatureId(u32::MAX);
+        program.functions[0].signature =
+            super::super::SignatureId::from_index(u32::MAX - 1).unwrap();
         program.functions[0].metadata.flags = 128;
         diagnostic(&program, "invalid symbol metadata: f");
         program.functions[0].metadata.flags = 0;

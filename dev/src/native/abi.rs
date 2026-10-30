@@ -18,12 +18,15 @@ pub(super) fn value_bytes(ty: Type) -> Result<u32, Error> {
         Type::I64 | Type::F64 | Type::Ptr => 8,
         Type::I128 | Type::F80 => 16,
         Type::Object { bytes, .. } => {
-            if bytes > 0x7fff_0000 {
-                return Err(Error::Diagnostic(
-                    "object larger than the 32-bit displacement range".into(),
-                ));
+            let bytes = bytes.get();
+            {
+                if bytes > 0x7fff_0000 {
+                    return Err(Error::Diagnostic(
+                        "object larger than the 32-bit displacement range".into(),
+                    ));
+                }
+                u32::try_from(bytes).map_err(|_| Error::Limit)?
             }
-            u32::try_from(bytes).map_err(|_| Error::Limit)?
         }
     })
 }
@@ -117,7 +120,7 @@ impl Layout {
                 .result_classes
                 .is_some_and(ObjectClasses::has_complex_x87);
         let indirect_result = !x87_pair_result
-            && matches!(signature.result,Type::Object{bytes,..} if bytes==0||bytes>16 || signature.boundary.result_classes.is_some_and(ObjectClasses::is_memory));
+            && matches!(signature.result,Type::Object{bytes,..} if bytes.get()==0||bytes.get()>16 || signature.boundary.result_classes.is_some_and(ObjectClasses::is_memory));
         let classified_result = matches!(signature.result, Type::Object { .. })
             && signature.boundary.result_classes.is_some();
         let x87_result = signature.result == Type::F80
@@ -376,14 +379,7 @@ mod tests {
     #[test]
     fn mixed_result_eightbytes_keep_their_offsets_and_partial_widths() -> Result<(), Error> {
         let mut program = Program::default();
-        let mut sig = signature(
-            &mut program,
-            &[],
-            Type::Object {
-                bytes: 12,
-                align: 2,
-            },
-        )?;
+        let mut sig = signature(&mut program, &[], Type::object(12, 2))?;
         sig.boundary.result_classes = Some(ObjectClasses::Direct(
             EightbyteClass::Integer,
             Some(EightbyteClass::Sse),
@@ -413,10 +409,7 @@ mod tests {
                 Type::I64,
                 Type::I64,
                 Type::I64,
-                Type::Object {
-                    bytes: 16,
-                    align: 4,
-                },
+                Type::object(16, 4),
                 Type::I64,
             ],
             Type::Void,
@@ -433,10 +426,7 @@ mod tests {
     #[test]
     fn unused_large_arguments_keep_target_stack_wrapping() -> Result<(), Error> {
         let mut program = Program::default();
-        let object = Type::Object {
-            bytes: 0x7fff_0000,
-            align: 4,
-        };
+        let object = Type::object(0x7fff_0000, 4);
         let sig = signature(&mut program, &[object; 3], Type::Void)?;
         let layout = Layout::classify(&sig)?;
         let offsets: Vec<_> = layout
@@ -450,22 +440,13 @@ mod tests {
     #[test]
     fn hidden_result_and_sse_exhaustion_preserve_argument_order() -> Result<(), Error> {
         let mut program = Program::default();
-        let result = Type::Object {
-            bytes: 32,
-            align: 4,
-        };
+        let result = Type::object(32, 4);
         let sig = signature(&mut program, &[Type::I64], result)?;
         let layout = Layout::classify(&sig)?;
         assert!(layout.indirect_result);
         assert_eq!(layout.parts(&layout.arguments[0])[0].register, Some(R::RSI));
         let mut types = vec![Type::F64; 8];
-        types.extend([
-            Type::Object {
-                bytes: 16,
-                align: 4,
-            },
-            Type::I64,
-        ]);
+        types.extend([Type::object(16, 4), Type::I64]);
         let mut sig = signature(&mut program, &types, Type::Void)?;
         sig.parameters[8].classes = Some(ObjectClasses::Direct(
             EightbyteClass::Integer,

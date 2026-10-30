@@ -651,7 +651,9 @@ pub(super) fn cleanup(context: &mut Context<'_>) -> Result<bool, Error> {
     if any {
         definition_order::restore(context)?;
     }
-    context.body.recount_uses()?;
+    if any {
+        context.body.recount_uses()?;
+    }
     Ok(any)
 }
 

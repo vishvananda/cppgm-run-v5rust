@@ -636,7 +636,7 @@ mod tests {
                 callee: Value::Symbol(g),
                 arguments,
                 copy_elision: false,
-                argument_classes: Vec::new(),
+                argument_classes: (Vec::new()).into(),
                 signature: None,
             };
             builder.effect(I::Runtime(Runtime::EhTry(dead)))?;
@@ -703,7 +703,7 @@ mod tests {
                 callee: builder.parameter(0)?,
                 arguments: builder.arguments(&[])?,
                 copy_elision: false,
-                argument_classes: Vec::new(),
+                argument_classes: (Vec::new()).into(),
                 signature: Some(signature),
             };
             builder.effect(I::Call(call))?;

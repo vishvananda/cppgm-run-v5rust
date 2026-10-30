@@ -195,7 +195,7 @@ fn version(
             callee: Value::Symbol(symbol),
             arguments,
             copy_elision: false,
-            argument_classes: Vec::new(),
+            argument_classes: (Vec::new()).into(),
             signature: None,
         }),
         Type::Ptr,

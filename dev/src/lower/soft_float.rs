@@ -43,12 +43,9 @@ pub(in crate::lower) fn kind(graph: &Graph, ty: TypeId) -> Result<Option<Kind>, 
 }
 pub(in crate::lower) fn storage(kind: Kind) -> Type {
     if kind == Kind::Quad {
-        Type::Object {
-            bytes: 16,
-            align: 4,
-        }
+        Type::object(16, 4)
     } else {
-        Type::Object { bytes: 2, align: 1 }
+        Type::object(2, 1)
     }
 }
 pub(in crate::lower) fn classes(kind: Kind) -> ObjectClasses {
@@ -252,7 +249,7 @@ impl Function<'_, '_, '_, '_> {
                 arguments,
                 signature: None,
                 copy_elision: false,
-                argument_classes: Vec::new(),
+                argument_classes: (Vec::new()).into(),
             }),
             source,
         )

@@ -90,14 +90,14 @@ impl Function<'_, '_, '_, '_> {
                 .view(&*self.graph, &*self.tree, self.cursor)
                 .object_mode();
         let read = if wide {
-            Type::Object {
-                bytes: 16,
-                align: if self.graph.lower_member_pointer_type(source).is_some() {
+            Type::object(
+                16,
+                if self.graph.lower_member_pointer_type(source).is_some() {
                     3
                 } else {
                     4
                 },
-            }
+            )
         } else {
             ty
         };

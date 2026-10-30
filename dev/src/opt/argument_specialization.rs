@@ -284,11 +284,14 @@ mod tests {
                 super::super::simplify_function(
                     program,
                     symbol,
-                    2,
                     &mut nounwind,
-                    &[],
                     &mut super::super::Statistics::default(),
-                    super::super::Verification::default(),
+                    super::super::FunctionOptions {
+                        level: 2,
+                        unwritten: &[],
+                        verification: super::super::Verification::default(),
+                    },
+                    &mut super::super::pass_context::Scratch::default(),
                 )
             })
             .unwrap(),

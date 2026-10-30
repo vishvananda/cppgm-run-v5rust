@@ -47,6 +47,7 @@ pub(super) fn layout(global: &Global) -> Result<(u64, u32), Error> {
         }
     }
     if let Some(Type::Object { bytes, align: log }) = global.ty {
+        let bytes = bytes.get();
         align = align.max(1_u32.wrapping_shl(u32::from(log)));
         size = size.max(bytes);
     } else if !typed {
@@ -226,15 +227,9 @@ mod tests {
             ]),
         };
         assert_eq!(layout(&global)?, (16, 4));
-        global.ty = Some(Type::Object {
-            bytes: 64,
-            align: 8,
-        });
+        global.ty = Some(Type::object(64, 8));
         assert_eq!(layout(&global)?, (64, 256));
-        global.ty = Some(Type::Object {
-            bytes: 1_u64 << 40,
-            align: 40,
-        });
+        global.ty = Some(Type::object(1_u64 << 40, 40));
         assert_eq!(layout(&global)?, (1_u64 << 40, 256));
         global.ty = None;
         global.init = GlobalInit::Data(vec![DataItem::Zero(3)]);

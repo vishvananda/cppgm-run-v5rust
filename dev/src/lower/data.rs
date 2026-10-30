@@ -298,6 +298,7 @@ pub(super) fn preserve_static_offsets(items: &mut Vec<DataItem>) -> Result<(), E
             DataItem::Zero(bytes) => (bytes.cast_unsigned(), 1),
             DataItem::Address(..) | DataItem::Constant(Type::Ptr, _) => (8, 8),
             DataItem::Constant(Type::Object { bytes, align }, _) => {
+                let bytes = bytes.get();
                 (bytes, 1_u64.wrapping_shl(u32::from(align)))
             }
             DataItem::Constant(ty, _) => {

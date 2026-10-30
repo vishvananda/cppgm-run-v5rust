@@ -97,16 +97,17 @@ impl Address {
         self
     }
 }
+#[derive(Default)]
 pub(super) struct Addresses {
     pub(super) values: Vec<Address>,
     pub(super) escaped: Vec<bool>,
 }
 impl Addresses {
-    pub(super) fn analyze(body: &Body) -> Self {
-        let mut out = Self {
-            values: vec![Address::default(); body.temps().len()],
-            escaped: vec![false; body.slots().len()],
-        };
+    pub(super) fn rebuild(body: &Body, mut out: Self) -> Self {
+        out.values.resize(body.temps().len(), Address::default());
+        out.values.fill(Address::default());
+        out.escaped.resize(body.slots().len(), false);
+        out.escaped.fill(false);
         for &block in &body.layout {
             for &id in &body.block(block).instructions {
                 out.analyze_instruction(body, body.instruction(id));
@@ -267,6 +268,11 @@ pub(super) struct Saved {
     live: usize,
     zeros: usize,
 }
+impl Default for Contents {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 impl Contents {
     pub(super) fn new() -> Self {
         Self {
@@ -280,6 +286,17 @@ impl Contents {
             saved_live: Vec::new(),
             saved_zeros: Vec::new(),
         }
+    }
+    pub(super) fn reset(&mut self) {
+        self.index.clear();
+        self.facts.clear();
+        self.undo.clear();
+        self.live.clear();
+        self.zeros.clear();
+        self.saved_live.clear();
+        self.saved_zeros.clear();
+        self.generation = 1;
+        self.clock = 1;
     }
     pub(super) fn save(&mut self) -> Saved {
         let saved = Saved {

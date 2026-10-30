@@ -122,9 +122,9 @@ impl Body {
             if removed.get(index) == Some(&true) {
                 continue;
             }
-            map[index] = Some(TempId(
+            map[index] = Some(TempId::from_index(
                 u32::try_from(temps.len()).map_err(|_| Error::Limit)?,
-            ));
+            )?);
             temps.push(temp.clone());
         }
         for block in self.layout.clone() {
@@ -146,7 +146,7 @@ impl Body {
             if !temp.generated && temp.name != NameId(0) {
                 self.temp_index.insert(
                     temp.name,
-                    TempId(u32::try_from(index).map_err(|_| Error::Limit)?),
+                    TempId::from_index(u32::try_from(index).map_err(|_| Error::Limit)?)?,
                 );
             }
         }
@@ -353,7 +353,9 @@ impl Body {
                 rewrite(kind, &mut map)?;
             }
         }
-        self.recount_uses()?;
+        if count != 0 {
+            self.recount_uses()?;
+        }
         Ok(count)
     }
     pub(in crate::lowir) fn append_parameter(
@@ -400,7 +402,13 @@ impl Body {
             }))
     }
     pub fn count_uses(&self) -> Result<Vec<u32>, Error> {
-        let mut counts = vec![0_u32; self.temps.len()];
+        let mut counts = Vec::new();
+        self.count_uses_into(&mut counts)?;
+        Ok(counts)
+    }
+    fn count_uses_into(&self, counts: &mut Vec<u32>) -> Result<(), Error> {
+        counts.resize(self.temps.len(), 0);
+        counts.fill(0);
         let mut overflow = false;
         for &block in &self.layout {
             for &id in &self.blocks[block.index()].instructions {
@@ -419,14 +427,20 @@ impl Body {
         if overflow {
             return Err(Error::Limit);
         }
-        Ok(counts)
+        Ok(())
     }
-    pub fn recount_uses(&mut self) -> Result<(), Error> {
-        let counts = self.count_uses()?;
-        for (temp, count) in self.temps.iter_mut().zip(counts) {
+    pub fn recount_uses_with(&mut self, counts: &mut Vec<u32>) -> Result<(), Error> {
+        self.count_uses_into(counts)?;
+        for (temp, &count) in self.temps.iter_mut().zip(counts.iter()) {
             temp.uses = count;
         }
         Ok(())
+    }
+    pub fn recount_uses(&mut self) -> Result<(), Error> {
+        let mut counts = std::mem::take(&mut self.use_scratch);
+        let result = self.recount_uses_with(&mut counts);
+        self.use_scratch = counts;
+        result
     }
     pub fn retain_instructions(&mut self, live: &[bool]) -> Result<bool, Error> {
         if live.len() != self.instructions.len() {
@@ -530,12 +544,16 @@ impl<'a> Compactor<'a> {
     fn definitions(&mut self) -> Result<(), Error> {
         for index in 0..self.input.parameter_count {
             let temp = self.input.temps.get(index).ok_or(Error::Limit)?.clone();
-            self.temps[index] = Some(TempId(u32::try_from(index).map_err(|_| Error::Limit)?));
+            self.temps[index] = Some(TempId::from_index(
+                u32::try_from(index).map_err(|_| Error::Limit)?,
+            )?);
             self.out.temps.push(temp);
         }
         for &block in &self.input.layout {
             let old = self.input.block(block);
-            let new = BlockId(u32::try_from(self.out.blocks.len()).map_err(|_| Error::Limit)?);
+            let new = BlockId::from_index(
+                u32::try_from(self.out.blocks.len()).map_err(|_| Error::Limit)?,
+            )?;
             self.blocks[block.index()] = Some(new);
             self.out.blocks.push(Block {
                 name: old.name,
@@ -550,8 +568,9 @@ impl<'a> Compactor<'a> {
         for &block in &self.input.layout {
             for &id in &self.input.block(block).instructions {
                 if let Some(result) = self.input.instruction(id).result {
-                    let new =
-                        TempId(u32::try_from(self.out.temps.len()).map_err(|_| Error::Limit)?);
+                    let new = TempId::from_index(
+                        u32::try_from(self.out.temps.len()).map_err(|_| Error::Limit)?,
+                    )?;
                     self.temps[result.index()] = Some(new);
                     let mut temp = self.input.temp(result).clone();
                     temp.definition = None;
@@ -660,7 +679,9 @@ impl Body {
             } else {
                 self.temp_index
                     .entry(temp.name)
-                    .or_insert(TempId(u32::try_from(index).map_err(|_| Error::Limit)?));
+                    .or_insert(TempId::from_index(
+                        u32::try_from(index).map_err(|_| Error::Limit)?,
+                    )?);
             }
         }
         seen.clear();
@@ -688,9 +709,9 @@ impl Body {
                 _ => NameId(0),
             };
             if let BlockName::Source(name) = block.origin {
-                self.block_index
-                    .entry(name)
-                    .or_insert(BlockId(u32::try_from(index).map_err(|_| Error::Limit)?));
+                self.block_index.entry(name).or_insert(BlockId::from_index(
+                    u32::try_from(index).map_err(|_| Error::Limit)?,
+                )?);
             }
         }
         Ok(())
@@ -716,9 +737,20 @@ impl LinkEditor {
             last: vec![None; body.blocks.len()],
         };
         for &block in &body.layout {
+            let ids = &body.block(block).instructions;
+            out.first[block.index()] = ids.first().copied();
+            out.last[block.index()] = ids.last().copied();
             let mut prev = None;
-            for &id in &body.block(block).instructions {
-                out.insert_after(block, prev, id)?;
+            for &id in ids {
+                let at = id.index();
+                if out.block_of.get(at).is_none_or(Option::is_some) {
+                    return Err(Error::Limit);
+                }
+                out.block_of[at] = Some(block);
+                out.previous[at] = prev;
+                if let Some(previous) = prev {
+                    out.next[previous.index()] = Some(id);
+                }
                 prev = Some(id);
             }
         }
@@ -816,8 +848,18 @@ impl LinkEditor {
     }
     #[inline]
     pub fn write_links(&self, body: &mut Body) -> Result<(), Error> {
-        for block in body.layout.clone() {
-            body.replace_links(block, self.ids(block))?;
+        for index in 0..body.layout.len() {
+            let block = body.layout[index];
+            let ids = &mut body.blocks[block.index()].instructions;
+            ids.clear();
+            let mut next = self.first(block);
+            while let Some(id) = next {
+                if id.index() >= body.instructions.len() {
+                    return Err(Error::Limit);
+                }
+                ids.push(id);
+                next = self.next(id);
+            }
         }
         Ok(())
     }

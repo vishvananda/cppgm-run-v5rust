@@ -44,13 +44,17 @@ struct User {
     instruction: InstId,
     input: Option<PhiInput>,
 }
+#[derive(Default)]
 struct Users {
     first: Vec<usize>,
     entries: Vec<User>,
+    fill: Vec<usize>,
 }
 impl Users {
-    fn build(body: &Body) -> Result<Self, Error> {
-        let mut first = vec![0_usize; body.temps().len() + 1];
+    fn build(body: &Body, mut out: Self) -> Result<Self, Error> {
+        out.first.resize(body.temps().len() + 1, 0);
+        out.first.fill(0);
+        let first = &mut out.first;
         for &block in &body.layout {
             for &id in &body.block(block).instructions {
                 body.visit_values(&body.instruction(id).kind, |value| {
@@ -63,8 +67,27 @@ impl Users {
         for t in 0..body.temps().len() {
             first[t + 1] = first[t + 1].checked_add(first[t]).ok_or(Error::Limit)?;
         }
-        let mut entries = vec![None; first[body.temps().len()]];
-        let mut fill = first[..body.temps().len()].to_vec();
+        out.entries.clear();
+        if first[body.temps().len()] == 0 {
+            return Ok(out);
+        }
+        // The immutable two-pass scan fills every cell. A valid linked ID
+        // initializes retained storage before the second scan overwrites it.
+        let id = body
+            .layout
+            .iter()
+            .find_map(|&block| body.block(block).instructions.first())
+            .copied()
+            .ok_or(Error::Limit)?;
+        out.entries.resize(
+            first[body.temps().len()],
+            User {
+                instruction: id,
+                input: None,
+            },
+        );
+        out.fill.clear();
+        out.fill.extend_from_slice(&first[..body.temps().len()]);
         for &block in &body.layout {
             for &id in &body.block(block).instructions {
                 let kind = &body.instruction(id).kind;
@@ -72,28 +95,23 @@ impl Users {
                 let mut index = 0;
                 body.visit_values(kind, |value| {
                     if let Value::Temp(temp) = value {
-                        entries[fill[temp.index()]] = Some(User {
+                        out.entries[out.fill[temp.index()]] = User {
                             instruction: id,
                             input: phi.then_some(PhiInput {
                                 instruction: id,
                                 index,
                             }),
-                        });
-                        fill[temp.index()] += 1;
+                        };
+                        out.fill[temp.index()] += 1;
                     }
                     index += 1;
                 });
             }
         }
-        Ok(Self {
-            first,
-            entries: entries
-                .into_iter()
-                .map(|entry| entry.ok_or(Error::Limit))
-                .collect::<Result<_, _>>()?,
-        })
+        Ok(out)
     }
 }
+#[derive(Default)]
 struct PhiEdges {
     successor_slots: Vec<EdgeId>,
     label_first: Vec<usize>,
@@ -102,13 +120,19 @@ struct PhiEdges {
     phis: Vec<InstId>,
     row_first: Vec<usize>,
     inputs: Vec<Option<PhiInput>>,
+    fill: Vec<usize>,
+    slot_of: Vec<Option<EdgeId>>,
 }
 impl PhiEdges {
-    fn build(body: &Body, cfg: &Cfg) -> Result<Self, Error> {
+    fn build(body: &Body, cfg: &Cfg, mut out: Self) -> Result<Self, Error> {
         let (succ_first, succs) = cfg.successor_edges();
         let (pred_first, preds) = cfg.predecessor_edges();
-        let mut fill = pred_first[..body.blocks().len()].to_vec();
-        let mut successor_slots = Vec::with_capacity(succs.len());
+        out.fill.clear();
+        out.fill
+            .extend_from_slice(&pred_first[..body.blocks().len()]);
+        let fill = &mut out.fill;
+        out.successor_slots.clear();
+        let successor_slots = &mut out.successor_slots;
         for &target in succs {
             successor_slots.push(EdgeId(
                 u32::try_from(fill[target.index()]).map_err(|_| Error::Limit)?,
@@ -119,15 +143,15 @@ impl PhiEdges {
         if successor_slots.len() != succ_first[body.blocks().len()] {
             return Err(Error::Limit);
         }
-        let mut out = Self {
-            successor_slots,
-            label_first: vec![0; body.instructions().len() + 1],
-            labels: Vec::new(),
-            first: vec![0; body.blocks().len() + 1],
-            phis: Vec::new(),
-            row_first: vec![0; preds.len() + 1],
-            inputs: Vec::new(),
-        };
+        out.label_first.resize(body.instructions().len() + 1, 0);
+        out.label_first.fill(0);
+        out.labels.clear();
+        out.first.resize(body.blocks().len() + 1, 0);
+        out.first.fill(0);
+        out.phis.clear();
+        out.row_first.resize(preds.len() + 1, 0);
+        out.row_first.fill(0);
+        out.inputs.clear();
         let present = body.layout.iter().any(|&b| {
             body.block(b)
                 .instructions
@@ -144,7 +168,9 @@ impl PhiEdges {
             }
         }
         out.label_first[body.instructions().len()] = out.labels.len();
-        let mut slot_of = vec![None; body.blocks().len()];
+        out.slot_of.resize(body.blocks().len(), None);
+        out.slot_of.fill(None);
+        let slot_of = &mut out.slot_of;
         for (index, block) in body.blocks().iter().enumerate() {
             out.first[index] = out.phis.len();
             if !cfg.placed(body.block_id(index).ok_or(Error::Limit)?) {
@@ -205,6 +231,16 @@ impl PhiEdges {
             .flatten()
     }
 }
+#[derive(Default)]
+pub(super) struct Scratch {
+    states: Vec<State>,
+    executable: Vec<bool>,
+    edges: Vec<bool>,
+    phis: PhiEdges,
+    users: Users,
+    block_work: Vec<BlockId>,
+    temp_work: Vec<TempId>,
+}
 struct Propagator<'a, 'p> {
     context: &'a Context<'p>,
     cfg: &'a Cfg,
@@ -217,27 +253,48 @@ struct Propagator<'a, 'p> {
     temp_work: Vec<TempId>,
 }
 impl<'a, 'p> Propagator<'a, 'p> {
-    fn new(context: &'a Context<'p>) -> Result<Self, Error> {
+    fn new(context: &'a Context<'p>, scratch: &mut Scratch) -> Result<Self, Error> {
         let body = &*context.body;
         let cfg = context.cfg()?;
-        let mut states = vec![State::Unknown; body.temps().len()];
+        let mut states = std::mem::take(&mut scratch.states);
+        states.resize(body.temps().len(), State::Unknown);
+        states.fill(State::Unknown);
         states[..body.parameter_count].fill(State::Overdefined);
         let entry = cfg.reverse_postorder().first().copied();
-        let mut executable = vec![false; body.blocks().len()];
+        let mut executable = std::mem::take(&mut scratch.executable);
+        executable.resize(body.blocks().len(), false);
+        executable.fill(false);
         if let Some(entry) = entry {
             executable[entry.index()] = true;
         }
+        let mut edges = std::mem::take(&mut scratch.edges);
+        edges.resize(cfg.predecessor_edges().1.len(), false);
+        edges.fill(false);
+        let mut block_work = std::mem::take(&mut scratch.block_work);
+        block_work.clear();
+        block_work.extend(entry);
+        let mut temp_work = std::mem::take(&mut scratch.temp_work);
+        temp_work.clear();
         Ok(Self {
             context,
             cfg,
             states,
             executable,
-            edges: vec![false; cfg.predecessor_edges().1.len()],
-            phis: PhiEdges::build(body, cfg)?,
-            users: Users::build(body)?,
-            block_work: entry.into_iter().collect(),
-            temp_work: Vec::new(),
+            edges,
+            phis: PhiEdges::build(body, cfg, std::mem::take(&mut scratch.phis))?,
+            users: Users::build(body, std::mem::take(&mut scratch.users))?,
+            block_work,
+            temp_work,
         })
+    }
+    fn recycle(&mut self, scratch: &mut Scratch) {
+        std::mem::swap(&mut self.states, &mut scratch.states);
+        std::mem::swap(&mut self.executable, &mut scratch.executable);
+        std::mem::swap(&mut self.edges, &mut scratch.edges);
+        std::mem::swap(&mut self.phis, &mut scratch.phis);
+        std::mem::swap(&mut self.users, &mut scratch.users);
+        std::mem::swap(&mut self.block_work, &mut scratch.block_work);
+        std::mem::swap(&mut self.temp_work, &mut scratch.temp_work);
     }
     fn state(&self, value: Value) -> State {
         let body = &*self.context.body;
@@ -550,7 +607,7 @@ impl<'a, 'p> Propagator<'a, 'p> {
         }
         Ok(())
     }
-    fn run(mut self) -> Result<Vec<Option<Constant>>, Error> {
+    fn run(&mut self) -> Result<Vec<Option<Constant>>, Error> {
         while !self.block_work.is_empty() || !self.temp_work.is_empty() {
             while let Some(block) = self.block_work.pop() {
                 self.visit(block)?;
@@ -561,7 +618,7 @@ impl<'a, 'p> Propagator<'a, 'p> {
                 }
             }
         }
-        Ok(self.states.into_iter().map(State::constant).collect())
+        Ok(self.states.iter().copied().map(State::constant).collect())
     }
 }
 pub(super) fn propagate(context: &mut Context<'_>) -> Result<bool, Error> {
@@ -570,7 +627,15 @@ pub(super) fn propagate(context: &mut Context<'_>) -> Result<bool, Error> {
         return Ok(false);
     }
     context.prepare_block_map(Pass::Constants, true);
-    let values = Propagator::new(context)?.run()?;
+    let mut scratch = std::mem::take(&mut context.constant_scratch);
+    let result = {
+        let mut pass = Propagator::new(context, &mut scratch)?;
+        let result = pass.run();
+        pass.recycle(&mut scratch);
+        result
+    };
+    context.constant_scratch = scratch;
+    let values = result?;
     let count = context.body.substitute_constants(&values)?;
     context.propagated = context.propagated.checked_add(count).ok_or(Error::Limit)?;
     Ok(count != 0)

@@ -361,10 +361,7 @@ impl Parser<'_> {
                     if argument >= self.arguments.len() as u64 {
                         return Err(self.fail("classes metadata names no argument"));
                     }
-                    let classes = self.object_classes(Type::Object {
-                        bytes: 16,
-                        align: 3,
-                    })?;
+                    let classes = self.object_classes(Type::object(16, 3))?;
                     argument_classes
                         .push((u32::try_from(argument).map_err(|_| Error::Limit)?, classes));
                 } else {
@@ -386,7 +383,7 @@ impl Parser<'_> {
             callee,
             arguments,
             copy_elision,
-            argument_classes,
+            argument_classes: argument_classes.into(),
             signature,
         })
     }

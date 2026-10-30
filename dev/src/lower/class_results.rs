@@ -83,6 +83,7 @@ impl Function<'_, '_, '_, '_> {
             let Type::Object { bytes, align } = fallback.ty else {
                 return Err(crate::sema::Error::Invariant("scalar fallback object slot").into());
             };
+            let bytes = bytes.get();
             let slot = self.generated_slot("retobj", fallback.ty)?;
             let mut effects = vec![I::ZeroInit(bytes, align, slot)];
             if fallback.end_guard {
@@ -103,9 +104,12 @@ impl Function<'_, '_, '_, '_> {
         {
             Type::Void => Ok(None),
             ty @ Type::Object { bytes, align } => {
-                let slot = self.class_result_storage(ty)?;
-                self.effect(I::ZeroInit(bytes, align, slot))?;
-                Ok(Some(slot))
+                let bytes = bytes.get();
+                {
+                    let slot = self.class_result_storage(ty)?;
+                    self.effect(I::ZeroInit(bytes, align, slot))?;
+                    Ok(Some(slot))
+                }
             }
             ty => {
                 // zero_result uses literal zero for an unreachable continuation,

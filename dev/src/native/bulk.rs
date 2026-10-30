@@ -455,10 +455,7 @@ mod tests {
         let mut program = Program::default();
         let mut builder =
             FunctionBuilder::new(&mut program, "f", &[("source", Type::Ptr)], Type::Ptr)?;
-        let ty = Type::Object {
-            bytes: 96,
-            align: 3,
-        };
+        let ty = Type::object(96, 3);
         let destination = builder.slot("destination", ty)?;
         builder.block("entry")?;
         let source = builder.parameter(0)?;

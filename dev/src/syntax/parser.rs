@@ -163,10 +163,14 @@ impl<'a> Parser<'a> {
             failed_selection_inits: Vec::new(),
         }
     }
+    #[inline]
     pub(super) fn token(&mut self) -> Result<Token, ParseError> {
-        self.initialize()?;
+        if !self.initialized {
+            self.initialize()?;
+        }
         self.cursor.peek(0)
     }
+    #[cold]
     fn initialize(&mut self) -> Result<(), ParseError> {
         if !self.initialized {
             let mut extended = 0;

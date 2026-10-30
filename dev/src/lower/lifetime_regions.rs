@@ -389,7 +389,7 @@ impl Function<'_, '_, '_, '_> {
             arguments,
             signature: None,
             copy_elision: false,
-            argument_classes: Vec::new(),
+            argument_classes: (Vec::new()).into(),
         }))?;
         self.terminated = true;
         self.place(allowed)?;
@@ -412,7 +412,7 @@ impl Function<'_, '_, '_, '_> {
             arguments,
             signature: None,
             copy_elision: false,
-            argument_classes: Vec::new(),
+            argument_classes: (Vec::new()).into(),
         }))
     }
     pub(super) fn terminate_current_exception(&mut self) -> Result<(), Error> {

@@ -231,7 +231,10 @@ fn item_layout(item: DataItem) -> (u64, u64) {
     match item {
         DataItem::Zero(bytes) => (bytes.cast_unsigned(), 1),
         DataItem::Address(..) | DataItem::Constant(Type::Ptr, _) => (8, 8),
-        DataItem::Constant(Type::Object { bytes, align }, _) => (bytes, 1_u64 << align),
+        DataItem::Constant(Type::Object { bytes, align }, _) => {
+            let bytes = bytes.get();
+            (bytes, 1_u64 << align)
+        }
         DataItem::Constant(ty, _) => {
             let size = if ty.bits() != 0 {
                 u64::from(ty.bits().max(8) / 8)

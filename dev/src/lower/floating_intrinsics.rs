@@ -116,8 +116,8 @@ impl Function<'_, '_, '_, '_> {
     }
     fn soft_operand_kind(value: RValue) -> Option<super::soft_float::Kind> {
         match value.ty {
-            Type::Object { bytes: 2, .. } => Some(super::soft_float::Kind::Half),
-            Type::Object { bytes: 16, .. } => Some(super::soft_float::Kind::Quad),
+            Type::Object { bytes, .. } if bytes.get() == 2 => Some(super::soft_float::Kind::Half),
+            Type::Object { bytes, .. } if bytes.get() == 16 => Some(super::soft_float::Kind::Quad),
             _ => None,
         }
     }
@@ -314,7 +314,7 @@ impl Function<'_, '_, '_, '_> {
         let position = self.builder.integer(match x.ty {
             Type::F32 => 22,
             Type::F64 => 51,
-            Type::Object { bytes: 2, .. } => 9,
+            Type::Object { bytes, .. } if bytes.get() == 2 => 9,
             Type::Object { .. } => 47,
             _ => 62,
         })?;

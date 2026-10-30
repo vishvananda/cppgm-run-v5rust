@@ -15,15 +15,39 @@ pub enum Type {
     F64,
     F80,
     Ptr,
-    Object { bytes: u64, align: u8 },
+    Object { bytes: ObjectBytes, align: u8 },
 }
+/// The reference stores object size in 48 target bits. Six bytes let the
+/// scalar/object vocabulary, including its discriminant and alignment, fit in
+/// one eight-byte value without unsafe packing or a separate allocation.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ObjectBytes([u8; 6]);
+impl std::fmt::Debug for ObjectBytes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.get(), f)
+    }
+}
+impl ObjectBytes {
+    #[inline]
+    const fn new(bytes: u64) -> Self {
+        let b = bytes.to_le_bytes();
+        Self([b[0], b[1], b[2], b[3], b[4], b[5]])
+    }
+    #[inline]
+    #[must_use]
+    pub const fn get(self) -> u64 {
+        let b = self.0;
+        u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], 0, 0])
+    }
+}
+const _: () = assert!(std::mem::size_of::<Type>() == 8);
 impl Type {
     /// The frozen object payload holds 48 target bits; source layout stays u64.
     #[inline]
     #[must_use]
     pub fn object(bytes: u64, align: u8) -> Self {
         Self::Object {
-            bytes: bytes & ((1_u64 << 48) - 1),
+            bytes: ObjectBytes::new(bytes),
             align,
         }
     }
@@ -86,7 +110,9 @@ impl std::fmt::Display for Type {
             Self::F64 => "f64",
             Self::F80 => "f80",
             Self::Ptr => "ptr",
-            Self::Object { bytes, align } => return write!(f, "obj<{bytes}x{}>", 1_u64 << align),
+            Self::Object { bytes, align } => {
+                return write!(f, "obj<{}x{}>", bytes.get(), 1_u64 << align);
+            }
         };
         f.write_str(text)
     }
@@ -459,4 +485,24 @@ pub fn intern_reader_words(names: &mut super::model::Names) -> Result<(), super:
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod representation_tests {
+    use super::*;
+    #[test]
+    fn object_payload_preserves_all_48_target_bits_and_debug_spelling() {
+        for value in [0, 1, (1_u64 << 48) - 1, 1_u64 << 48, u64::MAX] {
+            let Type::Object { bytes, align } = Type::object(value, 4) else {
+                unreachable!()
+            };
+            assert_eq!(bytes.get(), value & ((1_u64 << 48) - 1));
+            assert_eq!(align, 4);
+        }
+        assert_eq!(
+            format!("{:?}", Type::object(16, 4)),
+            "Object { bytes: 16, align: 4 }"
+        );
+        assert_eq!(Type::object(16, 4).to_string(), "obj<16x16>");
+    }
 }

@@ -92,6 +92,7 @@ impl<'a> Cursor<'a> {
     pub(super) fn set_source_origin(&mut self, origin: u64) {
         self.origin = origin;
     }
+    #[inline]
     pub(super) fn peek(&mut self, ahead: usize) -> Result<Token, ParseError> {
         let index = self
             .position
@@ -105,6 +106,13 @@ impl<'a> Cursor<'a> {
                 Self::synthetic_end_token()
             });
         }
+        if self.window.len() <= index {
+            self.fill(index)?;
+        }
+        Ok(self.window[index])
+    }
+    #[cold]
+    fn fill(&mut self, index: usize) -> Result<(), ParseError> {
         while self.window.len() <= index {
             if self.end.is_some() {
                 self.window.push(Self::synthetic_end_token());
@@ -113,7 +121,7 @@ impl<'a> Cursor<'a> {
             }
         }
         self.peak_window = self.peak_window.max(self.window.len());
-        Ok(self.window[index])
+        Ok(())
     }
     fn synthetic_end_token() -> Token {
         // Exhausted lookahead uses the constructor's synthetic EOF, independent

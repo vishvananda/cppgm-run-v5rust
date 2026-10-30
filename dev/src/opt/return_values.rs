@@ -43,6 +43,7 @@ fn result_copy(body: &Body, cont: BlockId, result: TempId, ty: Type) -> Option<I
     let Type::Object { bytes, .. } = ty else {
         return None;
     };
+    let bytes = bytes.get();
     let id = *body.block(cont).instructions.first()?;
     let inst = body.instruction(id);
     let I::CopyObject(size, _, source, destination) = inst.kind else {
@@ -111,6 +112,7 @@ fn merge(
             *source = value;
             before_jump(body, block, copy)?;
         } else if let Type::Object { bytes, align } = ty {
+            let bytes = bytes.get();
             let address = emit(body, block, I::Addr(merge.ok_or(Error::Limit)?), Type::Ptr)?;
             before_jump(
                 body,

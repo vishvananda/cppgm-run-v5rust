@@ -180,7 +180,7 @@ impl Function<'_, '_, '_, '_> {
             arguments,
             signature: None,
             copy_elision: false,
-            argument_classes: Vec::new(),
+            argument_classes: (Vec::new()).into(),
         });
         if function.result() == Type::Void {
             self.effect(call)?;

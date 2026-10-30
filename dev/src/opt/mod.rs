@@ -144,6 +144,12 @@ pub fn optimize_observed(
     options.limits = limits;
     options.inline_thunk_targets = inline_thunk_targets;
     let mut stats = inline_wave::Stats::default();
+    let mut scratch = pass_context::Scratch::default();
+    let pipeline = FunctionOptions {
+        level,
+        unwritten: &unwritten,
+        verification,
+    };
     storage_arguments::materialize(program)?;
     for wave in [
         inline_policy::Wave::Ordinary,
@@ -154,11 +160,10 @@ pub fn optimize_observed(
             simplify_function(
                 program,
                 symbol,
-                level,
                 nounwind,
-                &unwritten,
                 &mut observations,
-                verification,
+                pipeline,
+                &mut scratch,
             )
         };
         inline_wave::Runner::new(
@@ -181,11 +186,10 @@ pub fn optimize_observed(
             simplify_function(
                 program,
                 symbol,
-                level,
                 &mut nounwind,
-                &unwritten,
                 &mut observations,
-                verification,
+                pipeline,
+                &mut scratch,
             )
         })?;
         observations.specialized = crate::support::telemetry::counter(specialized);
@@ -202,11 +206,10 @@ pub fn optimize_observed(
                 finish_function(
                     program,
                     symbol,
-                    level,
                     &nounwind,
-                    &unwritten,
                     &mut observations,
-                    verification,
+                    pipeline,
+                    &mut scratch,
                 )?;
             }
             index += 1;
@@ -219,22 +222,35 @@ pub fn optimize_observed(
     Ok(observations)
 }
 
+#[derive(Clone, Copy)]
+struct FunctionOptions<'a> {
+    level: u8,
+    unwritten: &'a [bool],
+    verification: Verification<'a>,
+}
+
 fn finish_function(
     program: &mut Program,
     symbol: crate::lowir::model::SymbolId,
-    level: u8,
     nounwind: &[bool],
-    unwritten: &[bool],
     observations: &mut Statistics,
-    verification: Verification<'_>,
+    options: FunctionOptions<'_>,
+    scratch: &mut pass_context::Scratch,
 ) -> Result<(), Error> {
+    let FunctionOptions {
+        level,
+        unwritten,
+        verification,
+    } = options;
     let mut body = program.take_body(symbol)?.ok_or(Error::Limit)?;
     let result = {
         let mut context =
             pass_context::Context::new(program, symbol, &mut body, 2, nounwind, unwritten);
+        context.exchange_scratch(scratch);
         context.verification = verification;
         let result = local_pipeline::finish(&mut context, level);
         observations.collect(&context);
+        context.exchange_scratch(scratch);
         result
     }
     .and_then(|changed| if changed { body.compact() } else { Ok(()) });
@@ -245,21 +261,27 @@ fn finish_function(
 fn simplify_function(
     program: &mut Program,
     symbol: crate::lowir::model::SymbolId,
-    level: u8,
     nounwind: &mut Vec<bool>,
-    unwritten: &[bool],
     observations: &mut Statistics,
-    verification: Verification<'_>,
+    options: FunctionOptions<'_>,
+    scratch: &mut pass_context::Scratch,
 ) -> Result<(), Error> {
+    let FunctionOptions {
+        level,
+        unwritten,
+        verification,
+    } = options;
     let mut body = program.take_body(symbol)?.ok_or(Error::Limit)?;
     let result = {
         let mut context =
             pass_context::Context::new(program, symbol, &mut body, level, nounwind, unwritten);
+        context.exchange_scratch(scratch);
         context.verification = verification;
         let result = context
             .verify_after("inlining")
             .and_then(|()| local_pipeline::simplify(&mut context));
         observations.collect(&context);
+        context.exchange_scratch(scratch);
         result
     }
     .and_then(|proven| {

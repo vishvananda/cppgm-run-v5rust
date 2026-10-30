@@ -66,10 +66,7 @@ impl Parser<'_> {
                     }
                     self.advance()?;
                     self.expect(Kind::Equals, "=")?;
-                    let classes = self.object_classes(Type::Object {
-                        bytes: 16,
-                        align: 3,
-                    })?;
+                    let classes = self.object_classes(Type::object(16, 3))?;
                     self.expect(Kind::RBracket, "]")?;
                     Some(classes)
                 } else {

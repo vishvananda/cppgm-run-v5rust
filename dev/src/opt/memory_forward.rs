@@ -14,6 +14,13 @@ use crate::lowir::{
 };
 use std::collections::VecDeque;
 
+#[derive(Default)]
+pub(super) struct Scratch {
+    addresses: Addresses,
+    contents: Contents,
+    replacements: Vec<Option<Value>>,
+    arm_marks: Vec<u32>,
+}
 pub(super) struct MemoryPass<'a, 'p> {
     pub(super) context: &'a mut Context<'p>,
     pub(super) addresses: Addresses,
@@ -26,18 +33,30 @@ pub(super) struct MemoryPass<'a, 'p> {
 }
 impl<'a, 'p> MemoryPass<'a, 'p> {
     fn new(context: &'a mut Context<'p>) -> Self {
-        let addresses = Addresses::analyze(context.body);
+        let mut scratch = std::mem::take(&mut context.memory_scratch);
+        let addresses = Addresses::rebuild(context.body, scratch.addresses);
         let count = context.body.temps().len();
+        scratch.contents.reset();
+        scratch.replacements.resize(count, None);
+        scratch.replacements.fill(None);
+        scratch.arm_marks.clear();
         Self {
             context,
             addresses,
-            contents: Contents::new(),
-            replacements: vec![None; count],
+            contents: scratch.contents,
+            replacements: scratch.replacements,
             changed: false,
             replaced: false,
-            arm_marks: Vec::new(),
+            arm_marks: scratch.arm_marks,
             arm_epoch: 0,
         }
+    }
+    fn recycle(&mut self) {
+        let scratch = &mut self.context.memory_scratch;
+        std::mem::swap(&mut self.addresses, &mut scratch.addresses);
+        std::mem::swap(&mut self.contents, &mut scratch.contents);
+        std::mem::swap(&mut self.replacements, &mut scratch.replacements);
+        std::mem::swap(&mut self.arm_marks, &mut scratch.arm_marks);
     }
     pub(super) fn at(&self, value: Value) -> Address {
         self.addresses.facts(self.context.body, Some(value))
@@ -311,11 +330,18 @@ impl<'a, 'p> MemoryPass<'a, 'p> {
 }
 pub(super) fn forward(context: &mut Context<'_>) -> Result<bool, Error> {
     context.ensure_cfg()?;
-    let changed = MemoryPass::new(context).run()?;
+    let changed = {
+        let mut pass = MemoryPass::new(context);
+        let result = pass.run();
+        pass.recycle();
+        result?
+    };
     if changed {
         definition_order::restore(context)?;
     }
-    context.body.recount_uses()?;
+    if changed {
+        context.body.recount_uses()?;
+    }
     Ok(changed)
 }
 

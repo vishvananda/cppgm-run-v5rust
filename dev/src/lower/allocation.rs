@@ -82,7 +82,7 @@ impl Function<'_, '_, '_, '_> {
                 arguments,
                 signature: Some(signature),
                 copy_elision: false,
-                argument_classes: Vec::new(),
+                argument_classes: (Vec::new()).into(),
             }))?;
             let none = self.zero(source)?;
             self.finish_lifetime_call(none, throws)?;
@@ -172,7 +172,7 @@ impl Function<'_, '_, '_, '_> {
             arguments,
             signature: None,
             copy_elision: false,
-            argument_classes: Vec::new(),
+            argument_classes: (Vec::new()).into(),
         });
         self.lifetime_result(call, result)?;
         if transient {

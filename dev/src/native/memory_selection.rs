@@ -349,14 +349,8 @@ mod tests {
     fn only_the_over_aligned_slot_region_uses_the_aligned_base() -> Result<(), Error> {
         let mut program = Program::default();
         let mut builder = FunctionBuilder::new(&mut program, "aligned", &[], Type::Ptr)?;
-        let buffer = builder.slot(
-            "buffer",
-            Type::Object {
-                bytes: 64,
-                align: 6,
-            },
-        )?;
-        let other = builder.slot("other", Type::Object { bytes: 8, align: 3 })?;
+        let buffer = builder.slot("buffer", Type::object(64, 6))?;
+        let other = builder.slot("other", Type::object(8, 3))?;
         builder.block("entry")?;
         builder.value(I::Addr(other), "dead-address")?;
         let address = builder.value(I::Addr(buffer), "address")?;

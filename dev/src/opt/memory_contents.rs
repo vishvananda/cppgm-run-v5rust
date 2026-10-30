@@ -14,7 +14,7 @@ pub(super) fn bytes(ty: Type) -> u64 {
         Type::I32 | Type::U32 | Type::F32 => 4,
         Type::I64 | Type::F64 | Type::Ptr => 8,
         Type::I128 | Type::F80 => 16,
-        Type::Object { bytes, .. } => bytes,
+        Type::Object { bytes, .. } => bytes.get(),
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq)]

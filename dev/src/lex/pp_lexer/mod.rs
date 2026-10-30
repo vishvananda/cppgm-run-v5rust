@@ -304,6 +304,7 @@ impl<'a> PpLexer<'a> {
         self.append_translated(c)
     }
 
+    #[cold]
     fn append_translated(&mut self, c: SourceChar) -> Result<(), SourceError> {
         let scalar = char::from_u32(c.code)
             .ok_or_else(|| SourceError::new(c.begin, "invalid universal character value"))?;
@@ -320,7 +321,11 @@ impl<'a> PpLexer<'a> {
         Ok(())
     }
 
-    #[inline]
+    #[expect(
+        clippy::inline_always,
+        reason = "Profiled per-character success path; decoding and translated spelling stay in cold helpers"
+    )]
+    #[inline(always)]
     fn take(&mut self, c: SourceChar) -> Result<(), SourceError> {
         self.append(c)?;
         self.current = self.after(c)?;

@@ -8,6 +8,12 @@ use std::hash::BuildHasher;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeId(u32);
+impl TypeId {
+    #[inline]
+    pub(super) fn index(self) -> usize {
+        self.0 as usize
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Scalar {
     Basic(FundamentalType),
@@ -126,12 +132,14 @@ impl TypeKind {
 #[derive(Default)]
 pub(super) struct Types {
     records: Vec<Type>,
+    pub(super) dependence: super::dependence::Queries,
     // Fingerprints index store-owned records. Dense collision links retain
     // exact structural equality without a second owned parameter vector.
     index: HashMap<u64, TypeId>,
     fingerprints: Fingerprints,
     collisions: Vec<Option<TypeId>>,
     canonical: Vec<Option<TypeId>>,
+    unqualified: Vec<Option<TypeId>>,
     declarations: Vec<Option<TypeId>>,
     declaration_facts: Box<DeclarationFacts>,
     signatures: Vec<Option<TypeId>>,
@@ -218,8 +226,8 @@ impl Types {
     }
     /// The top-level unqualified form; array element qualification is retained.
     pub(super) fn unqualified(&mut self, id: TypeId) -> Result<TypeId, Error> {
-        if self.get(id).cv.0 == 0 {
-            return Ok(id);
+        if let Some(bare) = self.unqualified[id.index()] {
+            return Ok(bare);
         }
         self.intern(self.get(id).kind.clone(), Cv::default())
     }
@@ -249,9 +257,10 @@ impl Types {
     }
     pub(super) fn intern(&mut self, kind: TypeKind, cv: Cv) -> Result<TypeId, Error> {
         let id = self.intern_raw(kind, cv)?;
-        if cv.0 != 0 {
+        if cv.0 != 0 && self.unqualified[id.index()].is_none() {
             let bare = self.intern_raw(self.get(id).kind.clone(), Cv::default())?;
             self.canonical_type(bare, false)?;
+            self.unqualified[id.index()] = Some(bare);
         }
         self.canonical_type(id, false)?;
         Ok(id)
@@ -273,8 +282,10 @@ impl Types {
             u32::try_from(self.records.len()).map_err(|_| Error::Limit("semantic type limit"))?,
         );
         self.records.push(ty);
+        self.dependence.add_type();
         self.collisions.push(head);
         self.canonical.push(None);
+        self.unqualified.push((cv.0 == 0).then_some(id));
         self.declarations.push(None);
         self.signatures.push(None);
         self.index.insert(fingerprint, id);

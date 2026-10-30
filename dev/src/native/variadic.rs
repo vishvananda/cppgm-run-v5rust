@@ -173,10 +173,7 @@ impl SaveArea {
     pub(super) fn entry(self, mir: &mut super::mir::Function) -> Result<(), Error> {
         mir.bindings.push(Binding {
             name: None,
-            ty: Type::Object {
-                bytes: 176,
-                align: 4,
-            },
+            ty: Type::object(176, 4),
             offset: self.offset,
             kind: BindingKind::Temp,
         });
@@ -269,10 +266,7 @@ impl Selection<'_> {
             volatile: false,
             op: Op::VaArg(Argument {
                 ty: if let Some(object) = object {
-                    Type::Object {
-                        bytes: u64::from(object.bytes),
-                        align: 0,
-                    }
+                    Type::object(u64::from(object.bytes), 0)
                 } else {
                     sse_part.unwrap_or(ty)
                 },

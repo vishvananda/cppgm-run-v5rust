@@ -140,14 +140,14 @@ impl Function<'_, '_, '_, '_> {
                     .view(&*self.graph, &*self.tree, self.cursor)
                     .object_mode()
             {
-                let ty = crate::lowir::vocabulary::Type::Object {
-                    bytes: 16,
-                    align: if self.graph.lower_member_pointer_type(facts.ty).is_some() {
+                let ty = crate::lowir::vocabulary::Type::object(
+                    16,
+                    if self.graph.lower_member_pointer_type(facts.ty).is_some() {
                         3
                     } else {
                         4
                     },
-                };
+                );
                 let slot = self.generated_slot("arg", ty)?;
                 let object = self.emit(I::Addr(slot), facts.ty)?.value;
                 self.effect(I::Store(

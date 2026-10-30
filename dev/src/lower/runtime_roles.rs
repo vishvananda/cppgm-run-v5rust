@@ -104,7 +104,7 @@ pub(super) fn resolve(
                 arguments,
                 signature: None,
                 copy_elision: false,
-                argument_classes: Vec::new(),
+                argument_classes: (Vec::new()).into(),
             });
             let value = if result == Type::Void {
                 builder.effect(call)?;

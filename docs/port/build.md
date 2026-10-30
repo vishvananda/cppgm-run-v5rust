@@ -161,3 +161,61 @@ diagnostics, reference files and gate limits fixed. Run affected differential
 and debug lanes during iteration, then full course, quality and 227-object /
 nine-tool bootstrap checks at a stable milestone. The 10% target is an
 acceptance objective, not a speedup established by this analysis.
+
+## Throughput changes and remeasurement
+
+The next batch restores memoized compound-type dependence and bare-type
+identities, inlines cached token lookahead and character advancement, and
+separates refill/decoding from those success paths. Mutable class/enum leaves
+are not memoized. The dependence walk remains iterative and uses retained
+scratch, without a query-local HashSet.
+
+Operand substitution now edits the owning operand store without cloning an
+instruction or allocating a temporary operand list. Value simplification moves
+its updated record back once. An explicit optimizer-owned workspace retains
+CFG, value-simplification, memory-forwarding, slot-promotion and constant-
+propagation capacity across functions while resetting their logical state.
+Unchanged passes avoid unnecessary use-count refreshes; required refreshes reuse
+buffers. LinkEditor initialization fills links directly, and commits refill
+existing block lists without allocating another list for each block.
+
+LowIR types now occupy eight bytes, using the reference's 48-bit object-size
+payload without unsafe packing. Optional temporary, block, instruction and
+signature IDs occupy four bytes, preserving external indices, hashes and debug
+spelling. Sparse immutable call ABI lists are shared; empty lists allocate
+nothing. Instruction records shrink from 112 to 72 bytes, and calls from 72
+to 40. Pass choices, traversal order, diagnostics and serialized output remain
+covered by the frozen comparisons.
+
+Evidence is under
+`/home/vishvananda/work/maintenance/v5rust-throughput-20261030/`.
+`performance-summary.json` indexes the raw results. Four warm alternating
+samples per compiler/mode used one CPU, a shared 16 MiB stack and hardware
+counters at 100% running time. Every output object matched completely.
+
+| Frozen workload | Before | After | C++ | After / C++ | Instruction reduction |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| O0 follow-up | 3.665 s | 3.635 s | 1.310 s | 2.77x | 4.86% |
+| O3 | 7.200 s | 6.370 s | 2.700 s | 2.36x | 13.30% |
+
+O3 wall time decreased 11.5%. O0 wall time is approximately unchanged: the
+primary O0 sample was slower (3.64 to 4.09 s), which did not reproduce in the
+four-compiler follow-up. Both studies retain the instruction improvement.
+The follow-up enabled statistics for every compiler to compare phase clocks
+and added cache/branch counters; the primary comparison did not. Raw evidence
+is in `final/performance.json` and `repeat-O0/performance.json`. Shared-host
+variation remains material; these results do not establish the 1.10x target.
+
+Callgrind malloc counts fell from 4,731,745 to 4,044,465 at O0 (14.5%) and
+14,280,114 to 10,722,198 at O3 (24.9%). LinkEditor construction fell from
+777.7 M to 222.7 M inclusive instructions, so rebuilding its remaining small
+view is now about 1% of total O3 instructions. Operand substitution fell from
+779.7 M to 359.8 M inclusive instructions, with the same 1,534,346 calls.
+Front-end storage and query costs remain the main obstacle at O0.
+
+Validation passed 9,218 differential cases, all 33 original course gates,
+PA8/PA32/PA33 debug-info lanes, formatting, strict Clippy, debug/release Rust
+tests, and the 667-file audit with zero findings. All 227 bootstrap objects and
+nine tools matched the frozen C++ fixed point. Candidate SHA256:
+`f0d62f1d9197801b0f19a22cf768e0e4b0d3addea4fbc21293704409e01f24c8`.
+The paused worker, source-owner census, reference and gate policy are unchanged.

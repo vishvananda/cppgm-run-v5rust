@@ -158,7 +158,7 @@ impl Function<'_, '_, '_, '_> {
             callee,
             arguments,
             copy_elision: false,
-            argument_classes: Vec::new(),
+            argument_classes: (Vec::new()).into(),
             signature: None,
         });
         self.before_lifetime_call(throws)?;

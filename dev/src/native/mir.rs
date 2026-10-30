@@ -389,7 +389,7 @@ impl Function {
             Type::Void => "void",
             Type::F32 | Type::F64 => "xmm0",
             Type::F80 => "st0",
-            Type::Object { bytes, .. } if bytes > 16 => "[rax]",
+            Type::Object { bytes, .. } if bytes.get() > 16 => "[rax]",
             _ => "rax",
         };
         writeln!(

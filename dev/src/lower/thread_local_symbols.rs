@@ -212,7 +212,7 @@ impl Symbols<'_, '_> {
                     arguments,
                     signature: None,
                     copy_elision: false,
-                    argument_classes: Vec::new(),
+                    argument_classes: (Vec::new()).into(),
                 },
             ))?;
             if let Some(done) = done {

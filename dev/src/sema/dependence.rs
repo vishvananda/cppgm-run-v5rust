@@ -498,7 +498,27 @@ impl Analyzer<'_> {
     }
 }
 
-use crate::support::hash::HashSet;
+// Compound identities have immutable children, as in the reference's
+// Type::dependence field. Mutable class/enum leaves are never memoized.
+#[derive(Default)]
+pub(super) struct Queries {
+    answers: Vec<std::cell::Cell<u8>>,
+    work: std::cell::RefCell<Vec<(TypeId, bool)>>,
+}
+impl Queries {
+    pub(super) fn add_type(&mut self) {
+        self.answers.push(std::cell::Cell::new(0));
+    }
+    fn get(&self, id: TypeId) -> Option<bool> {
+        match self.answers[id.index()].get() {
+            0 => None,
+            answer => Some(answer == 2),
+        }
+    }
+    fn set(&self, id: TypeId, dependent: bool) {
+        self.answers[id.index()].set(if dependent { 2 } else { 1 });
+    }
+}
 
 impl super::graph::Graph {
     fn type_has_template_owner(&self, entity: super::graph::EntityId) -> bool {
@@ -525,53 +545,82 @@ impl super::graph::Graph {
     }
 
     pub(super) fn dependent_type(&self, root: TypeId) -> bool {
-        let mut work = vec![root];
-        let mut visited = HashSet::default();
-        while let Some(ty) = work.pop() {
-            if !visited.insert(ty) {
+        let queries = &self.types.dependence;
+        if let Some(answer) = queries.get(root) {
+            return answer;
+        }
+        let mut work = queries.work.borrow_mut();
+        work.clear();
+        work.push((root, false));
+        while let Some((ty, finish)) = work.pop() {
+            if finish {
+                queries.set(ty, false);
                 continue;
             }
-            match &self.types.get(ty).kind {
-                TypeKind::TemplateParameter { .. }
-                | TypeKind::Expansion(_)
-                | TypeKind::BoundPack { .. } => return true,
-                TypeKind::Pack(elements) => work.extend(elements.iter().copied()),
-                TypeKind::Class(entity)
-                    if self.entity(*entity).context().template_head.is_some()
-                        || self.type_has_template_owner(*entity)
-                        || self
-                            .class_templates
-                            .instance(*entity)
-                            .is_some_and(|instance| instance.dependent) =>
-                {
-                    return true;
+            let dependent = if let Some(answer) = queries.get(ty) {
+                answer
+            } else {
+                match &self.types.get(ty).kind {
+                    TypeKind::TemplateParameter { .. }
+                    | TypeKind::Expansion(_)
+                    | TypeKind::BoundPack { .. } => true,
+                    TypeKind::Class(entity) => {
+                        self.entity(*entity).context().template_head.is_some()
+                            || self.type_has_template_owner(*entity)
+                            || self
+                                .class_templates
+                                .instance(*entity)
+                                .is_some_and(|instance| instance.dependent)
+                    }
+                    TypeKind::Enum(entity) => self.type_has_template_owner(*entity),
+                    TypeKind::Pointer(element)
+                    | TypeKind::Complex(element)
+                    | TypeKind::Reference { element, .. } => {
+                        work.push((ty, true));
+                        work.push((*element, false));
+                        false
+                    }
+                    TypeKind::Array {
+                        element, operand, ..
+                    }
+                    | TypeKind::Vector {
+                        element, operand, ..
+                    } => {
+                        work.push((ty, true));
+                        work.push((*element, false));
+                        work.extend(operand.map(|operand| (operand, false)));
+                        false
+                    }
+                    TypeKind::MemberPointer { owner, element } => {
+                        work.push((ty, true));
+                        work.push((*owner, false));
+                        work.push((*element, false));
+                        false
+                    }
+                    TypeKind::Function {
+                        result, parameters, ..
+                    } => {
+                        work.push((ty, true));
+                        work.push((*result, false));
+                        work.extend(parameters.iter().map(|&p| (p, false)));
+                        false
+                    }
+                    TypeKind::Pack(elements) => {
+                        work.push((ty, true));
+                        work.extend(elements.iter().map(|&p| (p, false)));
+                        false
+                    }
+                    _ => false,
                 }
-                TypeKind::Enum(entity) if self.type_has_template_owner(*entity) => return true,
-                TypeKind::Pointer(element)
-                | TypeKind::Complex(element)
-                | TypeKind::Reference { element, .. } => {
-                    work.push(*element);
+            };
+            if dependent {
+                for &(parent, finish) in work.iter() {
+                    if finish {
+                        queries.set(parent, true);
+                    }
                 }
-                TypeKind::Array {
-                    element, operand, ..
-                }
-                | TypeKind::Vector {
-                    element, operand, ..
-                } => {
-                    work.push(*element);
-                    work.extend(operand);
-                }
-                TypeKind::MemberPointer { owner, element } => {
-                    work.push(*owner);
-                    work.push(*element);
-                }
-                TypeKind::Function {
-                    result, parameters, ..
-                } => {
-                    work.push(*result);
-                    work.extend(parameters.iter().copied());
-                }
-                _ => (),
+                work.clear();
+                return true;
             }
         }
         false
@@ -608,6 +657,49 @@ mod tests {
         support::{source::SourceBuffer, stack::StackBudget},
         syntax::SyntaxUnit,
     };
+
+    #[test]
+    fn compound_dependence_reuses_answers_without_caching_mutable_leaves() {
+        use super::super::{
+            graph::Graph,
+            types::{Cv, Scalar},
+        };
+        let mut graph = Graph::new();
+        let int = graph
+            .types
+            .scalar(Scalar::Basic(crate::types::FundamentalType::Int))
+            .unwrap();
+        let mut pointer = int;
+        for _ in 0..4096 {
+            pointer = graph.types.pointer(pointer).unwrap();
+        }
+        assert!(!graph.dependent_type(pointer));
+        assert_eq!(graph.types.dependence.get(pointer), Some(false));
+        assert!(!graph.dependent_type(pointer));
+        let expansion = graph
+            .types
+            .intern(TypeKind::Expansion(int), Cv::default())
+            .unwrap();
+        let member = graph
+            .types
+            .intern(
+                TypeKind::MemberPointer {
+                    owner: pointer,
+                    element: expansion,
+                },
+                Cv::default(),
+            )
+            .unwrap();
+        assert!(graph.dependent_type(member));
+        assert_eq!(graph.types.dependence.get(member), Some(true));
+        let class = graph.add_entity(None, None, Keyword::Class).unwrap();
+        let leaf = graph
+            .types
+            .intern(TypeKind::Class(class), Cv::default())
+            .unwrap();
+        assert!(!graph.dependent_type(leaf));
+        assert_eq!(graph.types.dependence.get(leaf), None);
+    }
 
     #[test]
     fn explicit_callee_keys_reuse_signatures_without_body_or_emission_demand() {

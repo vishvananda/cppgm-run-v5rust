@@ -71,6 +71,20 @@ struct PendingPhi {
     ty: Type,
     pairs: Vec<(BlockId, Option<Value>)>,
 }
+#[derive(Default)]
+pub(super) struct Scratch {
+    candidate: Vec<Option<usize>>,
+    slots: Vec<SlotId>,
+    accessed: Vec<bool>,
+    frontier: Vec<Vec<BlockId>>,
+    phis: Vec<PendingPhi>,
+    by_block: Vec<Vec<usize>>,
+    successor_slots: Vec<Vec<(BlockId, usize)>>,
+    current: Vec<Option<Value>>,
+    undo: Vec<(usize, Option<Value>)>,
+    replacements: Vec<Option<Value>>,
+    remove: Vec<bool>,
+}
 struct Promotion<'a, 'p> {
     context: &'a mut Context<'p>,
     candidate: Vec<Option<usize>>,
@@ -90,22 +104,40 @@ struct Promotion<'a, 'p> {
 impl<'a, 'p> Promotion<'a, 'p> {
     fn new(context: &'a mut Context<'p>) -> Result<Self, Error> {
         let links = LinkEditor::new(context.body)?;
+        let mut scratch = std::mem::take(&mut context.promotion_scratch);
+        scratch.slots.clear();
+        scratch.phis.clear();
+        scratch.undo.clear();
         Ok(Self {
             context,
-            candidate: Vec::new(),
-            slots: Vec::new(),
-            accessed: Vec::new(),
-            frontier: Vec::new(),
-            phis: Vec::new(),
-            by_block: Vec::new(),
-            successor_slots: Vec::new(),
-            current: Vec::new(),
-            undo: Vec::new(),
-            replacements: Vec::new(),
-            remove: Vec::new(),
+            candidate: scratch.candidate,
+            slots: scratch.slots,
+            accessed: scratch.accessed,
+            frontier: scratch.frontier,
+            phis: scratch.phis,
+            by_block: scratch.by_block,
+            successor_slots: scratch.successor_slots,
+            current: scratch.current,
+            undo: scratch.undo,
+            replacements: scratch.replacements,
+            remove: scratch.remove,
             kept: false,
             links,
         })
+    }
+    fn recycle(&mut self) {
+        let scratch = &mut self.context.promotion_scratch;
+        std::mem::swap(&mut self.candidate, &mut scratch.candidate);
+        std::mem::swap(&mut self.slots, &mut scratch.slots);
+        std::mem::swap(&mut self.accessed, &mut scratch.accessed);
+        std::mem::swap(&mut self.frontier, &mut scratch.frontier);
+        std::mem::swap(&mut self.phis, &mut scratch.phis);
+        std::mem::swap(&mut self.by_block, &mut scratch.by_block);
+        std::mem::swap(&mut self.successor_slots, &mut scratch.successor_slots);
+        std::mem::swap(&mut self.current, &mut scratch.current);
+        std::mem::swap(&mut self.undo, &mut scratch.undo);
+        std::mem::swap(&mut self.replacements, &mut scratch.replacements);
+        std::mem::swap(&mut self.remove, &mut scratch.remove);
     }
     fn classify(&mut self) -> Result<(), Error> {
         let body = &*self.context.body;
@@ -114,7 +146,8 @@ impl<'a, 'p> Promotion<'a, 'p> {
             .iter()
             .map(|s| phi_type(s.ty))
             .collect::<Vec<_>>();
-        self.accessed = vec![false; ok.len()];
+        self.accessed.resize(ok.len(), false);
+        self.accessed.fill(false);
         for &block in &body.layout {
             for &id in &body.block(block).instructions {
                 let kind = &body.instruction(id).kind;
@@ -151,7 +184,8 @@ impl<'a, 'p> Promotion<'a, 'p> {
         if ok.iter().zip(&self.accessed).any(|(&a, &b)| a && b) {
             super::handler_liveness::exclude(self.context, &mut ok)?;
         }
-        self.candidate = vec![None; ok.len()];
+        self.candidate.resize(ok.len(), None);
+        self.candidate.fill(None);
         for (index, allowed) in ok.into_iter().enumerate() {
             if allowed {
                 let slot = self.context.body.slot_id(index).ok_or(Error::Limit)?;
@@ -189,7 +223,10 @@ impl<'a, 'p> Promotion<'a, 'p> {
                 }
             }
         }
-        self.frontier = vec![Vec::new(); last.len()];
+        self.frontier.resize_with(last.len(), Vec::new);
+        for row in &mut self.frontier {
+            row.clear();
+        }
         for (at, block) in found {
             self.frontier[at.index()].push(block);
         }
@@ -235,7 +272,10 @@ impl<'a, 'p> Promotion<'a, 'p> {
         let mut placed = vec![None; blocks];
         let mut queued = vec![None; blocks];
         let mut used = 0_u64;
-        self.by_block = vec![Vec::new(); blocks];
+        self.by_block.resize_with(blocks, Vec::new);
+        for row in &mut self.by_block {
+            row.clear();
+        }
         for c in 0..count {
             if !exposed[c] {
                 continue;
@@ -428,16 +468,24 @@ impl<'a, 'p> Promotion<'a, 'p> {
         sources.sort_unstable_by_key(|b| b.index());
         let blocks = self.context.body.blocks().len();
         let mut next = vec![0_usize; blocks];
-        self.successor_slots = vec![Vec::new(); blocks];
+        self.successor_slots.resize_with(blocks, Vec::new);
+        for row in &mut self.successor_slots {
+            row.clear();
+        }
         for source in sources {
             for &to in self.context.cfg()?.successors(source) {
                 self.successor_slots[source.index()].push((to, next[to.index()]));
                 next[to.index()] += 1;
             }
         }
-        self.current = vec![None; self.slots.len()];
-        self.replacements = vec![None; self.context.body.temps().len()];
-        self.remove = vec![false; self.context.body.instructions().len()];
+        self.current.resize(self.slots.len(), None);
+        self.current.fill(None);
+        self.replacements
+            .resize(self.context.body.temps().len(), None);
+        self.replacements.fill(None);
+        self.remove
+            .resize(self.context.body.instructions().len(), false);
+        self.remove.fill(false);
         let entry = *self
             .context
             .cfg()?
@@ -548,7 +596,9 @@ impl<'a, 'p> Promotion<'a, 'p> {
 }
 pub(super) fn promote(context: &mut Context<'_>) -> Result<bool, Error> {
     let mut promotion = Promotion::new(context)?;
-    let ran = promotion.run()?;
+    let result = promotion.run();
+    promotion.recycle();
+    let ran = result?;
     let kept = promotion.kept;
     promotion.links.commit(promotion.context.body)?;
     if !ran {

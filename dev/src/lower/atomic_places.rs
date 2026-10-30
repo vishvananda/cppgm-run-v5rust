@@ -27,14 +27,17 @@ fn bits(storage: Type) -> Option<Type> {
         Type::F32 => Type::I32,
         Type::F64 | Type::Ptr => Type::I64,
         Type::F80 => Type::I128,
-        Type::Object { bytes, .. } => match bytes {
-            1 => Type::I8,
-            2 => Type::I16,
-            4 => Type::I32,
-            8 => Type::I64,
-            16 => Type::I128,
-            _ => return None,
-        },
+        Type::Object { bytes, .. } => {
+            let bytes = bytes.get();
+            match bytes {
+                1 => Type::I8,
+                2 => Type::I16,
+                4 => Type::I32,
+                8 => Type::I64,
+                16 => Type::I128,
+                _ => return None,
+            }
+        }
         ty if ty.bits() != 0 => ty,
         _ => return None,
     })

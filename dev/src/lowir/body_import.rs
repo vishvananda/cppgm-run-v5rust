@@ -62,6 +62,7 @@ impl Body {
         Self {
             literals: self.literals.clone(),
             operands: self.operands.clone(),
+            use_scratch: Vec::new(),
             temps: self.temps.clone(),
             slots: self.slots.clone(),
             slot_names: self.slot_names.clone(),
